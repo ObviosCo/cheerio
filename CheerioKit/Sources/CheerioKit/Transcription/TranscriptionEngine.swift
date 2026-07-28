@@ -40,7 +40,12 @@ public actor TranscriptionEngine {
     /// Ensures the on-device model for `locale` is installed. Call before `start()`.
     /// First run downloads the model; surface progress in UI.
     public static func ensureModel(for locale: Locale = .current) async throws {
-        let transcriber = SpeechTranscriber(locale: locale, preset: .progressiveTranscription)
+        let transcriber = SpeechTranscriber(
+            locale: locale,
+            transcriptionOptions: [],
+            reportingOptions: [.volatileResults],
+            attributeOptions: [.audioTimeRange]
+        )
         if let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
             try await request.downloadAndInstall()
         }
