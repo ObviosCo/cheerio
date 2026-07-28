@@ -1,0 +1,31 @@
+# XcodeGen config — run `xcodegen generate` to produce Cheerio.xcodeproj
+# Install: brew install xcodegen
+name: Cheerio
+options:
+  bundleIdPrefix: app.cheerio # TODO: change to your reverse-DNS prefix
+  deploymentTarget:
+    macOS: "26.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    MACOSX_DEPLOYMENT_TARGET: "26.0"
+packages:
+  CheerioKit:
+    path: CheerioKit
+targets:
+  Cheerio:
+    type: application
+    platform: macOS
+    sources:
+      - Cheerio
+    dependencies:
+      - package: CheerioKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.cheerio.mac
+        INFOPLIST_FILE: Cheerio/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Cheerio/Cheerio.entitlements
+        ENABLE_HARDENED_RUNTIME: true
+        GENERATE_INFOPLIST_FILE: false
