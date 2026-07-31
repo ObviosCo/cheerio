@@ -34,10 +34,19 @@ public final class Meeting {
     }
 
     /// Case-insensitive match across everything the user might remember about a
-    /// meeting: its name, what they jotted, the notes, and what was said.
+    /// meeting: its name, what they jotted, the notes, who spoke, and what was said.
     public func matches(_ query: String) -> Bool {
-        let haystack = [title, roughNotes, enhancedNotes ?? "", transcriptText]
-        return haystack.contains { $0.localizedCaseInsensitiveContains(query) }
+        let fields = [title, roughNotes, enhancedNotes ?? ""]
+        if fields.contains(where: { $0.localizedCaseInsensitiveContains(query) }) { return true }
+
+        // Segments directly rather than `transcriptText`: that sorts every segment and
+        // builds the entire transcript as one string, on every keystroke. This also
+        // stops "me" from matching every meeting through the "[Me] " label prefix,
+        // while still finding meetings by a diarized speaker's name.
+        return segments.contains {
+            $0.text.localizedCaseInsensitiveContains(query)
+                || $0.speakerLabel?.localizedCaseInsensitiveContains(query) == true
+        }
     }
 
     /// Full transcript in chronological order, formatted for display or summarization.

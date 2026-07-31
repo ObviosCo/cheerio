@@ -68,8 +68,15 @@ public enum AudioStorage {
         try FileManager.default.removeItem(at: url)
     }
 
+    /// Resolves a stored relative path — a meeting's audio directory, or a speaker's
+    /// sample file — against our container.
+    ///
+    /// `.inferFromPath` rather than `.isDirectory`: the latter appended a trailing
+    /// slash to file paths too, giving speaker samples a URL like `…/abc.caf/`. That
+    /// happens to work (`.path` drops the slash, so `fileExists` and reads succeed),
+    /// but it's wrong on its face and only ever one API away from biting.
     public static func url(forRelativePath relativePath: String) throws -> URL {
-        try applicationSupport().appending(path: relativePath, directoryHint: .isDirectory)
+        try applicationSupport().appending(path: relativePath, directoryHint: .inferFromPath)
     }
 
     /// Removes a meeting's audio directory. Succeeds quietly if it is already gone.

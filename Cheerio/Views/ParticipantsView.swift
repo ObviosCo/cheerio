@@ -60,7 +60,7 @@ struct ParticipantsView: View {
         }
         .formStyle(.grouped)
         .frame(width: 460, height: 420)
-        .alert("Couldn't record the sample", isPresented: .constant(errorMessage != nil)) {
+        .alert("Couldn't record the sample", isPresented: $errorMessage.presented()) {
             Button("OK") { errorMessage = nil }
         } message: {
             Text(errorMessage ?? "")

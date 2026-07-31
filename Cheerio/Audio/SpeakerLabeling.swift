@@ -63,7 +63,9 @@ enum SpeakerLabeling {
         }
 
         if labelledAnything {
-            try? context.save()
+            // Not `try?`: a failed save means the labels the user is looking at will be
+            // gone on next launch, which they need to know about.
+            try context.save()
         } else {
             throw LabelingError.audioUnavailable
         }

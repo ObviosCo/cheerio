@@ -36,4 +36,17 @@ import Testing
         #expect(meeting.matches("ship by Friday"))
         #expect(!meeting.matches("budget"))
     }
+
+    @Test func searchMatchesDiarizedSpeakerButNotChannelLabels() {
+        let meeting = Meeting(title: "Standup")
+        let named = TranscriptSegment(channel: .me, text: "morning", startTime: 0, endTime: 1)
+        named.speakerLabel = "Carter"
+        meeting.segments = [named]
+
+        // Finding a meeting by who spoke in it is worth keeping.
+        #expect(meeting.matches("carter"))
+        // "Me"/"Them" are channel fallbacks, not content. Searching the rendered
+        // transcript matched their "[Me] " prefix, so "me" hit every meeting.
+        #expect(!meeting.matches("them"))
+    }
 }

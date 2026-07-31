@@ -63,7 +63,7 @@ struct MeetingListView: View {
                 try? await Task.sleep(for: .seconds(30))
             }
         }
-        .alert("Couldn't start recording", isPresented: .constant(errorMessage != nil)) {
+        .alert("Couldn't start recording", isPresented: $errorMessage.presented()) {
             Button("OK") { errorMessage = nil }
         } message: {
             Text(errorMessage ?? "")

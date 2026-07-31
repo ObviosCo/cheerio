@@ -165,7 +165,11 @@ public enum SpeakerAttribution {
             guard overlap > 0 else { continue }
             totalsByLabel[turn.label, default: 0] += overlap
         }
-        // Break ties on label so the result is stable rather than dictionary-ordered.
-        return totalsByLabel.max { ($0.value, $1.key) < ($1.value, $0.key) }?.key
+        // Most overlap wins. Exact ties fall back to alphabetical order so the result
+        // is stable rather than dictionary-ordered — spelled out longhand because the
+        // tuple form of this comparator reads like a bug.
+        return totalsByLabel.max { lhs, rhs in
+            lhs.value == rhs.value ? lhs.key > rhs.key : lhs.value < rhs.value
+        }?.key
     }
 }

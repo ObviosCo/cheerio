@@ -21,6 +21,17 @@ import Testing
         #expect(SpeakerAttribution.dominantLabel(start: 1, end: 4.5, turns: turns) == "Jackson")
     }
 
+    @Test func breaksExactTiesAlphabetically() {
+        // Equal overlap has no better answer, so pin the tie-break: without one the
+        // winner comes back in dictionary order and can differ between runs.
+        let tied = [
+            SpeakerTurn(label: "Zoe", startTime: 0, endTime: 2),
+            SpeakerTurn(label: "Adam", startTime: 2, endTime: 4),
+        ]
+        #expect(SpeakerAttribution.dominantLabel(start: 0, end: 4, turns: tied) == "Adam")
+        #expect(SpeakerAttribution.dominantLabel(start: 0, end: 4, turns: tied.reversed()) == "Adam")
+    }
+
     @Test func returnsNilWhenNothingOverlaps() {
         #expect(SpeakerAttribution.dominantLabel(start: 10.5, end: 11.5, turns: turns) == nil)
         #expect(SpeakerAttribution.dominantLabel(start: 20, end: 30, turns: turns) == nil)

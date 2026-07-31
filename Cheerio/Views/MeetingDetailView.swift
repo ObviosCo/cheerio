@@ -53,7 +53,7 @@ struct MeetingDetailView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .navigationTitle(meeting.title)
-        .alert("Couldn't identify speakers", isPresented: .constant(relabelError != nil)) {
+        .alert("Couldn't identify speakers", isPresented: $relabelError.presented()) {
             Button("OK") { relabelError = nil }
         } message: {
             Text(relabelError ?? "")
