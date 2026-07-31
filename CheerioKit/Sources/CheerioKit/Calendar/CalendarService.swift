@@ -18,6 +18,9 @@ public struct CalendarMeeting: Identifiable, Sendable {
 /// Read-only EventKit wrapper. Used to suggest recording when a meeting
 /// starts and to link meetings to calendar events.
 public actor CalendarService {
+    /// Single-user app, single event store — access is requested once at launch.
+    public static let shared = CalendarService()
+
     private let store = EKEventStore()
     private var hasAccess = false
 

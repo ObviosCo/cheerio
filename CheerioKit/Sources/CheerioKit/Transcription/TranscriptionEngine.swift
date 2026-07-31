@@ -11,6 +11,22 @@ public struct TranscriptionUpdate: Sendable {
     public let endTime: TimeInterval
 }
 
+/// Holds the single buffer an `AVAudioConverter` pass should consume, and yields
+/// it exactly once. Sound because the converter invokes its input block
+/// synchronously on the thread that called `convert`.
+private final class PendingInput: @unchecked Sendable {
+    private var buffer: AVAudioPCMBuffer?
+
+    init(buffer: sending AVAudioPCMBuffer) {
+        self.buffer = buffer
+    }
+
+    func take() -> AVAudioPCMBuffer? {
+        defer { buffer = nil }
+        return buffer
+    }
+}
+
 /// Wraps SpeechAnalyzer/SpeechTranscriber (macOS/iOS 26+) for one audio stream.
 /// Create one engine per channel (mic = .me, system audio = .them).
 public actor TranscriptionEngine {
@@ -23,19 +39,36 @@ public actor TranscriptionEngine {
     private var analyzerFormat: AVAudioFormat?
     private var converter: AVAudioConverter?
     private var resultsTask: Task<Void, Never>?
+    private var audioTask: Task<Void, Never>?
 
     private let updates: AsyncStream<TranscriptionUpdate>
     private let updatesContinuation: AsyncStream<TranscriptionUpdate>.Continuation
+
+    /// Buffers arrive here straight from a realtime audio callback and are
+    /// drained onto the actor in order, so the callback itself never blocks.
+    private let capturedAudio: AsyncStream<UnsafeTransfer<AVAudioPCMBuffer>>
+    private let capturedAudioContinuation: AsyncStream<UnsafeTransfer<AVAudioPCMBuffer>>.Continuation
 
     public init(channel: SpeakerChannel, locale: Locale = .current) {
         self.channel = channel
         self.locale = locale
         (self.updates, self.updatesContinuation) = AsyncStream.makeStream()
+        (self.capturedAudio, self.capturedAudioContinuation) = AsyncStream.makeStream()
     }
 
     /// Live transcription results. Volatile results have `isFinal == false`
     /// and are replaced by later updates; final results should be persisted.
     public nonisolated var results: AsyncStream<TranscriptionUpdate> { updates }
+
+    /// Hands a captured buffer to the engine. Safe to call from a realtime audio
+    /// thread: it only enqueues.
+    ///
+    /// The buffer must be owned by the caller — buffers vended by an AVAudioEngine
+    /// tap or a Core Audio IOProc are recycled the moment the callback returns, so
+    /// pass `detachedCopy()` output, not the original.
+    public nonisolated func submit(_ buffer: sending AVAudioPCMBuffer) {
+        capturedAudioContinuation.yield(UnsafeTransfer(value: buffer))
+    }
 
     /// Ensures the on-device model for `locale` is installed. Call before `start()`.
     /// First run downloads the model; surface progress in UI.
@@ -68,6 +101,12 @@ public actor TranscriptionEngine {
         self.inputBuilder = inputBuilder
         try await analyzer.start(inputSequence: inputSequence)
 
+        audioTask = Task { [weak self, capturedAudio] in
+            for await chunk in capturedAudio {
+                await self?.process(buffer: chunk.value)
+            }
+        }
+
         resultsTask = Task { [weak self] in
             guard let self else { return }
             do {
@@ -98,9 +137,9 @@ public actor TranscriptionEngine {
         updatesContinuation.finish()
     }
 
-    /// Feed an audio buffer captured from the mic or system-audio tap.
-    /// Buffers are converted to the analyzer's preferred format if needed.
-    public func process(buffer: AVAudioPCMBuffer) {
+    /// Converts a captured buffer to the analyzer's preferred format if needed
+    /// and feeds it in.
+    private func process(buffer: sending AVAudioPCMBuffer) {
         guard let inputBuilder else { return }
         guard let analyzerFormat, buffer.format != analyzerFormat else {
             inputBuilder.yield(AnalyzerInput(buffer: buffer))
@@ -118,16 +157,18 @@ public actor TranscriptionEngine {
               )
         else { return }
 
-        var fed = false
+        // AVAudioConverterInputBlock is @Sendable, but the converter calls it
+        // synchronously before `convert` returns — the box just carries the
+        // one-shot input past that annotation.
+        let pending = PendingInput(buffer: buffer)
         var error: NSError?
         converter.convert(to: converted, error: &error) { _, status in
-            if fed {
+            guard let next = pending.take() else {
                 status.pointee = .noDataNow
                 return nil
             }
-            fed = true
             status.pointee = .haveData
-            return buffer
+            return next
         }
         if error == nil, converted.frameLength > 0 {
             inputBuilder.yield(AnalyzerInput(buffer: converted))
@@ -135,6 +176,11 @@ public actor TranscriptionEngine {
     }
 
     public func stop() async throws {
+        // Let already-queued buffers reach the analyzer before finalizing, so the
+        // tail of the meeting isn't dropped.
+        capturedAudioContinuation.finish()
+        await audioTask?.value
+        audioTask = nil
         inputBuilder?.finish()
         try await analyzer?.finalizeAndFinishThroughEndOfInput()
         resultsTask?.cancel()

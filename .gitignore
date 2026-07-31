@@ -11,3 +11,6 @@ Package.resolved
 
 # macOS
 .DS_Store
+
+# Fetched by Scripts/fetch-models.sh, not committed (~93 MB)
+Cheerio/Resources/Models/

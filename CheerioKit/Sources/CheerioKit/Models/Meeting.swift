@@ -33,11 +33,21 @@ public final class Meeting {
         self.roughNotes = ""
     }
 
+    /// Case-insensitive match across everything the user might remember about a
+    /// meeting: its name, what they jotted, the notes, and what was said.
+    public func matches(_ query: String) -> Bool {
+        let haystack = [title, roughNotes, enhancedNotes ?? "", transcriptText]
+        return haystack.contains { $0.localizedCaseInsensitiveContains(query) }
+    }
+
     /// Full transcript in chronological order, formatted for display or summarization.
+    ///
+    /// Uses diarized speaker labels when available, falling back to the capture
+    /// channel for meetings recorded before diarization ran.
     public var transcriptText: String {
         segments
             .sorted { $0.startTime < $1.startTime }
-            .map { "[\($0.channel == .me ? "Me" : "Them")] \($0.text)" }
+            .map { "[\($0.displayLabel)] \($0.text)" }
             .joined(separator: "\n")
     }
 }
@@ -49,10 +59,19 @@ public final class TranscriptSegment {
     /// Seconds from meeting start.
     public var startTime: TimeInterval
     public var endTime: TimeInterval
+    /// Who spoke, once diarization has run. Nil until then, and nil for meetings
+    /// recorded before diarization existed.
+    public var speakerLabel: String?
     public var meeting: Meeting?
 
     public var channel: SpeakerChannel {
         SpeakerChannel(rawValue: channelRaw) ?? .them
+    }
+
+    /// Who to show as the speaker: the diarized label if we have one, otherwise the
+    /// capture channel.
+    public var displayLabel: String {
+        speakerLabel ?? (channel == .me ? "Me" : "Them")
     }
 
     public init(channel: SpeakerChannel, text: String, startTime: TimeInterval, endTime: TimeInterval) {

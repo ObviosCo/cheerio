@@ -2,8 +2,13 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>com.apple.security.app-sandbox</key>
-    <true/>
+    <!-- App Sandbox is OFF while we determine whether it is what makes Core Audio
+         process taps deliver silence. A sandboxed build creates the tap without
+         error and then reads all zeroes, with no TCC prompt. Turning the sandbox
+         back on means re-testing the "Them" channel. Note the data location moves
+         with this flag: sandboxed builds live under
+         ~/Library/Containers/app.cheerio.mac/Data/, unsandboxed under ~/Library.
+         Also required by Hardened Runtime for microphone access: -->
     <key>com.apple.security.device.audio-input</key>
     <true/>
     <key>com.apple.security.personal-information.calendars</key>
