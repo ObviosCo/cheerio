@@ -18,6 +18,14 @@ struct ParticipantsView: View {
 
     private var isRecording: Bool { recorder != nil }
 
+    private var isSampleLongEnough: Bool { elapsed >= EnrolledSpeaker.recommendedDuration }
+
+    private var recordingHint: String {
+        guard !isSampleLongEnough else { return "Long enough — stop whenever you like." }
+        let remaining = Int((EnrolledSpeaker.recommendedDuration - elapsed).rounded(.up))
+        return "Keep them talking — about \(remaining)s to go."
+    }
+
     var body: some View {
         Form {
             Section {
@@ -46,13 +54,23 @@ struct ParticipantsView: View {
                         Text(elapsed.formatted(.number.precision(.fractionLength(0))) + "s")
                             .monospacedDigit()
                         Spacer()
-                        Button("Stop and save") { Task { await stopRecording() } }
-                            .keyboardShortcut(.defaultAction)
+                        // Naming the early exit "Save anyway" makes stopping short a
+                        // choice rather than the obvious thing to do.
+                        Button(isSampleLongEnough ? "Stop and save" : "Save anyway") {
+                            Task { await stopRecording() }
+                        }
+                        .keyboardShortcut(.defaultAction)
                     }
-                    Text("Talk naturally for at least \(Int(EnrolledSpeaker.recommendedDuration)) seconds. Shorter samples get confused with similar voices.")
+                    ProgressView(value: min(elapsed / EnrolledSpeaker.recommendedDuration, 1))
+                    Text(recordingHint)
                         .font(.caption)
-                        .foregroundStyle(elapsed >= EnrolledSpeaker.recommendedDuration ? .green : .secondary)
+                        .foregroundStyle(isSampleLongEnough ? .green : .secondary)
                 } else {
+                    // Up front, not after the fact: this guidance only appeared once
+                    // recording had already started, so nobody knew how long to talk.
+                    Text("Have them talk naturally for about \(Int(EnrolledSpeaker.recommendedDuration)) seconds — read something aloud if it helps. Shorter samples get mistaken for similar voices, or split into two speakers mid-meeting.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     Button("Record voice sample") { Task { await startRecording() } }
                         .disabled(pendingName.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
