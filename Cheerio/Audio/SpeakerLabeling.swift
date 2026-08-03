@@ -37,7 +37,17 @@ enum SpeakerLabeling {
         else { throw LabelingError.audioUnavailable }
 
         let service = SpeakerAttributionService(modelURL: modelURL)
-        let enrollments = enrollments(context: context)
+        let (roster, dropped) = meeting.participants(
+            from: allEnrolled(context: context),
+            limit: SpeakerAttributionService.maximumSpeakers
+        )
+        if !dropped.isEmpty {
+            // Never truncate quietly: someone who was in the room coming back as
+            // "Speaker 2" with no explanation is the failure this roster exists to stop.
+            log.error(
+                "Speaker cap left out \(dropped.map(\.name).joined(separator: ", "), privacy: .public) — deselect someone in this meeting's roster"
+            )
+        }
 
         // Each channel is diarized against its own recording: in-room voices land on
         // the mic, remote participants on the system tap.
@@ -46,7 +56,13 @@ enum SpeakerLabeling {
             let audioFile = directory.appending(path: "\(channel.rawValue).caf")
             guard FileManager.default.fileExists(atPath: audioFile.path) else { continue }
 
-            let turns = try await service.attribute(audioFile: audioFile, enrolling: enrollments)
+            // You can't be on the far end of your own call, so priming your voice
+            // against the system tap would burn a slot a remote participant needs.
+            let forChannel = channel == .them ? roster.filter { !$0.isMe } : roster
+            let turns = try await service.attribute(
+                audioFile: audioFile,
+                enrolling: enrollments(for: forChannel)
+            )
             guard !turns.isEmpty else { continue }
 
             // Manually named lines are left alone: a person who corrected a label
@@ -74,18 +90,19 @@ enum SpeakerLabeling {
         }
     }
 
-    /// Known voices to prime the diarizer with. Anyone not enrolled comes back as
-    /// "Speaker 1", "Speaker 2", …
-    ///
-    /// Capped at the diarizer's speaker limit, oldest enrollments first, since
-    /// enrolled voices consume slots unenrolled participants would otherwise get.
-    static func enrollments(context: ModelContext) -> [SpeakerEnrollment] {
+    /// Every enrolled voice, oldest first. Which of them apply to a given meeting is
+    /// ``Meeting/participants(from:limit:)``' call, not ours.
+    static func allEnrolled(context: ModelContext) -> [EnrolledSpeaker] {
         let descriptor = FetchDescriptor<EnrolledSpeaker>(
             sortBy: [SortDescriptor(\.enrolledAt, order: .forward)]
         )
-        guard let speakers = try? context.fetch(descriptor) else { return [] }
+        return (try? context.fetch(descriptor)) ?? []
+    }
 
-        return speakers.prefix(SpeakerAttributionService.maximumSpeakers).compactMap { speaker in
+    /// Turns a roster into something the diarizer can be primed with, skipping anyone
+    /// whose sample file has gone missing.
+    static func enrollments(for speakers: [EnrolledSpeaker]) -> [SpeakerEnrollment] {
+        speakers.compactMap { speaker in
             guard let url = try? AudioStorage.url(forRelativePath: speaker.audioPath),
                   FileManager.default.fileExists(atPath: url.path)
             else {

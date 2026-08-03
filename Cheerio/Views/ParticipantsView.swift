@@ -40,7 +40,7 @@ struct ParticipantsView: View {
             } header: {
                 Text("Enrolled voices")
             } footer: {
-                Text("At most \(SpeakerAttributionService.maximumSpeakers) voices are used per meeting — enrolled voices take slots that unenrolled participants would otherwise get.")
+                Text("Save as many voices as you like. At most \(SpeakerAttributionService.maximumSpeakers) are primed for any one meeting, chosen per meeting under “Who was here” — so a voice that wasn't in the room doesn't take a slot from someone who was.")
                     .font(.caption)
             }
 
@@ -95,15 +95,37 @@ struct ParticipantsView: View {
     @ViewBuilder private func row(for speaker: EnrolledSpeaker) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(speaker.name)
+                HStack(spacing: 4) {
+                    Text(speaker.name)
+                    if speaker.isMe {
+                        Text("me")
+                            .font(.caption2.weight(.medium))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(.tint.opacity(0.15), in: .capsule)
+                    }
+                }
                 Text(durationLabel(for: speaker))
                     .font(.caption)
                     .foregroundStyle(speaker.hasEnoughAudio ? AnyShapeStyle(.secondary) : AnyShapeStyle(.orange))
             }
             Spacer()
+            // You're in every meeting you record, so this voice is pre-selected and is
+            // the last one the speaker cap drops.
+            Button(speaker.isMe ? "Not me" : "This is me") { setMe(speaker, isMe: !speaker.isMe) }
+                .buttonStyle(.borderless)
             Button("Remove", role: .destructive) { remove(speaker) }
                 .buttonStyle(.borderless)
         }
+    }
+
+    /// Only one voice can be you, so claiming it clears whoever held it before.
+    private func setMe(_ speaker: EnrolledSpeaker, isMe: Bool) {
+        for other in speakers where other.persistentModelID != speaker.persistentModelID {
+            other.isMe = false
+        }
+        speaker.isMe = isMe
+        try? context.save()
     }
 
     private func durationLabel(for speaker: EnrolledSpeaker) -> String {

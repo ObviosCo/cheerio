@@ -14,6 +14,9 @@ public final class EnrolledSpeaker {
     public var enrolledAt: Date
     /// Length of the reference recording, for showing whether it's long enough.
     public var duration: TimeInterval
+    /// Marks your own voice. You're in every meeting you record, so this one is
+    /// selected by default and kept first if the speaker cap has to drop someone.
+    public var isMe: Bool = false
 
     public init(name: String, audioPath: String, duration: TimeInterval, enrolledAt: Date = .now) {
         self.name = name

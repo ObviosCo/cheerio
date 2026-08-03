@@ -44,6 +44,13 @@ final class CaptureSession {
         try await TranscriptionEngine.ensureModel()
 
         let meeting = Meeting(title: title, calendarEventID: calendarEventID)
+        // Start the roster at just your own voice: you're the one person guaranteed to
+        // be here, and priming anyone else by default spends slots on people who may
+        // not be. Left nil when no voice is marked "me", which keeps the old
+        // everyone-enrolled behaviour.
+        if let me = SpeakerLabeling.allEnrolled(context: context).first(where: \.isMe) {
+            meeting.participantNames = [me.name]
+        }
         context.insert(meeting)
         self.meeting = meeting
         self.startedAt = .now

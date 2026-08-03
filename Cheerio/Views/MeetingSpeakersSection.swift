@@ -23,6 +23,15 @@ struct MeetingSpeakersSection: View {
         if !summaries.isEmpty {
             GroupBox {
                 VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Text("Who was here")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        ParticipantRosterMenu(meeting: meeting)
+                        Spacer()
+                    }
+                    Divider()
+
                     ForEach(summaries) { summary in
                         row(for: summary)
                     }

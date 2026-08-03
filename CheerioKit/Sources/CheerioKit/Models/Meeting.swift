@@ -22,6 +22,12 @@ public final class Meeting {
     public var enhancedNotes: String?
     /// Path to the recorded audio files, relative to Application Support. Nil once purged.
     public var audioDirectory: String?
+    /// Which enrolled voices were in this meeting, by name.
+    ///
+    /// Nil means nobody has said, which is not the same as `[]` — an empty roster is
+    /// the right answer for an all-remote call, where priming anyone is pointless
+    /// because the mic/system split already separates you from them.
+    public var participantNames: [String]?
 
     @Relationship(deleteRule: .cascade, inverse: \TranscriptSegment.meeting)
     public var segments: [TranscriptSegment] = []
@@ -160,6 +166,33 @@ extension Meeting {
             changed += 1
         }
         return changed
+    }
+
+    /// The enrolled voices to prime for this meeting, and anyone the diarizer's cap
+    /// forced out.
+    ///
+    /// Sortformer resolves at most `limit` speakers and every primed voice consumes one
+    /// of them, so priming someone who wasn't in the room costs a slot a real
+    /// participant needed — that's the whole reason a per-meeting roster exists rather
+    /// than "the first four enrolled". `dropped` is returned instead of silently
+    /// truncating, so callers can say who got left out.
+    public func participants(
+        from enrolled: [EnrolledSpeaker],
+        limit: Int
+    ) -> (chosen: [EnrolledSpeaker], dropped: [EnrolledSpeaker]) {
+        let selected: [EnrolledSpeaker]
+        if let participantNames {
+            let wanted = Set(participantNames)
+            selected = enrolled.filter { wanted.contains($0.name) }
+        } else {
+            // Nobody has chosen yet, so behave as the app did before rosters existed.
+            selected = enrolled
+        }
+
+        // Partition rather than sort: `sorted` isn't stable, and enrollment order is
+        // the only ordering the rest of the roster has.
+        let ordered = selected.filter(\.isMe) + selected.filter { !$0.isMe }
+        return (Array(ordered.prefix(limit)), Array(ordered.dropFirst(limit)))
     }
 
     /// The time ranges to excerpt for one speaker, for building an enrollment sample.

@@ -20,6 +20,10 @@ struct RecordingView: View {
                         .textFieldStyle(.plain)
                         .font(.title2.weight(.semibold))
                         .onSubmit { try? context.save() }
+                    // Set the roster while you can see who's in the room — the automatic
+                    // pass at the end of the recording uses it, so getting it right now
+                    // saves a re-identify later.
+                    ParticipantRosterMenu(meeting: meeting)
                     if let startedAt = session.startedAt {
                         Text(startedAt, style: .timer)
                             .font(.callout.monospacedDigit())
