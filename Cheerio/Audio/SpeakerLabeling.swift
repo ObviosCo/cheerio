@@ -49,7 +49,10 @@ enum SpeakerLabeling {
             let turns = try await service.attribute(audioFile: audioFile, enrolling: enrollments)
             guard !turns.isEmpty else { continue }
 
-            for segment in meeting.segments where segment.channel == channel {
+            // Manually named lines are left alone: a person who corrected a label
+            // outranks the model, and clobbering that would make correcting pointless.
+            for segment in meeting.segments
+            where segment.channel == channel && !segment.isSpeakerLabelManual {
                 segment.speakerLabel = SpeakerAttribution.dominantLabel(
                     start: segment.startTime,
                     end: segment.endTime,

@@ -1,10 +1,12 @@
 import CheerioKit
+import SwiftData
 import SwiftUI
 
 struct MeetingDetailView: View {
     let meeting: Meeting
 
     @Environment(\.modelContext) private var context
+    @Query(sort: \EnrolledSpeaker.enrolledAt) private var enrolled: [EnrolledSpeaker]
     @State private var isRelabeling = false
     @State private var relabelError: String?
     /// Expanded by default: opening an old meeting is usually about re-reading what
@@ -45,6 +47,8 @@ struct MeetingDetailView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+
+                MeetingSpeakersSection(meeting: meeting)
 
                 Divider()
                 transcript
@@ -118,13 +122,12 @@ struct MeetingDetailView: View {
                     .foregroundStyle(.secondary)
                     .padding(.top, 6)
             } else {
-                VStack(alignment: .leading, spacing: 6) {
+                // Lazy: a long meeting runs to hundreds of lines, and each one carries
+                // a menu now.
+                LazyVStack(alignment: .leading, spacing: 6) {
                     ForEach(sortedSegments) { segment in
                         HStack(alignment: .top, spacing: 8) {
-                            Text(segment.displayLabel)
-                                .font(.caption.bold())
-                                .foregroundStyle(segment.channel == .me ? .blue : .secondary)
-                                .frame(width: 72, alignment: .trailing)
+                            speakerMenu(for: segment)
                             Text(segment.text)
                                 .font(.callout)
                                 .textSelection(.enabled)
@@ -137,6 +140,56 @@ struct MeetingDetailView: View {
         } label: {
             Text("Transcript (\(meeting.segments.count) segments)")
                 .font(.headline)
+        }
+    }
+
+    /// The speaker label, as a menu for fixing one line. Whole-speaker renames live in
+    /// ``MeetingSpeakersSection`` — this is for the odd line the diarizer put on the
+    /// wrong person.
+    private func speakerMenu(for segment: TranscriptSegment) -> some View {
+        Menu {
+            ForEach(otherLabels(besides: segment.displayLabel), id: \.self) { label in
+                Button(label) {
+                    segment.assignSpeaker(label)
+                    save()
+                }
+            }
+            if segment.isSpeakerLabelManual {
+                Divider()
+                Button("Undo my change") {
+                    segment.assignSpeaker(nil)
+                    save()
+                }
+            }
+        } label: {
+            HStack(spacing: 2) {
+                if segment.isSpeakerLabelManual {
+                    Image(systemName: "hand.raised.fill").font(.system(size: 7))
+                }
+                Text(segment.displayLabel)
+            }
+            .font(.caption.bold())
+            .foregroundStyle(segment.channel == .me ? .blue : .secondary)
+            .frame(width: 72, alignment: .trailing)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+    }
+
+    /// Every other speaker in this meeting, plus anyone enrolled — the plausible set
+    /// of people a misattributed line could belong to.
+    private func otherLabels(besides label: String) -> [String] {
+        var seen = Set([label])
+        return (meeting.speakerSummaries.map(\.label) + enrolled.map(\.name))
+            .filter { seen.insert($0).inserted }
+    }
+
+    private func save() {
+        do {
+            try context.save()
+        } catch {
+            relabelError = error.localizedDescription
         }
     }
 

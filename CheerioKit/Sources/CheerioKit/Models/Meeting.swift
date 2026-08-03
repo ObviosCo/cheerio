@@ -71,6 +71,10 @@ public final class TranscriptSegment {
     /// Who spoke, once diarization has run. Nil until then, and nil for meetings
     /// recorded before diarization existed.
     public var speakerLabel: String?
+    /// Set when a person named this line rather than the diarizer. Re-identifying
+    /// speakers leaves these alone — a human correction outranks the model, and
+    /// losing it to a later re-run would make correcting anything pointless.
+    public var isSpeakerLabelManual: Bool = false
     public var meeting: Meeting?
 
     public var channel: SpeakerChannel {
@@ -88,5 +92,80 @@ public final class TranscriptSegment {
         self.text = text
         self.startTime = startTime
         self.endTime = endTime
+    }
+
+    /// Names this line by hand. Passing nil reverts it to the capture channel and
+    /// hands it back to the diarizer.
+    public func assignSpeaker(_ label: String?) {
+        speakerLabel = label
+        isSpeakerLabelManual = label != nil
+    }
+}
+
+/// One speaker as they appear in a single meeting, keyed by the label shown on their
+/// lines — which may be an enrolled name, a "Speaker 2", or a bare channel fallback.
+public struct SpeakerSummary: Identifiable, Sendable, Equatable {
+    public let label: String
+    public let lineCount: Int
+    public let duration: TimeInterval
+    /// The channel most of this speaker's audio came from, i.e. which CAF to excerpt.
+    public let channel: SpeakerChannel
+    /// True when every line under this label was named by hand.
+    public let isManual: Bool
+
+    public var id: String { label }
+}
+
+extension Meeting {
+    /// The distinct speakers in this meeting, most talkative first.
+    ///
+    /// Grouped by `displayLabel` rather than `speakerLabel` so a meeting that was
+    /// never diarized still lists its "Me"/"Them" speakers and can be corrected.
+    public var speakerSummaries: [SpeakerSummary] {
+        var order: [String] = []
+        var grouped: [String: [TranscriptSegment]] = [:]
+        for segment in segments {
+            let label = segment.displayLabel
+            if grouped[label] == nil { order.append(label) }
+            grouped[label, default: []].append(segment)
+        }
+
+        return order.compactMap { label -> SpeakerSummary? in
+            guard let group = grouped[label], let first = group.first else { return nil }
+            let duration = group.reduce(0) { $0 + max(0, $1.endTime - $1.startTime) }
+            // Whichever channel carries more of this speaker is the one to excerpt from.
+            let meSeconds = group.filter { $0.channel == .me }
+                .reduce(0) { $0 + max(0, $1.endTime - $1.startTime) }
+            return SpeakerSummary(
+                label: label,
+                lineCount: group.count,
+                duration: duration,
+                channel: meSeconds * 2 >= duration ? .me : (first.channel == .me ? .them : first.channel),
+                isManual: group.allSatisfy(\.isSpeakerLabelManual)
+            )
+        }
+        .sorted { $0.duration > $1.duration }
+    }
+
+    /// Renames every line currently shown as `label`. Passing nil for `newLabel`
+    /// reverts them to the capture channel. Returns how many lines changed.
+    ///
+    /// This is the fix for the diarizer splitting one person across two slots: the
+    /// phantom's lines get merged into the real speaker in one move.
+    @discardableResult
+    public func relabelSpeaker(_ label: String, to newLabel: String?) -> Int {
+        var changed = 0
+        for segment in segments where segment.displayLabel == label {
+            segment.assignSpeaker(newLabel)
+            changed += 1
+        }
+        return changed
+    }
+
+    /// The time ranges to excerpt for one speaker, for building an enrollment sample.
+    public func ranges(forSpeaker label: String, channel: SpeakerChannel) -> [AudioExcerpt.Range] {
+        segments
+            .filter { $0.displayLabel == label && $0.channel == channel }
+            .map { AudioExcerpt.Range(start: $0.startTime, end: $0.endTime) }
     }
 }
