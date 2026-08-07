@@ -19,18 +19,20 @@ Speaker differentiation *is* verified for in-person meetings: on 2026-07-31, wit
 
 ```sh
 brew install xcodegen     # if needed
-./Scripts/fetch-models.sh # ~93 MB diarization model, not committed
-xcodegen generate
+./Scripts/bootstrap.sh    # checks tooling, fetches the model, generates the project
 open Cheerio.xcodeproj    # scheme: Cheerio
 ```
 
 Requires macOS 26+, Xcode 26+. Package tests: `cd CheerioKit && swift test`.
 
-The fetch script is idempotent, checksum-verified, and also runs as a pre-build
-phase — but `xcodegen generate` needs the model directory to already exist, so run
-it first on a fresh clone. The model is licensed under the **NVIDIA Open Model
-License**, not MIT; keeping it out of the repo keeps the source tree MIT while the
-built app ships an NVIDIA-licensed model.
+`bootstrap.sh` wraps `fetch-models.sh` + `xcodegen generate` because the order is
+load-bearing: `project.yml` references the `.mlmodelc` as a folder reference, so
+generating before the model exists fails with a spec-validation error that names a
+file you've never heard of. The pre-build phase can't save you there — you can't get
+a build phase without a project. Both steps are idempotent; re-run after adding or
+removing files. The model is licensed under the **NVIDIA Open Model License**, not
+MIT; keeping it out of the repo keeps the source tree MIT while the built app ships
+an NVIDIA-licensed model.
 
 ## Immediate tasks
 

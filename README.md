@@ -76,11 +76,7 @@ git clone https://github.com/ObviosCo/cheerio.git && cd cheerio
 ```
 
 ```sh
-./Scripts/fetch-models.sh
-```
-
-```sh
-xcodegen generate
+./Scripts/bootstrap.sh
 ```
 
 ```sh
@@ -89,12 +85,13 @@ open Cheerio.xcodeproj
 
 Then build and run the `Cheerio` scheme.
 
-**Run the fetch script before `xcodegen generate`.** It downloads the ~93 MB Sortformer
-diarization model, which is not committed to the repo. It also runs as a pre-build phase, but
-`xcodegen generate` needs the model directory to already exist on a fresh clone. The script is
-idempotent and checksum-verified against pinned hashes, so re-running it is a no-op.
+`bootstrap.sh` checks that XcodeGen is installed and that a full Xcode is selected, downloads
+the ~93 MB Sortformer diarization model (not committed to the repo), and generates the Xcode
+project — in that order, which matters: `project.yml` references the model as a folder
+reference, so `xcodegen generate` fails on a fresh clone if the model isn't there yet. Every
+step is idempotent, so re-running it is cheap.
 
-If you add or remove source files, re-run `xcodegen generate` or the build won't see them.
+Re-run it after adding or removing source files, or the build won't see them.
 
 To build from the command line:
 
@@ -165,7 +162,7 @@ unsandboxed. Hardened runtime stays on.
 ```
 cheerio/
 ├── project.yml       # XcodeGen config → generates Cheerio.xcodeproj
-├── Scripts/          # fetch-models.sh — downloads the diarization model
+├── Scripts/          # bootstrap.sh — fresh checkout → buildable, in one command
 ├── CheerioKit/       # SwiftPM package: portable core (macOS + future iOS)
 │   └── Sources/CheerioKit/
 │       ├── Models/           # SwiftData: Meeting, TranscriptSegment, EnrolledSpeaker

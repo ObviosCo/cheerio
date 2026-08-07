@@ -5,7 +5,7 @@
 ```
 cheerio/
 ├── project.yml          # XcodeGen config → generates Cheerio.xcodeproj
-├── Scripts/             # fetch-models.sh — pulls the diarization model (not committed)
+├── Scripts/             # bootstrap.sh (fresh checkout → buildable), fetch-models.sh
 ├── CheerioKit/          # SwiftPM package: platform-portable core (macOS + future iOS)
 │   └── Sources/CheerioKit/
 │       ├── Models/          # SwiftData models: Meeting, TranscriptSegment, EnrolledSpeaker
@@ -26,7 +26,9 @@ Rule: anything that could run on iOS goes in `CheerioKit`. System-audio capture 
 
 One third-party package: **FluidAudio** (Apache-2.0), pinned to an exact version. It wraps NVIDIA's Sortformer diarization model for Core ML / the Neural Engine.
 
-The model itself (~93 MB) is not committed. `Scripts/fetch-models.sh` downloads it against pinned SHA-256 hashes, and runs both as a pre-build phase and by hand on a fresh clone — `xcodegen generate` needs the directory to exist before it can reference it. The model carries the **NVIDIA Open Model License**, not MIT: keeping it out of the tree is what lets the source stay MIT while a built app ships an NVIDIA-licensed model.
+The model itself (~93 MB) is not committed. `Scripts/fetch-models.sh` downloads it against pinned SHA-256 hashes and also runs as a pre-build phase. The model carries the **NVIDIA Open Model License**, not MIT: keeping it out of the tree is what lets the source stay MIT while a built app ships an NVIDIA-licensed model.
+
+`Scripts/bootstrap.sh` is what a fresh checkout should run — it verifies the toolchain, fetches the model, and generates the project in that order. The order is load-bearing: `project.yml` references the `.mlmodelc` as a folder reference, so `xcodegen generate` refuses to write a project until the model is on disk, and the pre-build phase can't cover that gap because there's no project yet to hang a phase on.
 
 It is fetched at *build* time, never at runtime. Cheerio has no networking code, so a runtime download is not an option available to it.
 
