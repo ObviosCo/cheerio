@@ -189,6 +189,9 @@ macOS-only Core Audio, so it stays in the app target.
 Design notes and the gotchas worth knowing before you touch the audio path:
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
+What the app still needs from a designer — an icon, an identity, and a review of the UI:
+[`docs/DESIGN-HANDOFF.md`](docs/DESIGN-HANDOFF.md).
+
 ## Roadmap
 
 Near-term: acoustic echo cancellation on the mic, verification against a live video call, a
