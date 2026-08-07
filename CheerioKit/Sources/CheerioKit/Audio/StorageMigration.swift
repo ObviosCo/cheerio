@@ -2,44 +2,25 @@ import Foundation
 import OSLog
 import SwiftData
 
-/// Moves data out of the shared Application Support directory and into Cheerio's
-/// own container.
+/// Moves meeting audio out of the shared Application Support directory and into
+/// Cheerio's own container.
 ///
-/// Early unsandboxed builds wrote `default.store` and `Meetings/<uuid>/` directly
-/// into `~/Library/Application Support`, which is shared between apps — and
-/// already contained an unrelated app's `Meetings` folder. This relocates our data
-/// and is careful to touch **only** paths we know we created.
+/// Early unsandboxed builds wrote `Meetings/<uuid>/` directly into
+/// `~/Library/Application Support`, which is shared between apps — and already
+/// contained an unrelated app's `Meetings` folder. This relocates our data and is
+/// careful to touch **only** paths we know we created.
+///
+/// There was a matching store migration; it's gone. It keyed off a `default.store` in
+/// the shared directory, but that's SwiftData's *default* filename, so such a file is
+/// as likely to belong to another unsandboxed app as to us — and moving it would both
+/// break that app and hand us a database we can't open. Nothing established
+/// provenance, the multi-file move wasn't atomic (a store that moved without its
+/// `-wal` would then open every launch minus its uncheckpointed writes), and the
+/// fallback its comment described didn't exist, since the app always opened the
+/// container path regardless. The one store it was written for has long since moved,
+/// so the whole thing was risk with nothing left to gain.
 public enum StorageMigration {
     private static let log = Logger(subsystem: "app.cheerio.mac", category: "StorageMigration")
-    private static let storeFileNames = ["default.store", "default.store-shm", "default.store-wal"]
-
-    /// Relocates the SwiftData store. Must run *before* the `ModelContainer` opens,
-    /// or SQLite will hold the old files open.
-    public static func migrateStoreIfNeeded() {
-        do {
-            let source = try AudioStorage.sharedApplicationSupport()
-            let destination = try AudioStorage.applicationSupport()
-            let fileManager = FileManager.default
-
-            // The store's sidecar files must travel with it, so bail out entirely if
-            // the destination already has a store — a half-merged pair would be worse
-            // than leaving the old one alone.
-            let destinationStore = destination.appending(path: storeFileNames[0])
-            guard !fileManager.fileExists(atPath: destinationStore.path) else { return }
-            guard fileManager.fileExists(atPath: source.appending(path: storeFileNames[0]).path) else { return }
-
-            for name in storeFileNames {
-                let old = source.appending(path: name)
-                guard fileManager.fileExists(atPath: old.path) else { continue }
-                try fileManager.moveItem(at: old, to: destination.appending(path: name))
-            }
-            log.notice("Moved the store into \(destination.lastPathComponent, privacy: .public)")
-        } catch {
-            // A failed move leaves the old store in place, so the app still opens —
-            // against the old location, since the new one has no store.
-            log.error("Store migration failed: \(error)")
-        }
-    }
 
     /// Relocates each meeting's audio directory.
     ///

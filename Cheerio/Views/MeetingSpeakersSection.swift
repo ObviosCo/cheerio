@@ -63,7 +63,7 @@ struct MeetingSpeakersSection: View {
 
     private func row(for summary: SpeakerSummary) -> some View {
         HStack(spacing: 8) {
-            Text(summary.label)
+            Text(summary.displayName)
                 .font(.callout.weight(.medium))
             if summary.isManual {
                 Image(systemName: "hand.raised.fill")
@@ -78,7 +78,7 @@ struct MeetingSpeakersSection: View {
             Spacer()
 
             Menu("Rename") {
-                let others = candidates(excluding: summary.label)
+                let others = candidates(for: summary)
                 if others.isEmpty {
                     Text("Enroll a voice in Settings → Participants first")
                 } else {
@@ -105,14 +105,24 @@ struct MeetingSpeakersSection: View {
 
     /// Enrolled names plus the other speakers in this meeting — merging into a
     /// sibling label is how a split speaker gets put back together.
-    private func candidates(excluding label: String) -> [String] {
-        let fromMeeting = meeting.speakerSummaries.map(\.label)
-        var seen = Set([label])
-        return (enrolled.map(\.name) + fromMeeting).filter { seen.insert($0).inserted }
+    ///
+    /// Another channel's diarizer label is excluded: those are unrelated people, so
+    /// offering to merge into one would only create the confusion this scoping fixed.
+    private func candidates(for summary: SpeakerSummary) -> [String] {
+        var seen = Set([summary.label])
+        var names: [String] = []
+        for name in enrolled.map(\.name) where seen.insert(name).inserted {
+            names.append(name)
+        }
+        for other in meeting.speakerSummaries where other.id != summary.id {
+            if let scoped = other.scopedChannel, scoped != summary.channel { continue }
+            if seen.insert(other.label).inserted { names.append(other.label) }
+        }
+        return names
     }
 
     private func relabel(_ summary: SpeakerSummary, to newLabel: String?) {
-        meeting.relabelSpeaker(summary.label, to: newLabel)
+        meeting.relabelSpeaker(summary, to: newLabel)
         do {
             try context.save()
         } catch {
@@ -129,13 +139,13 @@ struct MeetingSpeakersSection: View {
                 .appending(path: "\(summary.channel.rawValue).caf")
             let (samplePath, sampleURL) = try AudioStorage.makeSpeakerSampleFile()
             let duration = try AudioExcerpt.write(
-                meeting.ranges(forSpeaker: summary.label, channel: summary.channel),
+                meeting.ranges(for: summary),
                 from: source,
                 to: sampleURL
             )
             context.insert(EnrolledSpeaker(name: name, audioPath: samplePath, duration: duration))
             // Now that this speaker has a name, put it on their lines too.
-            meeting.relabelSpeaker(summary.label, to: name)
+            meeting.relabelSpeaker(summary, to: name)
             try context.save()
         } catch {
             errorMessage = error.localizedDescription
@@ -145,9 +155,9 @@ struct MeetingSpeakersSection: View {
 
 extension SpeakerSummary {
     /// True for labels the app invented — "Speaker 2", "Me", "Them" — as opposed to a
-    /// real name worth pre-filling.
+    /// real name worth pre-filling into the enrollment sheet.
     var isGeneratedLabel: Bool {
-        label == "Me" || label == "Them" || label.hasPrefix("Speaker ")
+        label == "Me" || label == "Them" || TranscriptSegment.isDiarizerGeneratedLabel(label)
     }
 }
 

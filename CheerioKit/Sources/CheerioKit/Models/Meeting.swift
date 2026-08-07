@@ -106,12 +106,29 @@ public final class TranscriptSegment {
         speakerLabel = label
         isSpeakerLabelManual = label != nil
     }
+
+    /// True for labels the diarizer invented, like "Speaker 2".
+    ///
+    /// These are numbered per diarization run and we run once per channel, so
+    /// "Speaker 1" from the mic and "Speaker 1" from the system tap are *different
+    /// people*. Anything else — an enrolled name, a hand-typed one — does mean the
+    /// same person whichever channel it turns up on.
+    public static func isDiarizerGeneratedLabel(_ label: String?) -> Bool {
+        guard let label, label.hasPrefix("Speaker ") else { return false }
+        let number = label.dropFirst("Speaker ".count)
+        return !number.isEmpty && number.allSatisfy(\.isNumber)
+    }
 }
 
 /// One speaker as they appear in a single meeting, keyed by the label shown on their
 /// lines — which may be an enrolled name, a "Speaker 2", or a bare channel fallback.
 public struct SpeakerSummary: Identifiable, Sendable, Equatable {
     public let label: String
+    /// Set when `label` is one the diarizer invented, because those are only
+    /// meaningful within the channel they came from — see
+    /// ``TranscriptSegment/isDiarizerGeneratedLabel(_:)``. Nil for real names, which
+    /// identify the same person on either channel and so should merge.
+    public let scopedChannel: SpeakerChannel?
     public let lineCount: Int
     public let duration: TimeInterval
     /// The channel most of this speaker's audio came from, i.e. which CAF to excerpt.
@@ -119,7 +136,24 @@ public struct SpeakerSummary: Identifiable, Sendable, Equatable {
     /// True when every line under this label was named by hand.
     public let isManual: Bool
 
-    public var id: String { label }
+    public var id: String {
+        // Unit separator: can't occur in a label, so it can't collide.
+        scopedChannel.map { "\(label)\u{1F}\($0.rawValue)" } ?? label
+    }
+
+    /// What to show. Two unrelated "Speaker 1"s need telling apart, and where they
+    /// were sitting is the useful distinction.
+    public var displayName: String {
+        guard let scopedChannel else { return label }
+        return "\(label) · \(scopedChannel == .me ? "in room" : "remote")"
+    }
+
+    /// Whether this segment is one of the lines this summary covers.
+    public func matches(_ segment: TranscriptSegment) -> Bool {
+        guard segment.displayLabel == label else { return false }
+        guard let scopedChannel else { return true }
+        return segment.channel == scopedChannel
+    }
 }
 
 extension Meeting {
@@ -127,41 +161,57 @@ extension Meeting {
     ///
     /// Grouped by `displayLabel` rather than `speakerLabel` so a meeting that was
     /// never diarized still lists its "Me"/"Them" speakers and can be corrected.
+    ///
+    /// Diarizer-generated labels are additionally scoped to their channel: the two
+    /// channels are diarized independently, so merging the mic's "Speaker 1" with the
+    /// system tap's would fuse two unrelated people into one row — and then rename
+    /// both of them together.
     public var speakerSummaries: [SpeakerSummary] {
-        var order: [String] = []
-        var grouped: [String: [TranscriptSegment]] = [:]
-        for segment in segments {
-            let label = segment.displayLabel
-            if grouped[label] == nil { order.append(label) }
-            grouped[label, default: []].append(segment)
+        struct Key: Hashable {
+            let label: String
+            let channel: SpeakerChannel?
         }
 
-        return order.compactMap { label -> SpeakerSummary? in
-            guard let group = grouped[label], let first = group.first else { return nil }
+        var order: [Key] = []
+        var grouped: [Key: [TranscriptSegment]] = [:]
+        for segment in segments {
+            let scoped = TranscriptSegment.isDiarizerGeneratedLabel(segment.speakerLabel)
+                ? segment.channel
+                : nil
+            let key = Key(label: segment.displayLabel, channel: scoped)
+            if grouped[key] == nil { order.append(key) }
+            grouped[key, default: []].append(segment)
+        }
+
+        return order.compactMap { key -> SpeakerSummary? in
+            guard let group = grouped[key] else { return nil }
             let duration = group.reduce(0) { $0 + max(0, $1.endTime - $1.startTime) }
             // Whichever channel carries more of this speaker is the one to excerpt from.
             let meSeconds = group.filter { $0.channel == .me }
                 .reduce(0) { $0 + max(0, $1.endTime - $1.startTime) }
             return SpeakerSummary(
-                label: label,
+                label: key.label,
+                scopedChannel: key.channel,
                 lineCount: group.count,
                 duration: duration,
-                channel: meSeconds * 2 >= duration ? .me : (first.channel == .me ? .them : first.channel),
+                channel: key.channel ?? (meSeconds * 2 >= duration ? .me : .them),
                 isManual: group.allSatisfy(\.isSpeakerLabelManual)
             )
         }
         .sorted { $0.duration > $1.duration }
     }
 
-    /// Renames every line currently shown as `label`. Passing nil for `newLabel`
-    /// reverts them to the capture channel. Returns how many lines changed.
+    /// Renames every line this speaker is on. Passing nil for `newLabel` reverts them
+    /// to the capture channel. Returns how many lines changed.
     ///
     /// This is the fix for the diarizer splitting one person across two slots: the
-    /// phantom's lines get merged into the real speaker in one move.
+    /// phantom's lines get merged into the real speaker in one move. Takes a summary
+    /// rather than a bare label so a channel-scoped "Speaker 1" only renames its own
+    /// channel's lines.
     @discardableResult
-    public func relabelSpeaker(_ label: String, to newLabel: String?) -> Int {
+    public func relabelSpeaker(_ speaker: SpeakerSummary, to newLabel: String?) -> Int {
         var changed = 0
-        for segment in segments where segment.displayLabel == label {
+        for segment in segments where speaker.matches(segment) {
             segment.assignSpeaker(newLabel)
             changed += 1
         }
@@ -176,8 +226,11 @@ extension Meeting {
     /// participant needed — that's the whole reason a per-meeting roster exists rather
     /// than "the first four enrolled". `dropped` is returned instead of silently
     /// truncating, so callers can say who got left out.
+    /// Pass the channel being diarized so the cap is spent on voices that could
+    /// actually appear on it. Nil asks for the roster as a whole, for display.
     public func participants(
         from enrolled: [EnrolledSpeaker],
+        channel: SpeakerChannel? = nil,
         limit: Int
     ) -> (chosen: [EnrolledSpeaker], dropped: [EnrolledSpeaker]) {
         let selected: [EnrolledSpeaker]
@@ -189,16 +242,22 @@ extension Meeting {
             selected = enrolled
         }
 
+        // You can't be on the far end of your own call, so your voice isn't a candidate
+        // for the system tap at all. Dropping it *before* the cap matters: capping first
+        // and filtering after would leave that channel priming three voices while a
+        // real remote participant sat in `dropped`.
+        let candidates = channel == .them ? selected.filter { !$0.isMe } : selected
+
         // Partition rather than sort: `sorted` isn't stable, and enrollment order is
         // the only ordering the rest of the roster has.
-        let ordered = selected.filter(\.isMe) + selected.filter { !$0.isMe }
+        let ordered = candidates.filter(\.isMe) + candidates.filter { !$0.isMe }
         return (Array(ordered.prefix(limit)), Array(ordered.dropFirst(limit)))
     }
 
     /// The time ranges to excerpt for one speaker, for building an enrollment sample.
-    public func ranges(forSpeaker label: String, channel: SpeakerChannel) -> [AudioExcerpt.Range] {
+    public func ranges(for speaker: SpeakerSummary) -> [AudioExcerpt.Range] {
         segments
-            .filter { $0.displayLabel == label && $0.channel == channel }
+            .filter { speaker.matches($0) && $0.channel == speaker.channel }
             .map { AudioExcerpt.Range(start: $0.startTime, end: $0.endTime) }
     }
 }

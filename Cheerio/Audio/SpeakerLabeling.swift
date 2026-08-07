@@ -37,17 +37,7 @@ enum SpeakerLabeling {
         else { throw LabelingError.audioUnavailable }
 
         let service = SpeakerAttributionService(modelURL: modelURL)
-        let (roster, dropped) = meeting.participants(
-            from: allEnrolled(context: context),
-            limit: SpeakerAttributionService.maximumSpeakers
-        )
-        if !dropped.isEmpty {
-            // Never truncate quietly: someone who was in the room coming back as
-            // "Speaker 2" with no explanation is the failure this roster exists to stop.
-            log.error(
-                "Speaker cap left out \(dropped.map(\.name).joined(separator: ", "), privacy: .public) — deselect someone in this meeting's roster"
-            )
-        }
+        let enrolled = allEnrolled(context: context)
 
         // Each channel is diarized against its own recording: in-room voices land on
         // the mic, remote participants on the system tap.
@@ -56,12 +46,25 @@ enum SpeakerLabeling {
             let audioFile = directory.appending(path: "\(channel.rawValue).caf")
             guard FileManager.default.fileExists(atPath: audioFile.path) else { continue }
 
-            // You can't be on the far end of your own call, so priming your voice
-            // against the system tap would burn a slot a remote participant needs.
-            let forChannel = channel == .them ? roster.filter { !$0.isMe } : roster
+            // Per channel, not once for both: each diarization run has its own cap, and
+            // your own voice isn't a candidate on the system tap — so that channel gets
+            // a full complement of remote voices rather than three.
+            let (roster, dropped) = meeting.participants(
+                from: enrolled,
+                channel: channel,
+                limit: SpeakerAttributionService.maximumSpeakers
+            )
+            if !dropped.isEmpty {
+                // Never truncate quietly: someone who was in the room coming back as
+                // "Speaker 2" with no explanation is what the roster exists to prevent.
+                log.error(
+                    "Speaker cap left \(dropped.map(\.name).joined(separator: ", "), privacy: .public) out of the \(channel.rawValue, privacy: .public) channel — deselect someone in this meeting's roster"
+                )
+            }
+
             let turns = try await service.attribute(
                 audioFile: audioFile,
-                enrolling: enrollments(for: forChannel)
+                enrolling: enrollments(for: roster)
             )
             guard !turns.isEmpty else { continue }
 

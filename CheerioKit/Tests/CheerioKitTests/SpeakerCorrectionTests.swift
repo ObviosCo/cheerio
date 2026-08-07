@@ -21,6 +21,15 @@ import Testing
         return meeting
     }
 
+    /// Look a speaker up the way the UI does, by the row the user clicked.
+    private func summary(in meeting: Meeting, _ label: String, channel: SpeakerChannel? = nil) -> SpeakerSummary {
+        let matches = meeting.speakerSummaries.filter {
+            $0.label == label && (channel == nil || $0.scopedChannel == channel)
+        }
+        precondition(matches.count == 1, "expected exactly one “\(label)” speaker, found \(matches.count)")
+        return matches[0]
+    }
+
     @Test func summariesGroupByLabelMostTalkativeFirst() {
         let summaries = splitSpeakerMeeting().speakerSummaries
         #expect(summaries.map(\.label) == ["Glen", "Speaker 3", "Jackson"])
@@ -31,7 +40,7 @@ import Testing
 
     @Test func mergingASplitSpeakerRelabelsEveryLine() {
         let meeting = splitSpeakerMeeting()
-        #expect(meeting.relabelSpeaker("Speaker 3", to: "Glen") == 1)
+        #expect(meeting.relabelSpeaker(summary(in: meeting, "Speaker 3"), to: "Glen") == 1)
 
         let summaries = meeting.speakerSummaries
         #expect(summaries.map(\.label) == ["Glen", "Jackson"])
@@ -42,7 +51,7 @@ import Testing
 
     @Test func resettingASpeakerFallsBackToTheChannelAndDropsTheManualFlag() {
         let meeting = splitSpeakerMeeting()
-        meeting.relabelSpeaker("Speaker 3", to: nil)
+        meeting.relabelSpeaker(summary(in: meeting, "Speaker 3"), to: nil)
 
         // Back to the capture channel, and handed back to the diarizer.
         #expect(meeting.speakerSummaries.contains { $0.label == "Me" })
@@ -57,15 +66,76 @@ import Testing
             TranscriptSegment(channel: .them, text: "hello", startTime: 2, endTime: 3),
         ]
         #expect(meeting.speakerSummaries.map(\.label) == ["Me", "Them"])
-        #expect(meeting.relabelSpeaker("Me", to: "Jackson") == 1)
+        #expect(meeting.relabelSpeaker(summary(in: meeting, "Me"), to: "Jackson") == 1)
         #expect(meeting.speakerSummaries.map(\.label) == ["Jackson", "Them"])
     }
 
     @Test func rangesCoverOnlyTheRequestedSpeakerAndChannel() {
         let meeting = splitSpeakerMeeting()
-        let ranges = meeting.ranges(forSpeaker: "Glen", channel: .me)
+        let ranges = meeting.ranges(for: summary(in: meeting, "Glen"))
         #expect(ranges == [AudioExcerpt.Range(start: 19.3, end: 22.1)])
-        #expect(meeting.ranges(forSpeaker: "Glen", channel: .them).isEmpty)
+    }
+
+    /// The two channels are diarized independently, so their generated numbering is
+    /// independent too: the mic's "Speaker 1" and the system tap's are different
+    /// people. Grouping them together fused two strangers into one row and renamed
+    /// both at once.
+    @Test func generatedLabelsDoNotMergeAcrossChannels() {
+        let meeting = Meeting(title: "Hybrid call")
+        meeting.segments = [
+            ("Speaker 1", SpeakerChannel.me, 0.0, 4.0),
+            ("Speaker 1", .them, 5.0, 6.0),
+        ].map { label, channel, start, end in
+            let segment = TranscriptSegment(channel: channel, text: label, startTime: start, endTime: end)
+            segment.speakerLabel = label
+            return segment
+        }
+
+        let summaries = meeting.speakerSummaries
+        #expect(summaries.count == 2)
+        #expect(summaries.map(\.scopedChannel) == [.me, .them])
+        // Distinguishable in the UI, and distinct as far as SwiftUI identity goes.
+        #expect(Set(summaries.map(\.id)).count == 2)
+        #expect(summaries.map(\.displayName) == ["Speaker 1 · in room", "Speaker 1 · remote"])
+
+        // Renaming one must not touch the other.
+        #expect(meeting.relabelSpeaker(summary(in: meeting, "Speaker 1", channel: .me), to: "Glen") == 1)
+        #expect(meeting.speakerSummaries.map(\.label).sorted() == ["Glen", "Speaker 1"])
+
+        // And an excerpt for one must not pull in the other's audio.
+        let remote = summary(in: meeting, "Speaker 1", channel: .them)
+        #expect(meeting.ranges(for: remote) == [AudioExcerpt.Range(start: 5, end: 6)])
+    }
+
+    /// An enrolled name is the same person whichever channel they turn up on — someone
+    /// in the room whose voice also comes down the call feed shouldn't split in two.
+    @Test func realNamesStillMergeAcrossChannels() {
+        let meeting = Meeting(title: "Hybrid call")
+        meeting.segments = [
+            ("Glen", SpeakerChannel.me, 0.0, 4.0),
+            ("Glen", .them, 5.0, 6.0),
+        ].map { label, channel, start, end in
+            let segment = TranscriptSegment(channel: channel, text: label, startTime: start, endTime: end)
+            segment.speakerLabel = label
+            return segment
+        }
+
+        let summaries = meeting.speakerSummaries
+        #expect(summaries.count == 1)
+        #expect(summaries[0].scopedChannel == nil)
+        #expect(summaries[0].displayName == "Glen")
+        // Most of his audio is on the mic, so that's the recording to excerpt from.
+        #expect(summaries[0].channel == .me)
+    }
+
+    @Test func onlyNumberedSpeakerLabelsCountAsGenerated() {
+        #expect(TranscriptSegment.isDiarizerGeneratedLabel("Speaker 1"))
+        #expect(TranscriptSegment.isDiarizerGeneratedLabel("Speaker 12"))
+        // A real person who happens to be named this way must not be channel-scoped.
+        #expect(!TranscriptSegment.isDiarizerGeneratedLabel("Speaker Pelosi"))
+        #expect(!TranscriptSegment.isDiarizerGeneratedLabel("Speaker "))
+        #expect(!TranscriptSegment.isDiarizerGeneratedLabel("Glen"))
+        #expect(!TranscriptSegment.isDiarizerGeneratedLabel(nil))
     }
 
     @Test func mergingRangesCombinesOverlapsAndDropsEmpties() {

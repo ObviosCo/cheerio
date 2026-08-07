@@ -11,8 +11,6 @@ struct CheerioApp: App {
     private let container: ModelContainer
 
     init() {
-        // Must happen before the container opens, or SQLite pins the old files.
-        StorageMigration.migrateStoreIfNeeded()
         do {
             let configuration = try ModelConfiguration(url: AudioStorage.storeURL())
             container = try ModelContainer(

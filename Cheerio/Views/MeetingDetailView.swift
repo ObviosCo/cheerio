@@ -148,7 +148,7 @@ struct MeetingDetailView: View {
     /// wrong person.
     private func speakerMenu(for segment: TranscriptSegment) -> some View {
         Menu {
-            ForEach(otherLabels(besides: segment.displayLabel), id: \.self) { label in
+            ForEach(candidateLabels(for: segment), id: \.self) { label in
                 Button(label) {
                     segment.assignSpeaker(label)
                     save()
@@ -177,12 +177,20 @@ struct MeetingDetailView: View {
         .fixedSize()
     }
 
-    /// Every other speaker in this meeting, plus anyone enrolled — the plausible set
-    /// of people a misattributed line could belong to.
-    private func otherLabels(besides label: String) -> [String] {
-        var seen = Set([label])
-        return (meeting.speakerSummaries.map(\.label) + enrolled.map(\.name))
-            .filter { seen.insert($0).inserted }
+    /// Who this line could plausibly belong to: anyone enrolled, plus the other
+    /// speakers on this line's own channel. Another channel's "Speaker 1" is an
+    /// unrelated person, so it isn't offered.
+    private func candidateLabels(for segment: TranscriptSegment) -> [String] {
+        var seen = Set([segment.displayLabel])
+        var labels: [String] = []
+        for name in enrolled.map(\.name) where seen.insert(name).inserted {
+            labels.append(name)
+        }
+        for summary in meeting.speakerSummaries {
+            if let scoped = summary.scopedChannel, scoped != segment.channel { continue }
+            if seen.insert(summary.label).inserted { labels.append(summary.label) }
+        }
+        return labels
     }
 
     private func save() {

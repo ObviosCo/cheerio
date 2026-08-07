@@ -62,6 +62,28 @@ import Testing
         #expect(Set(chosen.map(\.name)).isDisjoint(with: dropped.map(\.name)))
     }
 
+    /// The system tap can't carry your own voice, so filtering it must happen *before*
+    /// the cap — otherwise that channel primes three voices and leaves a real remote
+    /// participant sitting in `dropped` while a slot goes unused.
+    @Test func theSystemChannelSpendsEverySlotOnRemoteVoices() {
+        let meeting = Meeting(title: "Crowded call")
+        meeting.participantNames = ["Jackson", "Carter", "Glen", "Sarah", "Whitney"]
+
+        let (chosen, dropped) = meeting.participants(from: enrolled, channel: .them, limit: limit)
+        #expect(chosen.count == limit)
+        #expect(!chosen.contains { $0.isMe })
+        #expect(chosen.map(\.name) == ["Carter", "Glen", "Sarah", "Whitney"])
+        #expect(dropped.isEmpty)
+    }
+
+    @Test func theMicChannelKeepsYourVoice() {
+        let meeting = Meeting(title: "In person")
+        meeting.participantNames = ["Jackson", "Carter"]
+
+        let (chosen, _) = meeting.participants(from: enrolled, channel: .me, limit: limit)
+        #expect(chosen.map(\.name) == ["Jackson", "Carter"])
+    }
+
     @Test func yourOwnVoiceSurvivesTheCap() {
         // "I'd always be there" — so if the cap bites, it must not bite you.
         let meeting = Meeting(title: "Crowded")

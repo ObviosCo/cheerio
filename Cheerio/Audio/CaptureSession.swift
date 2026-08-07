@@ -41,6 +41,23 @@ final class CaptureSession {
     func start(title: String, calendarEventID: String?, context: ModelContext) async throws {
         guard state == .idle else { return }
         state = .preparingModel
+        do {
+            try await startCapturing(title: title, calendarEventID: calendarEventID, context: context)
+        } catch {
+            // Half-started is the worst state to leave: engines running, the recorder
+            // holding open files, possibly a live microphone, an empty meeting in the
+            // library, and the UI stuck on "Preparing model…" with no way back. Unwind
+            // all of it before handing the error up.
+            await rollbackFailedStart(context: context)
+            throw error
+        }
+    }
+
+    private func startCapturing(
+        title: String,
+        calendarEventID: String?,
+        context: ModelContext
+    ) async throws {
         try await TranscriptionEngine.ensureModel()
 
         let meeting = Meeting(title: title, calendarEventID: calendarEventID)
@@ -105,6 +122,40 @@ final class CaptureSession {
 
         state = .recording
         log.info("Recording started: \(title, privacy: .public)")
+    }
+
+    /// Returns to `.idle` from a `start` that threw partway through, leaving nothing
+    /// running and no empty meeting behind.
+    private func rollbackFailedStart(context: ModelContext) async {
+        micCapture?.stop()
+        systemTap?.stop()
+        try? await micEngine?.stop()
+        try? await systemEngine?.stop()
+        consumerTasks.forEach { $0.cancel() }
+        consumerTasks = []
+        await recorder?.finish()
+
+        if let meeting {
+            // Nothing was captured, so this would be an empty row in the library and an
+            // empty directory on disk.
+            if let relativePath = meeting.audioDirectory {
+                try? AudioStorage.removeDirectory(atRelativePath: relativePath)
+            }
+            context.delete(meeting)
+            try? context.save()
+        }
+
+        micEngine = nil
+        systemEngine = nil
+        micCapture = nil
+        systemTap = nil
+        recorder = nil
+        meeting = nil
+        startedAt = nil
+        liveLines = []
+        volatileLine = nil
+        state = .idle
+        log.error("Recording failed to start; rolled back")
     }
 
     private func handle(_ update: TranscriptionUpdate, context: ModelContext) {
