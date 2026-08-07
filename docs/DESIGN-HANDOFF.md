@@ -110,7 +110,7 @@ Deliberately lightweight. This is an open-source utility, not a company. What we
 
    All colors need light and dark values, delivered as **named Color Set entries for `Assets.xcassets`** so code references semantic names, not hex.
 
-3. **Typography.** Strong recommendation: **use the system font (SF Pro / SF Mono)** and give us a type scale mapped to SwiftUI's semantic styles rather than a custom face. Free, redistributable, Dynamic Type-ready, and it makes the app feel native. A display face for the wordmark and README only is fine if it's OFL or similar and isn't required to run the app.
+3. **Typography.** Strong recommendation: **use the system font (SF Pro / SF Mono)** and give us a type scale mapped to SwiftUI's semantic styles rather than a custom face. It costs nothing, supports Dynamic Type, and makes the app feel native — and because macOS supplies it through system APIs, nothing ships in the repo or the bundle. Note that this is *not* the same as redistributable: Apple's license covers using the system font on Apple platforms, not shipping the font files. Never hand us SF Pro or SF Mono files to bundle. A display face for the wordmark and README only is fine if it's OFL or similar, genuinely redistributable, and not required to run the app.
 
 4. **Voice — and a copy edit.** The app has a *lot* of prose in it, and much of it is genuinely good: it explains constraints where the user hits them, in plain language ("Have them talk naturally for about 30 seconds — read something aloud if it helps"). The [README](../README.md) is the closest thing to an established register — direct, specific, willing to name what doesn't work — and is worth reading as a voice reference before you write any UI copy.
 
@@ -177,7 +177,7 @@ Roughly in priority order.
 
 9. **Four different kinds of waiting.** Model download on first run, note generation after stopping, speaker re-identification on demand, and the 30-second enrollment recorder (the only one with real progress feedback — it has a `ProgressView` and a live countdown, and it's the best-handled wait in the app). The other three are text labels. Note that these can also *fail*: summarization can fail and fall back to transcript-only, and identification can fail if the audio has been purged by the retention policy.
 
-10. **Permissions.** Three prompts: microphone, system-audio capture, calendar. Only the first has a recovery path. System audio is the unfamiliar one and the app is quietly useless without it. Design the pre-prompt explanation and the recovery state for each.
+10. **Permissions.** Three prompts, and they don't matter equally. **Microphone** is required for everything and is the only one with a recovery path today. **System audio** is the unfamiliar one: it's what captures the far end of a remote call, so denying it costs you every remote participant — while a solo or in-person recording, which is all microphone, is unaffected. **Calendar** is genuinely optional; without it recordings just get timestamp titles instead of event names. Design the pre-prompt explanation and the recovery state for each, and let the stakes differ — asking for all three with equal urgency at launch would be the wrong answer.
 
 11. **Audio retention, which is a real control and currently a bare picker.** How long recorded audio sticks around — immediately, 24 hours, 7 days, 30 days, forever — plus a "Delete audio now" button, sitting in a Settings tab with an explanatory caption. It's worth designing properly because deleting the audio has a consequence the UI doesn't yet connect: once it's gone, speakers can't be re-identified and "Use as voice sample" stops working. That relationship should be visible at the moment of choosing, not discovered later.
 
@@ -232,7 +232,7 @@ This is a public MIT-licensed repository, and it ships outside the App Store.
 
 ## 8. Suggested sequencing
 
-1. **App icon + the four menu-bar states.** Unblocks the build and the repo's first impression. Self-contained.
+1. **App icon + the four menu-bar states.** The app builds and runs without one — what this unblocks is everything the project shows to anyone else: the Dock and menu-bar presence, the README, the GitHub social card, and the download. Self-contained, and doesn't depend on the UI work.
 2. **Color, type, and the token inventory** — including the speaker identity system, which is the part with actual design content in it.
 3. **The speaker seam and the live recording screen** (questions 1, 4, 7, 8). The hardest and most valuable problem.
 4. **Enrollment and correction flows** (questions 2, 3, 5). Newest surfaces, least designed, and where the app currently over-explains itself.
