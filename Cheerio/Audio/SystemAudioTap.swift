@@ -4,6 +4,7 @@ import CheerioKit
 import CoreAudio
 import Foundation
 import OSLog
+import Synchronization
 
 /// Captures system audio output (everyone else on the call) using a Core Audio
 /// process tap (macOS 14.2+). This is the "Them" channel.
@@ -16,40 +17,41 @@ import OSLog
 /// Triggers the system-audio-capture TCC prompt on first use.
 /// Tracks whether a tap ever produced a non-zero sample, scanning only the opening
 /// seconds so the audio callback's cost stays bounded.
-private final class SilenceWatch: @unchecked Sendable {
-    private let lock = NSLock()
-    private var framesInspected = 0
-    private var sawSignal = false
+private final class SilenceWatch: Sendable {
+    private let framesInspected = Atomic<Int>(0)
+    private let sawSignal = Atomic<Bool>(false)
     /// Roughly two seconds at any sane sample rate.
     private let frameBudget = 96_000 * 2
+    /// Cap on one callback's scan, so a large buffer can't stretch it.
+    private let framesPerCallback = 4_096
 
-    var didSeeSignal: Bool {
-        lock.lock(); defer { lock.unlock() }
-        return sawSignal
-    }
+    var didSeeSignal: Bool { sawSignal.load(ordering: .acquiring) }
 
-    /// Cheap enough for the realtime thread: stops scanning after the first
-    /// non-zero sample or once the budget is spent.
+    /// Realtime-safe: lock-free, and bounded both per callback and overall.
+    ///
+    /// The original took an `NSLock` here on every buffer. Sample scanning was never
+    /// the problem — a few thousand float compares is nothing next to the
+    /// `detachedCopy()` this callback already does — but locking on the audio thread
+    /// risks priority inversion against whoever reads `didSeeSignal`, and that's the
+    /// one thing a realtime callback must never do.
     func inspect(_ buffer: AVAudioPCMBuffer) {
-        lock.lock()
-        let shouldScan = !sawSignal && framesInspected < frameBudget
-        framesInspected += Int(buffer.frameLength)
-        lock.unlock()
-        guard shouldScan else { return }
+        guard !sawSignal.load(ordering: .relaxed) else { return }
+        let seen = framesInspected.wrappingAdd(Int(buffer.frameLength), ordering: .relaxed).oldValue
+        guard seen < frameBudget else { return }
 
-        var found = false
         let list = UnsafeMutableAudioBufferListPointer(buffer.mutableAudioBufferList)
-        outer: for index in 0..<list.count {
+        var budget = framesPerCallback
+        for index in 0..<list.count {
             guard let data = list[index].mData else { continue }
-            let count = Int(list[index].mDataByteSize) / 4
+            let count = min(Int(list[index].mDataByteSize) / 4, budget)
             let samples = data.bindMemory(to: Float.self, capacity: count)
             for sample in 0..<count where samples[sample] != 0 {
-                found = true
-                break outer
+                sawSignal.store(true, ordering: .releasing)
+                return
             }
+            budget -= count
+            if budget <= 0 { return }
         }
-        guard found else { return }
-        lock.lock(); sawSignal = true; lock.unlock()
     }
 }
 

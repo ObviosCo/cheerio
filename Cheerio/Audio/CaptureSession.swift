@@ -124,6 +124,25 @@ final class CaptureSession {
         log.info("Recording started: \(title, privacy: .public)")
     }
 
+    /// Waits for the transcript consumers to finish handing over their last updates.
+    ///
+    /// Bounded, because being wedged in `.finishing` with no stop button is worse than
+    /// losing a few seconds of transcript.
+    private func drainConsumers(timeout: Duration = .seconds(5)) async {
+        let tasks = consumerTasks
+        consumerTasks = []
+        guard !tasks.isEmpty else { return }
+
+        let watchdog = Task { [log] in
+            try? await Task.sleep(for: timeout)
+            guard !Task.isCancelled else { return }
+            log.error("Transcript consumers didn't finish; the last lines may be missing")
+            tasks.forEach { $0.cancel() }
+        }
+        for task in tasks { await task.value }
+        watchdog.cancel()
+    }
+
     /// Returns to `.idle` from a `start` that threw partway through, leaving nothing
     /// running and no empty meeting behind.
     private func rollbackFailedStart(context: ModelContext) async {
@@ -187,8 +206,12 @@ final class CaptureSession {
         try? await micEngine?.stop()
         try? await systemEngine?.stop()
         await recorder?.finish()
-        consumerTasks.forEach { $0.cancel() }
-        consumerTasks = []
+        // Drain, don't cancel. Each engine's `stop()` finishes its results stream, so
+        // these consumers end on their own once they've handed over every update —
+        // and it's the final updates of the meeting that are still in flight here.
+        // Cancelling dropped them, losing the tail of the transcript that the
+        // summarizer then never saw.
+        await drainConsumers()
 
         if let meeting {
             meeting.endedAt = .now

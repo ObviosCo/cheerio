@@ -182,11 +182,50 @@ public actor TranscriptionEngine {
         await audioTask?.value
         audioTask = nil
         inputBuilder?.finish()
-        try await analyzer?.finalizeAndFinishThroughEndOfInput()
-        resultsTask?.cancel()
+
+        // Hold the error rather than throwing straight out: cleanup has to happen
+        // either way, or `resultsTask` — which retains `self` — keeps this engine and
+        // its analyzer alive for the life of the process.
+        var finalizeError: Error?
+        do {
+            try await analyzer?.finalizeAndFinishThroughEndOfInput()
+        } catch {
+            finalizeError = error
+        }
+
+        if finalizeError == nil {
+            // Drain, don't cancel. Finalizing ends `transcriber.results`, and the last
+            // final results of the meeting are delivered right here — cancelling threw
+            // away the tail of every recording.
+            await drainResults()
+        } else {
+            // Finalizing failed, so nothing more is coming and the stream may never
+            // end by itself.
+            resultsTask?.cancel()
+            await resultsTask?.value
+        }
+
+        resultsTask = nil
         transcriber = nil
         analyzer = nil
         inputBuilder = nil
         converter = nil
+
+        if let finalizeError { throw finalizeError }
+    }
+
+    /// Waits for the results task to finish, but not forever.
+    ///
+    /// If a module's result stream doesn't end after finalizing, `stop()` still has to
+    /// return — otherwise the UI sits on "Finishing up…" with no way out. Losing the
+    /// last words beats never finishing.
+    private func drainResults(timeout: Duration = .seconds(5)) async {
+        guard let resultsTask else { return }
+        let watchdog = Task {
+            try? await Task.sleep(for: timeout)
+            resultsTask.cancel()
+        }
+        await resultsTask.value
+        watchdog.cancel()
     }
 }

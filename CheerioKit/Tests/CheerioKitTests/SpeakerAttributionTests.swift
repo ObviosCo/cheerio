@@ -42,6 +42,25 @@ import Testing
         #expect(SpeakerAttribution.dominantLabel(start: 3, end: 3, turns: turns) == nil)
     }
 
+    /// An all-remote call's mic track holds one unprimed voice — yours. Labelling it
+    /// "Speaker 1" is worse than leaving it "Me", because the summarizer is instructed
+    /// not to assume a numbered speaker is the user.
+    @Test func aLoneUnnamedVoiceAddsNothingOverTheChannelName() {
+        #expect(!SpeakerAttribution.addsInformation([
+            SpeakerTurn(label: "Speaker 1", startTime: 0, endTime: 30)
+        ]))
+        // Several unnamed voices is real information: three people in a room.
+        #expect(SpeakerAttribution.addsInformation([
+            SpeakerTurn(label: "Speaker 1", startTime: 0, endTime: 5),
+            SpeakerTurn(label: "Speaker 2", startTime: 5, endTime: 9),
+        ]))
+        // And one *named* voice is an actual identification, so it stays.
+        #expect(SpeakerAttribution.addsInformation([
+            SpeakerTurn(label: "Jackson", startTime: 0, endTime: 30)
+        ]))
+        #expect(!SpeakerAttribution.addsInformation([]))
+    }
+
     @Test func emptyTurnsYieldNoLabel() {
         #expect(SpeakerAttribution.dominantLabel(start: 0, end: 5, turns: []) == nil)
     }

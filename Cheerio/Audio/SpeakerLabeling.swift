@@ -68,15 +68,28 @@ enum SpeakerLabeling {
             )
             guard !turns.isEmpty else { continue }
 
+            // One unnamed voice on a channel tells us nothing the channel already did,
+            // and costs the "[Me] is the user" signal the summarizer depends on. Clear
+            // the labels instead, so `displayLabel` falls back to Me/Them — and so a
+            // re-run undoes any "Speaker 1" a previous pass wrote there.
+            let informative = SpeakerAttribution.addsInformation(turns)
+            if !informative {
+                log.notice(
+                    "\(channel.rawValue, privacy: .public): one unnamed voice, leaving it as the channel label"
+                )
+            }
+
             // Manually named lines are left alone: a person who corrected a label
             // outranks the model, and clobbering that would make correcting pointless.
             for segment in meeting.segments
             where segment.channel == channel && !segment.isSpeakerLabelManual {
-                segment.speakerLabel = SpeakerAttribution.dominantLabel(
-                    start: segment.startTime,
-                    end: segment.endTime,
-                    turns: turns
-                )
+                segment.speakerLabel = informative
+                    ? SpeakerAttribution.dominantLabel(
+                        start: segment.startTime,
+                        end: segment.endTime,
+                        turns: turns
+                    )
+                    : nil
             }
             labelledAnything = true
             log.notice(

@@ -149,6 +149,22 @@ extension SpeakerTurn {
 
 /// Maps diarized turns onto already-transcribed segments.
 public enum SpeakerAttribution {
+    /// Whether these turns say anything the channel name doesn't already.
+    ///
+    /// A single diarizer-generated speaker on a channel is no more informative than
+    /// "Me" or "Them" — and strictly worse, because the summarizer is told that a
+    /// numbered speaker must not be assumed to be the user, so relabelling your own
+    /// mic track "Speaker 1" throws away the one thing that identifies you. This is
+    /// the normal case on an all-remote call, where the mic carries only your voice
+    /// and nothing is primed for it.
+    ///
+    /// A single *named* speaker is kept: that's a real identification.
+    public static func addsInformation(_ turns: [SpeakerTurn]) -> Bool {
+        let labels = Set(turns.map(\.label))
+        guard labels.count == 1, let only = labels.first else { return !labels.isEmpty }
+        return !TranscriptSegment.isDiarizerGeneratedLabel(only)
+    }
+
     /// The label of the turn overlapping `start..<end` the most.
     ///
     /// Transcript segment boundaries and diarization boundaries never line up
