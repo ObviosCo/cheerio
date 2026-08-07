@@ -4,7 +4,9 @@ Open-source, single-user Granola alternative. macOS-first, local-only: SpeechAna
 
 ## State of the repo
 
-Builds clean (no warnings), package tests pass, and the app launches and stays up. **Not yet verified against a live call** — see task 1 below.
+Builds and runs; 47 package tests across 8 suites pass. **Not yet verified against a live call** — see task 1 below.
+
+Two build warnings remain, both `Binding<Optional<Wrapped>>` captured in a `@Sendable` closure in `Views/Binding+Presented.swift`.
 
 Speaker differentiation *is* verified for in-person meetings: on 2026-07-31, with Jackson and Carter both enrolled, a 51s two-person recording labelled 9/9 segments correctly — including 1–2s alternating turns — against narrated ground truth. `them.caf` measured −90 dBFS (silent) for that meeting, so all of it came from Sortformer, none from the channel split.
 

@@ -1,6 +1,6 @@
 # Cheerio — Spec
 
-An open-source, single-user Granola alternative for macOS (and later iOS). Everything runs on-device using Apple's local models. No accounts, no cloud, no telemetry.
+An open-source, single-user Granola alternative for macOS (and later iOS). Everything runs on-device: Apple's local models for speech and summarization, plus a bundled Sortformer model for telling speakers apart. No accounts, no cloud, no telemetry.
 
 ## Problem
 
@@ -30,6 +30,8 @@ Granola-style AI meeting notes require sending your meetings to someone else's s
 - macOS 26 (Tahoe)+, Apple Silicon
 - Permissions: microphone, system audio capture (TCC), calendar (optional)
 - Transcription model downloaded on first run via `AssetInventory` (one-time, per-locale)
+- Diarization model (~93 MB, NVIDIA Open Model License) fetched at build time by `Scripts/fetch-models.sh` and bundled — never downloaded at runtime
+- Distributed outside the Mac App Store. App Sandbox has to be off for process taps to capture anything at all, which makes the App Store unavailable; see [ARCHITECTURE.md](ARCHITECTURE.md#permissions--entitlements)
 
 ## Success criteria
 
@@ -43,5 +45,5 @@ Granola-style AI meeting notes require sending your meetings to someone else's s
 - iOS app (in-person meetings, mic-only)
 - Pluggable summarization models via the `LanguageModel` protocol (WWDC26) — Claude, local MLX models
 - Semantic search across meetings
-- Speaker diarization within the system-audio channel
+- Real-time speaker naming during capture (streaming Sortformer alongside the engines, rather than a post-pass)
 - Obsidian/Markdown folder auto-export
