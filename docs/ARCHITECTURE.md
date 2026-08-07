@@ -86,7 +86,9 @@ SwiftData, single local store. `Meeting` (title, times, event ID, rough notes, e
 
 Audio lives in Application Support, referenced by path, one CAF per channel per meeting. `AudioRetention` purges it on a schedule — immediately, 24 hours, 7 days, 30 days, or never — defaulting to 7 days. Transcripts and notes are never touched by retention; only the raw audio.
 
-Note the data location moves with the sandbox flag: a sandboxed build would live under `~/Library/Containers/app.cheerio.mac/Data/`, an unsandboxed one under `~/Library`. Since the sandbox is off (below), it's the latter.
+Note which location the app reads depends on the sandbox flag: a sandboxed build resolves Application Support to `~/Library/Containers/app.cheerio.mac/Data/`, an unsandboxed one to `~/Library`. Since the sandbox is off (below), it's the latter.
+
+> Gotcha: toggling that flag migrates nothing. It changes where subsequent reads and writes land, leaving whatever was already written stranded in the other location — so a store full of meetings can present as total data loss when it is only being read from the wrong place. Nothing in the app moves a store across that boundary: a store migration existed once and was deliberately removed as unsafe (it keyed off SwiftData's default `default.store` filename in a *shared* directory, so it could not establish provenance and might have moved another app's database). `StorageMigration` addresses a different problem — relocating meeting audio out of the shared `~/Library/Application Support` into Cheerio's own container — and touches only directories recorded on our own `Meeting` objects.
 
 ## Concurrency
 

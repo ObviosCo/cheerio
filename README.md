@@ -22,10 +22,10 @@ plus one on-device model Apple doesn't provide, for telling speakers apart.
 
 ## What it does
 
-- **Capture without bots.** Microphone (you) and system audio (everyone else) are captured as
-  two independent streams via Core Audio process taps. Works with Zoom, Meet, Teams, or anything
-  else that makes sound — no meeting bot, no calendar-service integration, no participants list
-  to manage.
+- **Capture without bots.** Two independent streams: your microphone through `AVAudioEngine`,
+  and everyone else through a Core Audio process tap on system output. Works with Zoom, Meet,
+  Teams, or anything else that makes sound — no meeting bot, no calendar-service integration,
+  no participants list to manage.
 - **Transcribe on-device.** Each stream gets its own `SpeechTranscriber`, which is where the
   `Me` / `Them` split comes from. Live volatile results drive the in-meeting transcript; final
   results are persisted with timestamps.
@@ -113,9 +113,14 @@ macros.
 
 ### Before you run it
 
-- **Set your bundle identifier.** `project.yml` uses the placeholder prefix `app.cheerio`.
+- **Set your bundle identifier.** The effective one is `PRODUCT_BUNDLE_IDENTIFIER` in
+  `project.yml`, currently the placeholder `app.cheerio.mac`. Note that it overrides
+  `options.bundleIdPrefix`, so changing the prefix alone leaves you building with the
+  placeholder — change both.
+- **Grant microphone access on first record.** Prompted once; if you deny it, macOS won't ask
+  again and you'll need System Settings → Privacy & Security.
 - **First launch downloads a speech model.** macOS fetches the `SpeechTranscriber` assets for
-  your locale once, per locale.
+  your locale once, per locale, when a recording starts.
 - **Enroll your voice in Settings.** Diarization returns names only for voices it has heard
   before. Samples need **at least 30 seconds** — shorter ones measurably cause the model to
   split one person across two speaker slots.
