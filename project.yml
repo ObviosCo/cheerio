@@ -2,7 +2,10 @@
 # Install: brew install xcodegen
 name: Cheerio
 options:
-  bundleIdPrefix: app.cheerio # TODO: change to your reverse-DNS prefix
+  # TODO: change to your reverse-DNS prefix. Note this does NOT set the app's
+  # identifier on its own — PRODUCT_BUNDLE_IDENTIFIER below is set explicitly and
+  # wins, so change both or you'll still build as app.cheerio.mac.
+  bundleIdPrefix: app.cheerio
   deploymentTarget:
     macOS: "26.0"
   createIntermediateGroups: true
