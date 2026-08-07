@@ -24,8 +24,9 @@ plus one on-device model Apple doesn't provide, for telling speakers apart.
 
 - **Capture without bots.** Two independent streams: your microphone through `AVAudioEngine`,
   and everyone else through a Core Audio process tap on system output. Works with Zoom, Meet,
-  Teams, or anything else that makes sound — no meeting bot, no calendar-service integration,
-  no participants list to manage.
+  Teams, or anything else that makes sound. Because it captures audio rather than joining a
+  call, nothing needs a meeting bot or a per-app integration, and no app-specific API has to
+  support it first.
 - **Transcribe on-device.** Each stream gets its own `SpeechTranscriber`, which is where the
   `Me` / `Them` split comes from. Live volatile results drive the in-meeting transcript; final
   results are persisted with timestamps.

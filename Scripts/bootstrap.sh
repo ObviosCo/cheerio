@@ -54,7 +54,24 @@ case "$developer_dir" in
     sudo xcode-select -s /Applications/Xcode.app"
         ;;
 esac
-step "Xcode at ${developer_dir}"
+# ...and a new enough one. An Xcode older than 26 has no macOS 26 SDK, so it fails
+# later on missing SpeechAnalyzer/FoundationModels symbols rather than on anything
+# that points at the toolchain.
+# The `|| true` matters: under `set -e` with pipefail, a failing xcodebuild would
+# abort here silently and the message below would never be reached.
+xcode_version="$(xcodebuild -version 2>/dev/null | awk 'NR==1 {print $2}' || true)"
+if [ -z "$xcode_version" ]; then
+    fail "Could not read the Xcode version from 'xcodebuild -version'.
+  If Xcode was just installed, it may still need its license accepted:
+
+    sudo xcodebuild -license accept"
+fi
+if [ "${xcode_version%%.*}" -lt 26 ]; then
+    fail "Xcode ${xcode_version} is too old — this project needs Xcode 26 or later.
+  It targets macOS 26 and uses SpeechAnalyzer and FoundationModels, which are not
+  in any earlier SDK."
+fi
+step "Xcode ${xcode_version} at ${developer_dir}"
 
 # 3. The diarization model (~93 MB, NVIDIA Open Model License, not committed).
 #    Checksummed and idempotent — a no-op once it's present and intact.
