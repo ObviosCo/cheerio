@@ -16,8 +16,30 @@ final class CaptureSession {
         case finishing
     }
 
+    /// Why the last start attempt failed, if it did.
+    ///
+    /// Lives on the session rather than in a view because recording can be started from
+    /// the menu bar, and a menu can't host an alert — the failure has to survive long
+    /// enough for the main window to present it.
+    enum StartFailure: Equatable {
+        case microphoneDenied
+        case failed(String)
+
+        var message: String? {
+            switch self {
+            case .microphoneDenied: nil
+            case .failed(let message): message
+            }
+        }
+    }
+
+    var startFailure: StartFailure?
+
     private(set) var state: State = .idle
     private(set) var meeting: Meeting?
+    /// The meeting from the last completed recording, kept after ``meeting`` is
+    /// cleared so the UI can show its notes once we're idle again.
+    private(set) var lastFinishedMeeting: Meeting?
 
     /// Live transcript lines for the UI. Volatile tail is replaced in place.
     private(set) var liveLines: [TranscriptionUpdate] = []
@@ -30,15 +52,41 @@ final class CaptureSession {
     private var systemEngine: TranscriptionEngine?
     private var micCapture: MicrophoneCapture?
     private var systemTap: SystemAudioTap?
+    private var recorder: MeetingAudioRecorder?
     private var consumerTasks: [Task<Void, Never>] = []
-    private var startedAt: Date?
+    /// When the current recording began, for the elapsed-time readout.
+    private(set) var startedAt: Date?
 
     func start(title: String, calendarEventID: String?, context: ModelContext) async throws {
         guard state == .idle else { return }
         state = .preparingModel
+        do {
+            try await startCapturing(title: title, calendarEventID: calendarEventID, context: context)
+        } catch {
+            // Half-started is the worst state to leave: engines running, the recorder
+            // holding open files, possibly a live microphone, an empty meeting in the
+            // library, and the UI stuck on "Preparing model…" with no way back. Unwind
+            // all of it before handing the error up.
+            await rollbackFailedStart(context: context)
+            throw error
+        }
+    }
+
+    private func startCapturing(
+        title: String,
+        calendarEventID: String?,
+        context: ModelContext
+    ) async throws {
         try await TranscriptionEngine.ensureModel()
 
         let meeting = Meeting(title: title, calendarEventID: calendarEventID)
+        // Start the roster at just your own voice: you're the one person guaranteed to
+        // be here, and priming anyone else by default spends slots on people who may
+        // not be. Left nil when no voice is marked "me", which keeps the old
+        // everyone-enrolled behaviour.
+        if let me = SpeakerLabeling.allEnrolled(context: context).first(where: \.isMe) {
+            meeting.participantNames = [me.name]
+        }
         context.insert(meeting)
         self.meeting = meeting
         self.startedAt = .now
@@ -55,16 +103,36 @@ final class CaptureSession {
         for engine in [micEngine, systemEngine] {
             consumerTasks.append(Task { [weak self] in
                 for await update in engine.results {
-                    await self?.handle(update, context: context)
+                    self?.handle(update, context: context)
                 }
             })
         }
 
+        // Audio-to-disk is a safety net, not a requirement: if it can't be set up
+        // the meeting still records and transcribes.
+        let recorder: MeetingAudioRecorder?
+        do {
+            let (made, relativePath) = try MeetingAudioRecorder.make()
+            await made.start()
+            meeting.audioDirectory = relativePath
+            recorder = made
+        } catch {
+            log.error("Audio recording unavailable: \(error)")
+            recorder = nil
+        }
+        self.recorder = recorder
+
         let micCapture = MicrophoneCapture { buffer in
-            Task { await micEngine.process(buffer: buffer) }
+            if let recorder, let forDisk = buffer.detachedCopy() {
+                recorder.submit(forDisk, channel: .me)
+            }
+            micEngine.submit(buffer)
         }
         let systemTap = SystemAudioTap { buffer in
-            Task { await systemEngine.process(buffer: buffer) }
+            if let recorder, let forDisk = buffer.detachedCopy() {
+                recorder.submit(forDisk, channel: .them)
+            }
+            systemEngine.submit(buffer)
         }
         self.micCapture = micCapture
         self.systemTap = systemTap
@@ -73,6 +141,59 @@ final class CaptureSession {
 
         state = .recording
         log.info("Recording started: \(title, privacy: .public)")
+    }
+
+    /// Waits for the transcript consumers to finish handing over their last updates.
+    ///
+    /// Bounded, because being wedged in `.finishing` with no stop button is worse than
+    /// losing a few seconds of transcript.
+    private func drainConsumers(timeout: Duration = .seconds(5)) async {
+        let tasks = consumerTasks
+        consumerTasks = []
+        guard !tasks.isEmpty else { return }
+
+        let watchdog = Task { [log] in
+            try? await Task.sleep(for: timeout)
+            guard !Task.isCancelled else { return }
+            log.error("Transcript consumers didn't finish; the last lines may be missing")
+            tasks.forEach { $0.cancel() }
+        }
+        for task in tasks { await task.value }
+        watchdog.cancel()
+    }
+
+    /// Returns to `.idle` from a `start` that threw partway through, leaving nothing
+    /// running and no empty meeting behind.
+    private func rollbackFailedStart(context: ModelContext) async {
+        micCapture?.stop()
+        systemTap?.stop()
+        try? await micEngine?.stop()
+        try? await systemEngine?.stop()
+        consumerTasks.forEach { $0.cancel() }
+        consumerTasks = []
+        await recorder?.finish()
+
+        if let meeting {
+            // Nothing was captured, so this would be an empty row in the library and an
+            // empty directory on disk.
+            if let relativePath = meeting.audioDirectory {
+                try? AudioStorage.removeDirectory(atRelativePath: relativePath)
+            }
+            context.delete(meeting)
+            try? context.save()
+        }
+
+        micEngine = nil
+        systemEngine = nil
+        micCapture = nil
+        systemTap = nil
+        recorder = nil
+        meeting = nil
+        startedAt = nil
+        liveLines = []
+        volatileLine = nil
+        state = .idle
+        log.error("Recording failed to start; rolled back")
     }
 
     private func handle(_ update: TranscriptionUpdate, context: ModelContext) {
@@ -103,12 +224,28 @@ final class CaptureSession {
         systemTap?.stop()
         try? await micEngine?.stop()
         try? await systemEngine?.stop()
-        consumerTasks.forEach { $0.cancel() }
-        consumerTasks = []
+        await recorder?.finish()
+        // Drain, don't cancel. Each engine's `stop()` finishes its results stream, so
+        // these consumers end on their own once they've handed over every update —
+        // and it's the final updates of the meeting that are still in flight here.
+        // Cancelling dropped them, losing the tail of the transcript that the
+        // summarizer then never saw.
+        await drainConsumers()
 
         if let meeting {
             meeting.endedAt = .now
             meeting.roughNotes = roughNotes
+
+            // Diarize before summarizing, so the transcript the model reads carries
+            // speaker labels — and before the retention purge, which would delete
+            // the audio this reads.
+            do {
+                try await SpeakerLabeling.label(meeting: meeting, context: context)
+            } catch {
+                // Best-effort: the transcript keeps its channel labels.
+                log.error("Speaker attribution failed: \(error)")
+            }
+
             do {
                 let engine = SummarizationEngine()
                 let notes = try await engine.generateEnhancedNotes(
@@ -123,10 +260,20 @@ final class CaptureSession {
             try? context.save()
         }
 
+        // Applies "Don't keep audio" immediately, and sweeps anything that aged out
+        // while the app stayed open.
+        do {
+            try AudioRetentionService.purge(retention: .current, context: context)
+        } catch {
+            log.error("Audio retention purge failed: \(error)")
+        }
+
         micEngine = nil
         systemEngine = nil
         micCapture = nil
         systemTap = nil
+        recorder = nil
+        lastFinishedMeeting = meeting
         meeting = nil
         state = .idle
     }

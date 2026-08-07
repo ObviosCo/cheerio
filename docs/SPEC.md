@@ -14,11 +14,13 @@ Granola-style AI meeting notes require sending your meetings to someone else's s
 4. **Enhance** — After the meeting, the on-device Foundation Model merges your rough notes with the transcript into structured enhanced notes: summary, key points, decisions, action items.
 5. **Calendar** — Read today's events via EventKit; suggest recording when a meeting starts; attach notes to the event.
 6. **Library** — Browse, search, and export past meetings (Markdown export).
+7. **Speakers** — Tell people apart *within* a channel, not just Me vs Them: Sortformer diarization as a post-pass over the recorded audio, voices enrolled by name, and a per-meeting roster of who was there. Hand corrections outrank the model. Originally a v1 non-goal; it turned out to be the difference between a usable in-person transcript and one where three people are all "Me".
 
 ## Non-goals (v1)
 
 - Multi-user, sharing, sync, or any server component
-- Speaker diarization beyond Me/Them channel separation
+- Real-time speaker naming *during* a recording — diarization is a post-pass over the CAF files, so the live transcript shows Me/Them and names appear once the meeting stops
+- More than four distinct speakers resolved per channel (Sortformer's hard limit)
 - Meeting bots or calendar-service integrations beyond local EventKit
 - Windows/Linux
 - iOS (v2 — core logic lives in a shared package to make this cheap)

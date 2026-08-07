@@ -19,7 +19,18 @@ targets:
     type: application
     platform: macOS
     sources:
-      - Cheerio
+      - path: Cheerio
+        excludes:
+          - Resources/Models
+      # Folder reference so the compiled .mlmodelc is copied verbatim. Fetched by
+      # Scripts/fetch-models.sh (run by the pre-build phase below), never committed.
+      - path: Cheerio/Resources/Models/Sortformer_v2.1.mlmodelc
+        type: folder
+        buildPhase: resources
+    preBuildScripts:
+      - script: "\"$SRCROOT/Scripts/fetch-models.sh\""
+        name: Fetch diarization model
+        basedOnDependencyAnalysis: false
     dependencies:
       - package: CheerioKit
     settings:

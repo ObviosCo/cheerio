@@ -1,19 +1,27 @@
 import CheerioKit
+import SwiftData
 import SwiftUI
 
 struct MeetingDetailView: View {
     let meeting: Meeting
 
+    @Environment(\.modelContext) private var context
+    @Query(sort: \EnrolledSpeaker.enrolledAt) private var enrolled: [EnrolledSpeaker]
+    @State private var isRelabeling = false
+    @State private var relabelError: String?
+    /// Expanded by default: opening an old meeting is usually about re-reading what
+    /// was said, and a collapsed disclosure made the transcript look like it was gone.
+    @State private var isTranscriptExpanded = true
+
+    private var sortedSegments: [TranscriptSegment] {
+        meeting.segments.sorted { $0.startTime < $1.startTime }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                if let notes = meeting.enhancedNotes {
-                    Text(LocalizedStringKey(notes))
-                        .textSelection(.enabled)
-                } else {
-                    Text("No enhanced notes for this meeting.")
-                        .foregroundStyle(.secondary)
-                }
+                header
+                notes
 
                 if !meeting.roughNotes.isEmpty {
                     GroupBox("Your rough notes") {
@@ -23,22 +31,185 @@ struct MeetingDetailView: View {
                     }
                 }
 
-                DisclosureGroup("Transcript (\(meeting.segments.count) segments)") {
-                    Text(meeting.transcriptText)
-                        .font(.callout)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                if meeting.audioDirectory != nil {
+                    HStack(spacing: 8) {
+                        Button {
+                            Task { await relabel() }
+                        } label: {
+                            Label(
+                                isRelabeling ? "Identifying speakers…" : "Re-identify speakers",
+                                systemImage: "person.wave.2"
+                            )
+                        }
+                        .disabled(isRelabeling)
+                        Text("Uses the voices enrolled in Settings → Participants.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
+
+                MeetingSpeakersSection(meeting: meeting)
+
+                Divider()
+                transcript
             }
             .padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .navigationTitle(meeting.title)
+        .alert("Couldn't identify speakers", isPresented: $relabelError.presented()) {
+            Button("OK") { relabelError = nil }
+        } message: {
+            Text(relabelError ?? "")
+        }
         .toolbar {
             ToolbarItem {
                 ShareLink(item: exportMarkdown()) {
                     Label("Export", systemImage: "square.and.arrow.up")
                 }
             }
+        }
+    }
+
+    /// The window title bar carries the meeting name, but the detail column needs its
+    /// own heading — and the date is how you tell two "Call with Mary" apart.
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(meeting.title)
+                .font(.title2.weight(.semibold))
+                .textSelection(.enabled)
+            Text(subtitle)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var subtitle: String {
+        var parts = [meeting.startedAt.formatted(date: .abbreviated, time: .shortened)]
+        if let endedAt = meeting.endedAt {
+            let elapsed = Int(endedAt.timeIntervalSince(meeting.startedAt).rounded())
+            parts.append(
+                Duration.seconds(elapsed).formatted(
+                    .units(allowed: [.hours, .minutes, .seconds], width: .abbreviated, maximumUnitCount: 2)
+                )
+            )
+        } else {
+            // No end date means the app quit mid-recording; say so rather than
+            // showing a duration of zero.
+            parts.append("didn’t finish recording")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    @ViewBuilder private var notes: some View {
+        if let notes = meeting.enhancedNotes, !notes.isEmpty {
+            MarkdownNotesView(markdown: notes)
+        } else {
+            // Summarization can fail, or never have run. The transcript below is
+            // still the record, so point at it.
+            Label(
+                "No enhanced notes for this meeting — the transcript below is intact.",
+                systemImage: "sparkles"
+            )
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    private var transcript: some View {
+        DisclosureGroup(isExpanded: $isTranscriptExpanded) {
+            if sortedSegments.isEmpty {
+                Text("No transcript for this meeting.")
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 6)
+            } else {
+                // Lazy: a long meeting runs to hundreds of lines, and each one carries
+                // a menu now.
+                LazyVStack(alignment: .leading, spacing: 6) {
+                    ForEach(sortedSegments) { segment in
+                        HStack(alignment: .top, spacing: 8) {
+                            speakerMenu(for: segment)
+                            Text(segment.text)
+                                .font(.callout)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                }
+                .padding(.top, 6)
+            }
+        } label: {
+            Text("Transcript (\(meeting.segments.count) segments)")
+                .font(.headline)
+        }
+    }
+
+    /// The speaker label, as a menu for fixing one line. Whole-speaker renames live in
+    /// ``MeetingSpeakersSection`` — this is for the odd line the diarizer put on the
+    /// wrong person.
+    private func speakerMenu(for segment: TranscriptSegment) -> some View {
+        Menu {
+            ForEach(candidateLabels(for: segment), id: \.self) { label in
+                Button(label) {
+                    segment.assignSpeaker(label)
+                    save()
+                }
+            }
+            if segment.isSpeakerLabelManual {
+                Divider()
+                Button("Undo my change") {
+                    segment.assignSpeaker(nil)
+                    save()
+                }
+            }
+        } label: {
+            HStack(spacing: 2) {
+                if segment.isSpeakerLabelManual {
+                    Image(systemName: "hand.raised.fill").font(.system(size: 7))
+                }
+                Text(segment.displayLabel)
+            }
+            .font(.caption.bold())
+            .foregroundStyle(segment.channel == .me ? .blue : .secondary)
+            .frame(width: 72, alignment: .trailing)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+    }
+
+    /// Who this line could plausibly belong to: anyone enrolled, plus the other
+    /// speakers on this line's own channel. Another channel's "Speaker 1" is an
+    /// unrelated person, so it isn't offered.
+    private func candidateLabels(for segment: TranscriptSegment) -> [String] {
+        var seen = Set([segment.displayLabel])
+        var labels: [String] = []
+        for name in enrolled.map(\.name) where seen.insert(name).inserted {
+            labels.append(name)
+        }
+        for summary in meeting.speakerSummaries {
+            if let scoped = summary.scopedChannel, scoped != segment.channel { continue }
+            if seen.insert(summary.label).inserted { labels.append(summary.label) }
+        }
+        return labels
+    }
+
+    private func save() {
+        do {
+            try context.save()
+        } catch {
+            relabelError = error.localizedDescription
+        }
+    }
+
+    /// Re-runs diarization. Worth offering because labels improve as more voices get
+    /// enrolled, and the audio stays on disk until retention purges it.
+    private func relabel() async {
+        isRelabeling = true
+        defer { isRelabeling = false }
+        do {
+            try await SpeakerLabeling.label(meeting: meeting, context: context)
+        } catch {
+            relabelError = error.localizedDescription
         }
     }
 

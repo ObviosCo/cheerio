@@ -1,8 +1,10 @@
 import AudioToolbox
 import AVFoundation
+import CheerioKit
 import CoreAudio
 import Foundation
 import OSLog
+import Synchronization
 
 /// Captures system audio output (everyone else on the call) using a Core Audio
 /// process tap (macOS 14.2+). This is the "Them" channel.
@@ -13,6 +15,46 @@ import OSLog
 /// Note: AVAudioEngine cannot read from a tap-backed aggregate device, so we
 /// use a raw IOProc and convert AudioBufferList → AVAudioPCMBuffer ourselves.
 /// Triggers the system-audio-capture TCC prompt on first use.
+/// Tracks whether a tap ever produced a non-zero sample, scanning only the opening
+/// seconds so the audio callback's cost stays bounded.
+private final class SilenceWatch: Sendable {
+    private let framesInspected = Atomic<Int>(0)
+    private let sawSignal = Atomic<Bool>(false)
+    /// Roughly two seconds at any sane sample rate.
+    private let frameBudget = 96_000 * 2
+    /// Cap on one callback's scan, so a large buffer can't stretch it.
+    private let framesPerCallback = 4_096
+
+    var didSeeSignal: Bool { sawSignal.load(ordering: .acquiring) }
+
+    /// Realtime-safe: lock-free, and bounded both per callback and overall.
+    ///
+    /// The original took an `NSLock` here on every buffer. Sample scanning was never
+    /// the problem — a few thousand float compares is nothing next to the
+    /// `detachedCopy()` this callback already does — but locking on the audio thread
+    /// risks priority inversion against whoever reads `didSeeSignal`, and that's the
+    /// one thing a realtime callback must never do.
+    func inspect(_ buffer: AVAudioPCMBuffer) {
+        guard !sawSignal.load(ordering: .relaxed) else { return }
+        let seen = framesInspected.wrappingAdd(Int(buffer.frameLength), ordering: .relaxed).oldValue
+        guard seen < frameBudget else { return }
+
+        let list = UnsafeMutableAudioBufferListPointer(buffer.mutableAudioBufferList)
+        var budget = framesPerCallback
+        for index in 0..<list.count {
+            guard let data = list[index].mData else { continue }
+            let count = min(Int(list[index].mDataByteSize) / 4, budget)
+            let samples = data.bindMemory(to: Float.self, capacity: count)
+            for sample in 0..<count where samples[sample] != 0 {
+                sawSignal.store(true, ordering: .releasing)
+                return
+            }
+            budget -= count
+            if budget <= 0 { return }
+        }
+    }
+}
+
 final class SystemAudioTap: @unchecked Sendable {
     enum TapError: Error {
         case tapCreationFailed(OSStatus)
@@ -22,14 +64,18 @@ final class SystemAudioTap: @unchecked Sendable {
     }
 
     private let log = Logger(subsystem: "app.cheerio.mac", category: "SystemAudioTap")
-    private let onBuffer: @Sendable (AVAudioPCMBuffer) -> Void
+    private let onBuffer: @Sendable (sending AVAudioPCMBuffer) -> Void
 
     private var tapID = AudioObjectID(kAudioObjectUnknown)
     private var aggregateID = AudioObjectID(kAudioObjectUnknown)
     private var ioProcID: AudioDeviceIOProcID?
     private var tapFormat: AVAudioFormat?
 
-    init(onBuffer: @escaping @Sendable (AVAudioPCMBuffer) -> Void) {
+    /// A tap that is denied doesn't fail — it delivers zeroes forever. This watches
+    /// the opening seconds for any non-zero sample so `stop()` can say so out loud.
+    private let signalWatch = SilenceWatch()
+
+    init(onBuffer: @escaping @Sendable (sending AVAudioPCMBuffer) -> Void) {
         self.onBuffer = onBuffer
     }
 
@@ -80,16 +126,22 @@ final class SystemAudioTap: @unchecked Sendable {
 
         // 4. IOProc: deliver input buffers as AVAudioPCMBuffer.
         let onBuffer = self.onBuffer
+        let signalWatch = self.signalWatch
         status = AudioDeviceCreateIOProcIDWithBlock(&ioProcID, aggregateID, nil) { _, inputData, _, _, _ in
-            guard let buffer = AVAudioPCMBuffer(pcmFormat: format, bufferListNoCopy: inputData, deallocator: nil)
+            // `inputData` belongs to Core Audio and is recycled as soon as this
+            // block returns, so wrap it without copying and then take a copy we own.
+            guard let transient = AVAudioPCMBuffer(pcmFormat: format, bufferListNoCopy: inputData, deallocator: nil),
+                  let buffer = transient.detachedCopy()
             else { return }
+            signalWatch.inspect(buffer)
             onBuffer(buffer)
         }
         guard status == noErr, let ioProcID else { throw TapError.ioProcFailed(status) }
 
         status = AudioDeviceStart(aggregateID, ioProcID)
         guard status == noErr else { throw TapError.ioProcFailed(status) }
-        log.info("System audio tap started")
+        // .notice so it survives to `log show`; .info is memory-only.
+        log.notice("System audio tap started — \(format.sampleRate, privacy: .public)Hz ch=\(format.channelCount, privacy: .public)")
     }
 
     func stop() {
@@ -106,6 +158,18 @@ final class SystemAudioTap: @unchecked Sendable {
         ioProcID = nil
         aggregateID = AudioObjectID(kAudioObjectUnknown)
         tapID = AudioObjectID(kAudioObjectUnknown)
-        log.info("System audio tap stopped")
+
+        if signalWatch.didSeeSignal {
+            log.notice("System audio tap stopped — captured signal")
+        } else {
+            log.error(
+                """
+                System audio tap stopped — captured ONLY SILENCE. The tap was created \
+                without error but every sample was zero, which means macOS is denying \
+                capture rather than failing. Check System Settings → Privacy & Security \
+                → Screen & System Audio Recording, and whether this build is sandboxed.
+                """
+            )
+        }
     }
 }
