@@ -63,4 +63,6 @@ Swift 6 strict concurrency. Audio IOProcs/taps hand buffers off through `AsyncSt
 
 ## Permissions & entitlements
 
-App Sandbox on. `com.apple.security.device.audio-input`, `com.apple.security.personal-information.calendars`. Usage strings: mic, audio capture, calendar. No network entitlement — enforced local-only by construction.
+**App Sandbox off — do not turn it back on.** A sandboxed process tap is created with `noErr` at every step and then reads pure digital silence: no TCC prompt, no error anywhere, and it presents exactly like a transcription bug. Measured on identical code, `peak=0.0` sandboxed against `-1.8 dBFS` unsandboxed. `SystemAudioTap`'s `SilenceWatch` logs the verdict at `.notice`/`.error` on stop, which is the quickest way to recognise it. This rules out Mac App Store distribution. Hardened runtime stays on.
+
+`com.apple.security.device.audio-input`, `com.apple.security.personal-information.calendars`. Usage strings: mic, audio capture, calendar. No network entitlement — enforced local-only by construction.

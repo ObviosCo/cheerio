@@ -41,13 +41,30 @@ public enum AudioExcerpt {
         to destination: URL
     ) throws -> TimeInterval {
         let input = try AVAudioFile(forReading: source)
+        do {
+            return try copy(merging(ranges), from: input, to: destination)
+        } catch {
+            // `AVAudioFile(forWriting:)` creates the file the moment it's constructed,
+            // so an empty or half-written CAF is sitting there now. Callers name these
+            // by UUID and hand the path to a model that was never saved, so nothing
+            // would ever find it again — failed enrollments would just accumulate.
+            try? FileManager.default.removeItem(at: destination)
+            throw error
+        }
+    }
+
+    private static func copy(
+        _ ranges: [Range],
+        from input: AVAudioFile,
+        to destination: URL
+    ) throws -> TimeInterval {
         let format = input.processingFormat
         let sampleRate = format.sampleRate
         let frameCount = input.length
         let output = try AVAudioFile(forWriting: destination, settings: input.fileFormat.settings)
 
         var framesWritten: AVAudioFramePosition = 0
-        for range in merging(ranges) {
+        for range in ranges {
             let start = clamp(AVAudioFramePosition((range.start * sampleRate).rounded()), to: frameCount)
             let end = clamp(AVAudioFramePosition((range.end * sampleRate).rounded()), to: frameCount)
             guard end > start else { continue }

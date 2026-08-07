@@ -43,12 +43,21 @@ public enum StorageMigration {
                       fileManager.fileExists(atPath: old.path)
                 else { continue }
 
-                try fileManager.createDirectory(
-                    at: new.deletingLastPathComponent(),
-                    withIntermediateDirectories: true
-                )
-                try fileManager.moveItem(at: old, to: new)
-                moved += 1
+                do {
+                    try fileManager.createDirectory(
+                        at: new.deletingLastPathComponent(),
+                        withIntermediateDirectories: true
+                    )
+                    try fileManager.moveItem(at: old, to: new)
+                    moved += 1
+                } catch {
+                    // Per meeting, not per run: letting one stubborn directory reach the
+                    // outer catch abandoned every meeting after it, and the same one
+                    // would block them again on every future launch.
+                    log.error(
+                        "Couldn't move audio for \(relativePath, privacy: .public): \(error)"
+                    )
+                }
             }
             if moved > 0 {
                 log.notice("Moved audio for \(moved, privacy: .public) meeting(s) into the app container")

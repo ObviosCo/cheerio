@@ -11,8 +11,6 @@ struct MeetingListView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \Meeting.startedAt, order: .reverse) private var meetings: [Meeting]
 
-    @State private var errorMessage: String?
-    @State private var needsMicrophoneAccess = false
     @State private var searchText = ""
     /// The calendar event happening right now, offered as a title but never assumed.
     @State private var currentEvent: CalendarMeeting?
@@ -63,12 +61,14 @@ struct MeetingListView: View {
                 try? await Task.sleep(for: .seconds(30))
             }
         }
-        .alert("Couldn't start recording", isPresented: $errorMessage.presented()) {
-            Button("OK") { errorMessage = nil }
+        // Both alerts read the session, not local state, so a recording started from the
+        // menu bar can explain itself here.
+        .alert("Couldn't start recording", isPresented: startFailed) {
+            Button("OK") { session.startFailure = nil }
         } message: {
-            Text(errorMessage ?? "")
+            Text(session.startFailure?.message ?? "")
         }
-        .alert("Cheerio needs microphone access", isPresented: $needsMicrophoneAccess) {
+        .alert("Cheerio needs microphone access", isPresented: microphoneDenied) {
             Button("Open System Settings") {
                 if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
                     NSWorkspace.shared.open(url)
@@ -151,12 +151,26 @@ struct MeetingListView: View {
         }
     }
 
+    private var microphoneDenied: Binding<Bool> {
+        Binding(
+            get: { session.startFailure == .microphoneDenied },
+            set: { if !$0 { session.startFailure = nil } }
+        )
+    }
+
+    private var startFailed: Binding<Bool> {
+        Binding(
+            get: { session.startFailure?.message != nil },
+            set: { if !$0 { session.startFailure = nil } }
+        )
+    }
+
     private func startRecording(event: CalendarMeeting?) {
         Task {
             guard await MicrophoneCapture.permission() == .granted else {
                 // Re-asking can't help once it's been denied, so offer the only
                 // thing that can fix it.
-                needsMicrophoneAccess = true
+                session.startFailure = .microphoneDenied
                 return
             }
             // Don't leave a past meeting covering the detail column while the new one
@@ -169,7 +183,7 @@ struct MeetingListView: View {
                     context: context
                 )
             } catch {
-                errorMessage = error.localizedDescription
+                session.startFailure = .failed(error.localizedDescription)
             }
         }
     }

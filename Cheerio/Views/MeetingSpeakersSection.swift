@@ -131,6 +131,17 @@ struct MeetingSpeakersSection: View {
     }
 
     private func enroll(_ summary: SpeakerSummary, as name: String) {
+        // Everything below has to land together or not at all: the sample file, the new
+        // speaker, and the rename of this speaker's lines. Without the rollback, a
+        // failed save left the CAF on disk and both model changes pending in the live
+        // context — so a later autosave could commit part of what the user was just
+        // told had failed.
+        let priorLabels = meeting.segments.map {
+            ($0, $0.speakerLabel, $0.isSpeakerLabelManual)
+        }
+        var insertedSpeaker: EnrolledSpeaker?
+        var writtenSamplePath: String?
+
         do {
             guard let relativePath = meeting.audioDirectory else {
                 throw SpeakerLabeling.LabelingError.audioUnavailable
@@ -143,11 +154,23 @@ struct MeetingSpeakersSection: View {
                 from: source,
                 to: sampleURL
             )
-            context.insert(EnrolledSpeaker(name: name, audioPath: samplePath, duration: duration))
+            writtenSamplePath = samplePath
+
+            let speaker = EnrolledSpeaker(name: name, audioPath: samplePath, duration: duration)
+            context.insert(speaker)
+            insertedSpeaker = speaker
             // Now that this speaker has a name, put it on their lines too.
             meeting.relabelSpeaker(summary, to: name)
             try context.save()
         } catch {
+            if let insertedSpeaker { context.delete(insertedSpeaker) }
+            for (segment, label, wasManual) in priorLabels {
+                segment.speakerLabel = label
+                segment.isSpeakerLabelManual = wasManual
+            }
+            if let writtenSamplePath {
+                try? AudioStorage.removeFile(atRelativePath: writtenSamplePath)
+            }
             errorMessage = error.localizedDescription
         }
     }

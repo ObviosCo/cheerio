@@ -83,6 +83,22 @@ struct ParticipantsView: View {
         } message: {
             Text(errorMessage ?? "")
         }
+        .onDisappear {
+            // Closing Settings or switching tabs mid-recording left the microphone
+            // running until the view was torn down, and a partial CAF with nothing
+            // referencing it.
+            guard isRecording else { return }
+            let recorder = recorder
+            let capture = capture
+            let pendingPath = pendingPath
+            capture?.stop()
+            Task {
+                await recorder?.finish()
+                if let pendingPath {
+                    try? AudioStorage.removeFile(atRelativePath: pendingPath)
+                }
+            }
+        }
         .task(id: isRecording) {
             // Poll the recorder for a live duration readout while capturing.
             while isRecording, !Task.isCancelled {
@@ -125,7 +141,12 @@ struct ParticipantsView: View {
             other.isMe = false
         }
         speaker.isMe = isMe
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            context.rollback()
+            errorMessage = error.localizedDescription
+        }
     }
 
     private func durationLabel(for speaker: EnrolledSpeaker) -> String {
@@ -170,8 +191,21 @@ struct ParticipantsView: View {
         }
 
         let name = pendingName.trimmingCharacters(in: .whitespaces)
-        context.insert(EnrolledSpeaker(name: name, audioPath: relativePath, duration: duration))
-        try? context.save()
+        let speaker = EnrolledSpeaker(name: name, audioPath: relativePath, duration: duration)
+        context.insert(speaker)
+        do {
+            try context.save()
+        } catch {
+            // The CAF is written but nothing durable points at it, so leaving it would
+            // orphan a file nobody can find. Undo the whole enrollment and say so —
+            // resetting the form silently would look like it worked.
+            context.delete(speaker)
+            try? AudioStorage.removeFile(atRelativePath: relativePath)
+            errorMessage = error.localizedDescription
+            pendingPath = nil
+            elapsed = 0
+            return
+        }
 
         pendingName = ""
         pendingPath = nil
@@ -192,8 +226,19 @@ struct ParticipantsView: View {
     }
 
     private func remove(_ speaker: EnrolledSpeaker) {
-        try? AudioStorage.removeFile(atRelativePath: speaker.audioPath)
+        let audioPath = speaker.audioPath
         context.delete(speaker)
-        try? context.save()
+        do {
+            // Persist the deletion *before* touching the file. The other order meant a
+            // failed save resurrected the enrollment on next launch pointing at audio
+            // that was already gone — and every diarization pass would then skip it,
+            // silently, forever.
+            try context.save()
+        } catch {
+            context.rollback()
+            errorMessage = error.localizedDescription
+            return
+        }
+        try? AudioStorage.removeFile(atRelativePath: audioPath)
     }
 }

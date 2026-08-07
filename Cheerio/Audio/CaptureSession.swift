@@ -16,6 +16,25 @@ final class CaptureSession {
         case finishing
     }
 
+    /// Why the last start attempt failed, if it did.
+    ///
+    /// Lives on the session rather than in a view because recording can be started from
+    /// the menu bar, and a menu can't host an alert — the failure has to survive long
+    /// enough for the main window to present it.
+    enum StartFailure: Equatable {
+        case microphoneDenied
+        case failed(String)
+
+        var message: String? {
+            switch self {
+            case .microphoneDenied: nil
+            case .failed(let message): message
+            }
+        }
+    }
+
+    var startFailure: StartFailure?
+
     private(set) var state: State = .idle
     private(set) var meeting: Meeting?
     /// The meeting from the last completed recording, kept after ``meeting`` is

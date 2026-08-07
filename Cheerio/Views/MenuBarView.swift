@@ -50,19 +50,27 @@ struct MenuBarView: View {
 
     static let mainWindowID = "main"
 
-    /// Mirrors the sidebar's start action. Permission problems are surfaced in the
-    /// window rather than here — a menu can't host an alert.
+    /// Mirrors the sidebar's start action. A menu can't host an alert, so failures are
+    /// recorded on the session and the window is opened to present them — previously
+    /// both the permission case and any startup error vanished, and the menu bar just
+    /// dropped back to idle with no explanation.
     private func start(event: CalendarMeeting?) {
         Task {
             guard await MicrophoneCapture.permission() == .granted else {
+                session.startFailure = .microphoneDenied
                 openWindow(id: MenuBarView.mainWindowID)
                 return
             }
-            try? await session.start(
-                title: event?.title ?? "Meeting \(Date.now.formatted(date: .abbreviated, time: .shortened))",
-                calendarEventID: event?.id,
-                context: context
-            )
+            do {
+                try await session.start(
+                    title: event?.title ?? "Meeting \(Date.now.formatted(date: .abbreviated, time: .shortened))",
+                    calendarEventID: event?.id,
+                    context: context
+                )
+            } catch {
+                session.startFailure = .failed(error.localizedDescription)
+                openWindow(id: MenuBarView.mainWindowID)
+            }
         }
     }
 }

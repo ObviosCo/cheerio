@@ -16,6 +16,8 @@ enum SpeakerLabeling {
     enum LabelingError: LocalizedError {
         case modelMissing
         case audioUnavailable
+        /// The recordings are right there; there's just nothing to hear in them.
+        case noSpeechDetected
 
         var errorDescription: String? {
             switch self {
@@ -23,6 +25,8 @@ enum SpeakerLabeling {
                 "The speaker model isn't in the app bundle. Run Scripts/fetch-models.sh and rebuild."
             case .audioUnavailable:
                 "This meeting's audio has been deleted, so speakers can't be identified. Check the retention setting in Settings → Privacy."
+            case .noSpeechDetected:
+                "No speech was found in this meeting's recording, so there are no speakers to identify."
             }
         }
     }
@@ -37,14 +41,16 @@ enum SpeakerLabeling {
         else { throw LabelingError.audioUnavailable }
 
         let service = SpeakerAttributionService(modelURL: modelURL)
-        let enrolled = allEnrolled(context: context)
+        let enrolled = availableEnrolled(context: context)
 
         // Each channel is diarized against its own recording: in-room voices land on
         // the mic, remote participants on the system tap.
         var labelledAnything = false
+        var foundRecordings = false
         for channel in [SpeakerChannel.me, .them] {
             let audioFile = directory.appending(path: "\(channel.rawValue).caf")
             guard FileManager.default.fileExists(atPath: audioFile.path) else { continue }
+            foundRecordings = true
 
             // Per channel, not once for both: each diarization run has its own cap, and
             // your own voice isn't a candidate on the system tap — so that channel gets
@@ -101,13 +107,16 @@ enum SpeakerLabeling {
             // Not `try?`: a failed save means the labels the user is looking at will be
             // gone on next launch, which they need to know about.
             try context.save()
+        } else if foundRecordings {
+            // Don't send them to the retention setting over audio that's right there.
+            throw LabelingError.noSpeechDetected
         } else {
             throw LabelingError.audioUnavailable
         }
     }
 
     /// Every enrolled voice, oldest first. Which of them apply to a given meeting is
-    /// ``Meeting/participants(from:limit:)``' call, not ours.
+    /// ``Meeting/participants(from:channel:limit:)``' call, not ours.
     static func allEnrolled(context: ModelContext) -> [EnrolledSpeaker] {
         let descriptor = FetchDescriptor<EnrolledSpeaker>(
             sortBy: [SortDescriptor(\.enrolledAt, order: .forward)]
@@ -115,14 +124,27 @@ enum SpeakerLabeling {
         return (try? context.fetch(descriptor)) ?? []
     }
 
-    /// Turns a roster into something the diarizer can be primed with, skipping anyone
-    /// whose sample file has gone missing.
-    static func enrollments(for speakers: [EnrolledSpeaker]) -> [SpeakerEnrollment] {
-        speakers.compactMap { speaker in
+    /// Enrolled voices whose sample file is still on disk.
+    ///
+    /// Filtering here rather than at priming time is the point: a stale enrollment used
+    /// to count toward the four-speaker cap and only get dropped afterwards, so the
+    /// diarizer ran with three usable voices while a real participant sat in `dropped`.
+    static func availableEnrolled(context: ModelContext) -> [EnrolledSpeaker] {
+        allEnrolled(context: context).filter { speaker in
             guard let url = try? AudioStorage.url(forRelativePath: speaker.audioPath),
                   FileManager.default.fileExists(atPath: url.path)
             else {
                 log.error("Voice sample missing for \(speaker.name, privacy: .public)")
+                return false
+            }
+            return true
+        }
+    }
+
+    /// Turns a roster into something the diarizer can be primed with.
+    static func enrollments(for speakers: [EnrolledSpeaker]) -> [SpeakerEnrollment] {
+        speakers.compactMap { speaker in
+            guard let url = try? AudioStorage.url(forRelativePath: speaker.audioPath) else {
                 return nil
             }
             return SpeakerEnrollment(audioFile: url, name: speaker.name)

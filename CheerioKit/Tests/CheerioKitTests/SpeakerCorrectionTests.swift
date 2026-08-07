@@ -197,12 +197,13 @@ import Testing
         #expect(abs(written - 1) < 0.01)
 
         // But nothing usable at all is an error worth surfacing.
+        let orphan = directory.appending(path: "empty.caf")
         #expect(throws: AudioExcerpt.ExcerptError.self) {
-            try AudioExcerpt.write(
-                [.init(start: 50, end: 60)],
-                from: source,
-                to: directory.appending(path: "empty.caf")
-            )
+            try AudioExcerpt.write([.init(start: 50, end: 60)], from: source, to: orphan)
         }
+        // And the half-made file must not survive the failure: callers name samples by
+        // UUID and only persist the path on success, so anything left here is garbage
+        // nobody can trace back.
+        #expect(!FileManager.default.fileExists(atPath: orphan.path))
     }
 }

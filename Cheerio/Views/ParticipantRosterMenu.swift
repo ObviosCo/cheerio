@@ -22,7 +22,16 @@ struct ParticipantRosterMenu: View {
         meeting.participantNames ?? enrolled.map(\.name)
     }
 
-    private var isOverCap: Bool { selectedNames.count > limit }
+    /// Only names that still have an enrollment behind them. A roster deliberately
+    /// keeps the names of removed speakers so old meetings stay readable, but counting
+    /// those against the cap claimed "over the 4-voice cap" when four or fewer usable
+    /// voices remained.
+    private var usableSelectedNames: [String] {
+        let available = Set(enrolled.map(\.name))
+        return selectedNames.filter { available.contains($0) }
+    }
+
+    private var isOverCap: Bool { usableSelectedNames.count > limit }
 
     var body: some View {
         if enrolled.isEmpty {
@@ -51,7 +60,7 @@ struct ParticipantRosterMenu: View {
     }
 
     private var summary: String {
-        let names = selectedNames
+        let names = usableSelectedNames
         if names.isEmpty { return "No voices primed" }
         if isOverCap { return "\(names.count) selected — over the \(limit)-voice cap" }
         return names.joined(separator: ", ")
