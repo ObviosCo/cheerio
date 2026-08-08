@@ -53,17 +53,27 @@
            it. The zip still exists — it is what the updater downloads — but it
            is not what a person should click. See issue #55.
 
-           On each release, update the version, date, size, and the href here,
+           On each release, update the version, date, size, and both hrefs here,
            and add an entry to releases.html.
+
+           !! ORDERING, read before merging !!
+           v2026.8.8 predates this workflow change and has NO .dmg asset — it
+           was released with the zip only. The DMG href below therefore 404s
+           until a release cut *after* this change exists. This page deploys on
+           any push of site/** to main (.github/workflows/pages.yml), so either
+           cut that release around the same time, or point the primary button at
+           the zip until you do. The zip link is kept below in any case, so the
+           card is never a total dead end.
            ============================================================ -->
       <div class="card stack stack--4">
         <div class="stack stack--2">
           <h2 class="sub-title">Cheerio 2026.8.8</h2>
-          <p class="muted">Released <time datetime="2026-08-08">8 August 2026</time> · Apple Silicon only · 95&nbsp;MB</p>
+          <p class="muted">Released <time datetime="2026-08-08">8 August 2026</time> · Apple Silicon only · 96&nbsp;MB</p>
         </div>
         <p><a class="button button--primary" href="https://github.com/ObviosCo/cheerio/releases/download/v2026.8.8/Cheerio-2026.8.8.dmg">Download Cheerio 2026.8.8 (dmg)</a></p>
-        <p class="caption">Open it and drag Cheerio to your Applications folder. Developer ID-signed and notarized by Apple. <a href="releases.html#v2026-8-8">What's in this release</a></p>
+        <p class="caption">Open it and drag Cheerio to your Applications folder — running it from Downloads stops it updating itself. Developer ID-signed and notarized by Apple. <a href="releases.html#v2026-8-8">What's in this release</a></p>
         <p class="caption">Already have Cheerio? It updates itself — no need to download again.</p>
+        <p class="caption">Prefer a zip? <a href="https://github.com/ObviosCo/cheerio/releases/download/v2026.8.8/Cheerio-2026.8.8.zip">Cheerio 2026.8.8 (zip)</a> — the same app, and what the updater downloads.</p>
       </div>
 
       <div class="table-scroll">
