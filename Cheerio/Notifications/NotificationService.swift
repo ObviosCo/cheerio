@@ -160,6 +160,11 @@ final class NotificationService {
         let now = Date.now
         ledger.prune(now: now)
 
+        // Both fields read the session, not the meeting's kind, and that's deliberate:
+        // a directive (#33) occupies the microphone exactly as a meeting does, so
+        // `isRecording` has to suppress offers during one — while its
+        // `calendarEventID` is always nil, since a directive is never started against
+        // an event, so nothing gets withdrawn on its account.
         let recording = MeetingSuggestionPlanner.RecordingContext(
             isRecording: session.state != .idle,
             eventID: (session.meeting ?? session.lastFinishedMeeting)?.calendarEventID
@@ -392,9 +397,11 @@ final class NotificationService {
         }
     }
 
-    /// Mirrors `MenuBarView.start(event:)` — the same permission check, the same
+    /// Mirrors `MenuBarView.start(event:kind:)` — the same permission check, the same
     /// title/`calendarEventID` pair, the same "a failure has to survive long enough
-    /// for the window to present it" handling. The context is the container's
+    /// for the window to present it" handling. Always `.meeting`: every suggestion
+    /// here comes from a calendar event, and a directive (#33) is you talking to the
+    /// app on your own, never something the calendar can propose. The context is the
     /// `mainContext`, which is the very context the views are bound to, so a
     /// recording started from a notification appears in a library window that isn't
     /// open yet.
@@ -422,6 +429,7 @@ final class NotificationService {
             try await session.start(
                 title: response.eventTitle ?? "Meeting \(Date.now.formatted(date: .abbreviated, time: .shortened))",
                 calendarEventID: response.eventID,
+                kind: .meeting,
                 context: container.mainContext
             )
         } catch {

@@ -112,7 +112,6 @@ struct ContentView: View {
     /// pushing onto a stack inside the sidebar only ever filled the sidebar.
     @State private var selectedMeeting: Meeting?
 
-    @Environment(\.openWindow) private var openWindow
     private let notifications = NotificationService.shared
 
     var body: some View {
