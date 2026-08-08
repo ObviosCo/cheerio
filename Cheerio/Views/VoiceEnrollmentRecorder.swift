@@ -148,7 +148,14 @@ struct VoiceEnrollmentRecorder: View {
             // The CAF is written but nothing durable points at it, so leaving it would
             // orphan a file nobody can find. Undo the whole enrollment and say so —
             // resetting the form silently would look like it worked.
-            context.delete(speaker)
+            //
+            // `markAsMe` may have also flipped `isMe` false on whoever held it before
+            // this save was attempted (see above); deleting only the new speaker would
+            // leave that demotion sitting uncommitted, ready to be persisted by
+            // whatever save happens to come next. Roll back the whole context instead,
+            // same as `ParticipantsView.setMe` — it undoes the insert and the demotion
+            // together.
+            context.rollback()
             try? AudioStorage.removeFile(atRelativePath: relativePath)
             errorMessage = error.localizedDescription
             pendingPath = nil

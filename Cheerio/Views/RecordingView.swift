@@ -75,7 +75,13 @@ struct RecordingView: View {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Add your voice")
                     .font(.headline)
-                VoiceEnrollmentRecorder(markAsMe: true) { _ in showEnrollmentSheet = false }
+                VoiceEnrollmentRecorder(markAsMe: true) { _ in
+                    showEnrollmentSheet = false
+                    // A successful enrollment resolves the reason the banner is up in
+                    // the first place — leave it showing and it reads as a bug: "I just
+                    // did what it asked, why is it still there?"
+                    showEnrollmentNudge = false
+                }
                 Button("Done") { showEnrollmentSheet = false }
                     .buttonStyle(.bordered)
             }

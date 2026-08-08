@@ -149,10 +149,21 @@ struct OnboardingPermissionStepView: View {
         // Tap creation failing outright is rare and unrelated to TCC (see
         // `SystemAudioTap.TapError`) — `try?` means it's not worth dead-ending the
         // walkthrough over either way.
-        if (try? tap.start()) != nil {
+        //
+        // `start()` can throw after partially creating the tap, the aggregate
+        // device, or the IOProc (e.g. the aggregate is created but `AudioDeviceStart`
+        // fails), so `stop()` runs unconditionally afterward rather than only on
+        // success. That's safe because `stop()` guards every teardown step behind
+        // the same "was this ever assigned" check `start()` uses when it assigns
+        // the ID (`tapID`/`aggregateID` against `kAudioObjectUnknown`, `ioProcID`
+        // against `nil`) — see `SystemAudioTap.stop()`. `CaptureSession` leans on
+        // the same guarantee in `rollbackFailedStart()`, calling `systemTap?.stop()`
+        // unconditionally after any failed `start()`.
+        let started = (try? tap.start()) != nil
+        if started {
             try? await Task.sleep(for: .seconds(1))
-            tap.stop()
         }
+        tap.stop()
         status = .requested
     }
 }

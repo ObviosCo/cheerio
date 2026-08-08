@@ -1,9 +1,10 @@
 import SwiftUI
 
 /// Feature discovery, not a second enrollment: teaches that other people can be
-/// enrolled too, and that importing a voice a teammate already shared is coming
-/// (issue #16) but isn't built yet — so this only teaches enrolling a second
-/// speaker by hand, same as you just did for yourself.
+/// enrolled too. This screen is reached whether or not the previous step's
+/// enrollment was completed or skipped, so its copy stays neutral about that —
+/// and until voice import (issue #16) exists, it only teaches enrolling a second
+/// speaker by hand, paired with a reminder to get their OK before recording them.
 struct OnboardingTeammateVoicesStepView: View {
     var onBack: () -> Void
     var onAdvance: () -> Void
@@ -13,7 +14,7 @@ struct OnboardingTeammateVoicesStepView: View {
             symbol: "person.2.wave.2.fill",
             title: "Recognize everyone, not just you",
             subtitle:
-                "Your voice is enrolled. Anyone you meet with often is worth naming too, so their turns show up with their name instead of “Speaker 2”."
+                "Anyone you meet with often is worth naming too, so their turns show up with their name instead of “Speaker 2”."
         ) {
             VStack(alignment: .leading, spacing: 14) {
                 OnboardingHighlightRow(
@@ -22,9 +23,9 @@ struct OnboardingTeammateVoicesStepView: View {
                         "Enroll a teammate any time from Settings → Participants — the same 30-second recording you just did for yourself."
                 )
                 OnboardingHighlightRow(
-                    symbol: "square.and.arrow.down.on.square",
+                    symbol: "hand.raised",
                     text:
-                        "Importing a voice a teammate already shared with you is coming soon, so you won't have to re-record people who use Cheerio too."
+                        "Let them know before you record their voice — the same courtesy you'd want for your own."
                 )
             }
             .frame(maxWidth: 400, alignment: .leading)

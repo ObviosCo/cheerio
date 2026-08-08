@@ -15,5 +15,8 @@ struct OnboardingProgressDots: View {
             }
         }
         .padding(.top, 18)
+        // Decorative only — the nav bar's buttons do the actual navigating — so
+        // VoiceOver should skip past a row of otherwise-unlabeled circles.
+        .accessibilityHidden(true)
     }
 }
