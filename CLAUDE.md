@@ -1,6 +1,18 @@
 # Cheerio — Claude Code handoff
 
-Open-source, single-user Granola alternative. macOS-first, local-only: SpeechAnalyzer/SpeechTranscriber for transcription, Foundation Models for summaries, Core Audio process taps for system audio. Read `docs/SPEC.md` (scope) and `docs/ARCHITECTURE.md` (design + gotchas) before changing anything.
+Open-source, single-user macOS app that turns meetings into AI-actionable transcripts. Local
+models are how it does that without a subscription or a third-party service: SpeechAnalyzer/
+SpeechTranscriber for transcription, Foundation Models for summaries, Core Audio process taps
+for system audio. Read `docs/SPEC.md` (scope) and `docs/ARCHITECTURE.md` (design + gotchas)
+before changing anything.
+
+**Pivot in progress:** Cheerio's identity is "transcripts AI agents act on," not "meeting notes
+that never touch the network" — local-only is what makes it free of a third-party service and a
+subscription, not the point of the app. See the tracking epic,
+[#22](https://github.com/ObviosCo/cheerio/issues/22), and its PR stack. The agent-facing
+surfaces this framing implies — MCP server, transcript-ready callback, directive mode,
+owner-attributed action items — are scoped in that stack; check `gh issue list` before assuming
+any of them exist yet, since docs describing the goal land ahead of the code that does it.
 
 ## State of the repo
 
@@ -51,7 +63,7 @@ bug and isn't).
 
 - **App Sandbox must stay off.** A sandboxed build creates the tap with `noErr` at every step and then reads pure digital silence, with no TCC prompt — it looks like a transcription bug but it's a capture-permission failure. Measured: `peak=0.0` sandboxed vs `-1.8 dBFS` unsandboxed, same code. This rules out Mac App Store distribution. `SystemAudioTap`'s `SilenceWatch` logs the verdict at `.notice`/`.error` on stop (`.info` never reaches `log show`).
 - **Both capture channels run in every recording mode.** Input and output can be different devices, so a solo recording through AirPods still has system audio worth keeping. `RecordingMode` (#12) drives echo cancellation, never whether the tap starts.
-- Local-only where it counts: **nothing may need the network while recording or processing a meeting**. That invariant is unchanged and still the thing to protect in review. What changed is the shape of the guarantee: the app is no longer free of networking code. Sparkle now fetches the appcast and, if accepted, an update zip — both from Cheerio's own distribution endpoints, and `UpdatePolicy` in `Cheerio/Updates/AppUpdater.swift` refuses a *scheduled* check while `CaptureSession.state != .idle`. With the sandbox off nothing enforces any of this, so review is the enforcement: capture and processing must stay free of `URLSession`, sockets and `import Network`, and Sparkle must stay the only thing that talks to the network at all. A one-time download at install/setup (e.g. fetching a model) would also be acceptable; a network dependency during capture never is. Sparkle's system profile stays off — no analytics, no accounts.
+- **What "no third-party service" means mechanically:** nothing may need the network while recording or processing a meeting. That invariant is unchanged and still the thing to protect in review — but the app is no longer free of networking code. Sparkle fetches the appcast and, if accepted, an update zip — both from Cheerio's own distribution endpoints — and `UpdatePolicy` in `Cheerio/Updates/AppUpdater.swift` refuses a *scheduled* check while `CaptureSession.state != .idle`. With the sandbox off nothing enforces any of this, so review is the enforcement: capture and processing must stay free of `URLSession`, sockets, and `import Network`, and Sparkle must stay the only thing that talks to the network at all. A one-time download at install/setup (e.g. fetching a model) would also be acceptable; a network dependency during capture never is. Sparkle's system profile stays off — no analytics, no accounts. This isn't air-gapping for its own sake — it's the mechanical form of "no subscription, no third party." It doesn't rule out local surfaces for other processes on the same machine: a future MCP server speaks stdio, and a transcript-ready callback runs a local command — neither opens a network connection, so neither weakens this invariant.
 - Anything portable to iOS lives in `CheerioKit`; Core Audio tap code stays in the app target.
 - Realtime audio callbacks do no work — hand buffers off immediately (AsyncStream/Task).
 - Two transcription engines (mic/system) for the Me/Them split — that's deliberate; don't merge streams. Diarization sits *on top* of them, per-channel, to tell people apart within one channel.

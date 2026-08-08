@@ -1,10 +1,10 @@
 # Cheerio — Spec
 
-An open-source, single-user Granola alternative for macOS (and later iOS). Everything runs on-device: Apple's local models for speech and summarization, plus a bundled Sortformer model for telling speakers apart. No accounts, no cloud, no telemetry.
+An open-source, single-user meeting-transcript app for macOS (and later iOS), built around the idea that a transcript is something an AI agent can act on, not just something you reread. Local models are how it gets there without a subscription or a third-party service: Apple's local models for speech and summarization, plus a bundled Sortformer model for telling speakers apart. No accounts, no cloud, no telemetry.
 
 ## Problem
 
-Granola-style AI meeting notes require sending your meetings to someone else's servers and paying a subscription. Apple now ships everything needed to do this locally: SpeechAnalyzer/SpeechTranscriber for transcription (macOS 26+) and the Foundation Models framework for summarization.
+Meeting transcripts are already used as instructions for AI agents — record a call, or a session of thinking out loud, then paste the transcript into an agent and let it act on what was said. That workflow is manual today, and a chat box is the wrong container for it: prompt boxes are size-limited, whereas a transcript's whole value is being long-form. Granola-style AI notes handle the note-taking half of this well, but require sending your meetings to someone else's servers and paying a subscription for it. Apple now ships everything needed to do the note-taking locally — SpeechAnalyzer/SpeechTranscriber for transcription (macOS 26+) and the Foundation Models framework for summarization — which removes the subscription and the third party, and leaves room to build the second half: making the transcript something an agent can pick up directly instead of something you copy and paste.
 
 ## Goals (v1)
 
@@ -16,10 +16,11 @@ Granola-style AI meeting notes require sending your meetings to someone else's s
 6. **Library** — Browse, search, and export past meetings (Markdown export).
 7. **Speakers** — Tell people apart *within* a channel, not just Me vs Them: Sortformer diarization as a post-pass over the recorded audio, voices enrolled by name, and a per-meeting roster of who was there. Hand corrections outrank the model. Originally a v1 non-goal; it turned out to be the difference between a usable in-person transcript and one where three people are all "Me".
 8. **Menu-bar first** — The `MenuBarExtra` is the primary surface, not a mirror of the sidebar: start, stop, and tell at a glance whether it's recording, without finding a window first. The window becomes the library — where you read, search, and correct. The reasoning is that the moment you need to start recording is the moment you have the least attention to spare, and it should cost one click from wherever you already are.
+9. **Actionable** — transcripts are built to be consumed by the AI agents already running on your machine, not just read by you. Local surfaces for this: an MCP server that local agents can query, a transcript-ready callback that fires when a meeting finishes processing, and a directive-capture mode for talking instructions at the app instead of narrating a meeting. Speaker identity doubles as a trust signal: when the owner (`EnrolledSpeaker.isMe`) commits to something, their agent can treat it as an instruction to act on directly; when someone else does, it becomes a follow-up to track and prepare for — never an action taken on their behalf.
 
 ## Non-goals (v1)
 
-- Multi-user, sharing, sync, or any server component
+- Multi-user, sharing, sync, or any server component — a local stdio MCP endpoint that only speaks to agents on the same machine doesn't count as a server in this sense; it never listens on a network socket or accepts a remote connection
 - Real-time speaker naming *during* a recording — diarization is a post-pass over the CAF files, so the live transcript shows Me/Them and names appear once the meeting stops
 - More than four distinct speakers resolved per channel (Sortformer's hard limit)
 - Meeting bots or calendar-service integrations beyond local EventKit
@@ -50,3 +51,4 @@ Granola-style AI meeting notes require sending your meetings to someone else's s
 - Semantic search across meetings
 - Real-time speaker naming during capture (streaming Sortformer alongside the engines, rather than a post-pass)
 - Obsidian/Markdown folder auto-export
+- A first-party CLI, once the transcript-ready callback and MCP server (v1) prove out the shape agents actually want
