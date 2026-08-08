@@ -167,20 +167,29 @@ jobs:
           app="build/Build/Products/Release/Cheerio.app"
           printf '%s' "$NOTARY_KEY_P8" > "$RUNNER_TEMP/AuthKey.p8"
           ditto -c -k --sequesterRsrc --keepParent "$app" "$RUNNER_TEMP/notarize.zip"
-          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
-            --key "$RUNNER_TEMP/AuthKey.p8" \
-            --key-id "$NOTARY_KEY_ID" \
-            --issuer "$NOTARY_ISSUER_ID" \
-            --wait --timeout 30m \
-            --output-format json | tee "$RUNNER_TEMP/notary.json"
-          # On rejection, surface Apple's per-file reasons — "status: Invalid"
-          # alone is useless for debugging.
-          if [ "$(jq -r .status "$RUNNER_TEMP/notary.json")" != "Accepted" ]; then
-            xcrun notarytool log "$(jq -r .id "$RUNNER_TEMP/notary.json")" \
+          notary() {
+            xcrun notarytool "$@" \
               --key "$RUNNER_TEMP/AuthKey.p8" \
               --key-id "$NOTARY_KEY_ID" \
-              --issuer "$NOTARY_ISSUER_ID"
-            echo "::error::Notarization was not accepted"
+              --issuer "$NOTARY_ISSUER_ID" \
+              --output-format json
+          }
+          # submit and wait are separate calls so the submission ID survives a
+          # wait timeout — on timeout, notarytool prints only to stderr, and a
+          # combined submit --wait leaves you with no ID to fetch the log for.
+          notary submit "$RUNNER_TEMP/notarize.zip" > "$RUNNER_TEMP/submit.json"
+          sub_id="$(jq -r .id "$RUNNER_TEMP/submit.json")"
+          echo "Submission ID: $sub_id"
+          # Apple's queue is usually minutes but can run long, especially for
+          # a team's first submissions; 30m has timed out in practice.
+          notary wait "$sub_id" --timeout 2h > "$RUNNER_TEMP/verdict.json" || true
+          status="$(jq -r .status "$RUNNER_TEMP/verdict.json" 2>/dev/null || echo unknown)"
+          echo "Notary verdict: $status"
+          # On rejection, surface Apple's per-file reasons — "status: Invalid"
+          # alone is useless for debugging.
+          if [ "$status" != "Accepted" ]; then
+            notary log "$sub_id" || true
+            echo "::error::Notarization verdict: $status"
             exit 1
           fi
           xcrun stapler staple "$app"
