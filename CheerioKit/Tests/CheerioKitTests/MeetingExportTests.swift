@@ -18,6 +18,12 @@ import Testing
         meeting.roughNotes = "checked on the roadmap"
         meeting.enhancedNotes = "## Summary\nAll good."
         meeting.participantNames = ["Jackson", "Carter"]
+        meeting.actionItems = [
+            // One of each disposition: what a consumer routes on. The owner's item
+            // names nobody, so its missing `owner` key is part of the pinned shape.
+            ActionItem(text: "Update the roadmap", isOwner: true, disposition: .actionable),
+            ActionItem(text: "Send the contract", owner: "Carter", isOwner: false, disposition: .followUp),
+        ]
 
         // Undiarized mic line: owner-attributed by channel alone.
         let mine = TranscriptSegment(channel: .me, text: "Morning", startTime: 0, endTime: 5)
@@ -38,6 +44,7 @@ import Testing
         #expect(export.kind == .meeting)
         #expect(export.segments.map(\.isOwner) == [true, false])
         #expect(export.segments.map(\.displayLabel) == ["Me", "Carter"])
+        #expect(export.actionItems.map(\.disposition) == [.actionable, .followUp])
     }
 
     @Test func jsonShapeIsExact() throws {
@@ -49,7 +56,11 @@ import Testing
         let json = String(decoding: data, as: UTF8.self)
 
         let expected = """
-            {"endedAt":"2026-08-08T09:30:00Z","enhancedNotes":"## Summary\\nAll good.",\
+            {"actionItems":[\
+            {"disposition":"actionable","isOwner":true,"text":"Update the roadmap"},\
+            {"disposition":"followUp","isOwner":false,"owner":"Carter","text":"Send the contract"}\
+            ],\
+            "endedAt":"2026-08-08T09:30:00Z","enhancedNotes":"## Summary\\nAll good.",\
             "kind":"meeting","participantNames":["Jackson","Carter"],\
             "roughNotes":"checked on the roadmap",\
             "segments":[\
@@ -77,7 +88,7 @@ import Testing
         let json = String(decoding: data, as: UTF8.self)
 
         let expected = """
-            {"kind":"meeting","roughNotes":"","segments":[],\
+            {"actionItems":[],"kind":"meeting","roughNotes":"","segments":[],\
             "startedAt":"2026-08-08T09:00:00Z","title":"Standup",\
             "uuid":"00000000-0000-0000-0000-000000000001"}
             """

@@ -125,6 +125,18 @@ enum SpeakerLabeling {
         return (try? context.fetch(descriptor)) ?? []
     }
 
+    /// The names that mark the owner's own voice, for
+    /// ``Meeting/isOwnerAttributed(_:ownerNames:)`` and everything built on it —
+    /// owner-attributed action items, the export. Normally one name; empty until
+    /// someone marks a voice "this is me".
+    ///
+    /// Not filtered by whether the sample file survives, unlike
+    /// ``availableEnrolled(context:)``: a missing recording stops that voice being
+    /// primed, but it doesn't stop the person being the owner.
+    static func ownerNames(context: ModelContext) -> Set<String> {
+        Set(allEnrolled(context: context).filter(\.isMe).map(\.name))
+    }
+
     /// Enrolled voices whose sample file is still on disk.
     ///
     /// Filtering here rather than at priming time is the point: a stale enrollment used

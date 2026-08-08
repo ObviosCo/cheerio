@@ -46,6 +46,9 @@ public struct MeetingExport: Codable, Sendable, Equatable {
     public let participantNames: [String]?
     public let roughNotes: String
     public let enhancedNotes: String?
+    /// The action items as structure, so a consumer routes on `isOwner` and
+    /// `disposition` instead of parsing them back out of ``enhancedNotes``' Markdown.
+    public let actionItems: [ActionItem]
     public let segments: [Segment]
 
     /// Builds the snapshot from a live `Meeting`.
@@ -62,6 +65,7 @@ public struct MeetingExport: Codable, Sendable, Equatable {
         self.participantNames = meeting.participantNames
         self.roughNotes = meeting.roughNotes
         self.enhancedNotes = meeting.enhancedNotes
+        self.actionItems = meeting.actionItems
         self.segments =
             meeting.segments
             // startTime alone can't order this deterministically: the two engines run
