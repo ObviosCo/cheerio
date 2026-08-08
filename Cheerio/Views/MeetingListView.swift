@@ -24,6 +24,19 @@ struct MeetingListView: View {
         return meetings.filter { $0.matches(query) }
     }
 
+    /// `visibleMeetings`, bucketed into Today/Yesterday/weekday/absolute-date
+    /// sections. Grouping runs after filtering, not before, so search (and any filter
+    /// layered on top of it) always sees — and can empty out — a section before this
+    /// does.
+    ///
+    /// `strategy` isn't exposed anywhere yet; date is the only one that exists. It's
+    /// still a parameter on `MeetingListGrouping.sections` rather than something
+    /// hard-coded into date logic here, so a second axis (grouping by project, #1)
+    /// only has to add a case, not a rewrite.
+    private var meetingSections: [MeetingListSection] {
+        MeetingListGrouping.sections(for: visibleMeetings)
+    }
+
     var body: some View {
         // Selection rather than a NavigationStack: a stack nested in the sidebar
         // pushed the meeting into the sidebar's own 280pt column and left the detail
@@ -31,35 +44,21 @@ struct MeetingListView: View {
         List(selection: $selection) {
             Section { recordingControls }
 
-            Section("Meetings") {
-                if visibleMeetings.isEmpty, !searchText.isEmpty {
+            if visibleMeetings.isEmpty, !searchText.isEmpty {
+                Section("Meetings") {
                     Text("No meetings match “\(searchText)”.")
                         .foregroundStyle(.secondary)
                 }
-                ForEach(visibleMeetings) { meeting in
-                    VStack(alignment: .leading) {
-                        HStack(spacing: 4) {
-                            Text(meeting.title).font(.headline)
-                            // Nothing creates directives yet, so this is dormant today —
-                            // it only needs to be visible once something does.
-                            if meeting.kind == .directive {
-                                Text("Directive")
-                                    .font(.caption2.weight(.medium))
-                                    .padding(.horizontal, 5)
-                                    .padding(.vertical, 1)
-                                    .background(.tint.opacity(0.15), in: .capsule)
-                            }
+            } else {
+                // One `Section` per date bucket instead of a single flat "Meetings"
+                // section — empty buckets never appear because grouping only ever
+                // produces a section for a day that has something in it.
+                ForEach(meetingSections) { section in
+                    Section(section.title) {
+                        ForEach(section.meetings) { meeting in
+                            row(for: meeting)
                         }
-                        // Time as well as date: a busy day otherwise gives every row
-                        // the same subtitle.
-                        Text(meeting.startedAt.formatted(date: .abbreviated, time: .shortened))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
                     }
-                    // Without this the clickable area is only as wide as the title.
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(.rect)
-                    .tag(meeting)
                 }
             }
         }
@@ -89,6 +88,36 @@ struct MeetingListView: View {
         } message: {
             Text("Turn on Microphone for Cheerio, then start recording again.")
         }
+    }
+
+    /// One row in the grouped list. The date now lives in the section header, so the
+    /// subtitle only needs the time — that's true even in an absolute-date section,
+    /// whose header already spells the date out in full, so repeating it on every row
+    /// underneath would be redundant rather than disambiguating. Time-only is also
+    /// the simpler, consistent choice: no branching on which kind of section a row
+    /// happens to land in.
+    @ViewBuilder private func row(for meeting: Meeting) -> some View {
+        VStack(alignment: .leading) {
+            HStack(spacing: 4) {
+                Text(meeting.title).font(.headline)
+                // Nothing creates directives yet, so this is dormant today —
+                // it only needs to be visible once something does.
+                if meeting.kind == .directive {
+                    Text("Directive")
+                        .font(.caption2.weight(.medium))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(.tint.opacity(0.15), in: .capsule)
+                }
+            }
+            Text(meeting.startedAt.formatted(date: .omitted, time: .shortened))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        // Without this the clickable area is only as wide as the title.
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(.rect)
+        .tag(meeting)
     }
 
     /// Start and stop live in the same place so stopping is as findable as starting.
