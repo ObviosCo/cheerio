@@ -2,77 +2,37 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key>
-    <string>Cheerio</string>
-    <key>CFBundleDisplayName</key>
-    <string>Cheerio</string>
-    <!-- Required: this plist is hand-maintained (GENERATE_INFOPLIST_FILE is off), so
-         Xcode does not inject these. Without CFBundleIdentifier the App Sandbox can't
-         create a container and the app traps in libsecinit before main(). -->
-    <key>CFBundleIdentifier</key>
-    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-    <key>CFBundleExecutable</key>
-    <string>$(EXECUTABLE_NAME)</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
-    <key>CFBundleVersion</key>
-    <string>1</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>26.0</string>
-    <key>NSMicrophoneUsageDescription</key>
-    <string>Cheerio records your side of meetings so it can transcribe them on-device.</string>
-    <key>NSAudioCaptureUsageDescription</key>
-    <string>Cheerio captures system audio so it can transcribe the other participants in your meetings. Nothing leaves this Mac.</string>
-    <key>NSCalendarsFullAccessUsageDescription</key>
-    <string>Cheerio reads your calendar to suggest recording when a meeting starts and to attach notes to events.</string>
-
-    <!-- Sparkle (automatic updates). This is the app's only network access, and the
-         only reason it has any: the appcast below and the zip it points at, both
-         attached to Cheerio's own GitHub Releases. No check here starts while a recording
-         is in progress — see AppUpdater.swift. (A check or download already admitted
-         while idle is not aborted if a recording starts mid-cycle; that's a
-         documented edge, not machinery.) -->
-
-    <!-- Attached as a release asset by .github/workflows/release.yml, not served by the
-         website. `releases/latest/download/<asset>` is a stable URL: GitHub 302-redirects
-         it to whichever release is currently latest, and Sparkle follows redirects. That
-         means publishing a release publishes the feed in the same operation — no branch
-         write, no second deploy, nothing to leave half-done. -->
-    <key>SUFeedURL</key>
-    <string>https://github.com/ObviosCo/cheerio/releases/latest/download/appcast.xml</string>
-
-    <!-- TODO: paste the EdDSA public key here, once. Run Sparkle's `generate_keys`
-         (it lives in the resolved package at
-         SourcePackages/artifacts/sparkle/Sparkle/bin/generate_keys, or in the
-         Sparkle-*.tar.xz on its GitHub releases), put the private key in the
-         SPARKLE_ED_PRIVATE_KEY repository secret, and paste the public key it
-         prints below. Never commit the private key.
-
-         Until this is filled in, the release workflow refuses to publish: an app
-         shipped with a placeholder here trusts no key, so it would reject every
-         update forever, silently, with no way to fix it but a manual reinstall. -->
-    <key>SUPublicEDKey</key>
-    <string>REPLACE_WITH_SPARKLE_PUBLIC_ED_KEY</string>
-
-    <!-- On by default, and deliberately set rather than left unset: unset makes
-         Sparkle ask permission on second launch, which would land in the middle of
-         onboarding (#30). Users can turn it off in Settings → Updates. -->
-    <key>SUEnableAutomaticChecks</key>
-    <true/>
-
-    <!-- Off by default. Downloading and installing on its own is offered in
-         Settings, not assumed — an update that replaces the app under you is the
-         wrong surprise for something you leave running through meetings. -->
-    <key>SUAutomaticallyUpdate</key>
-    <false/>
-
-    <!-- No analytics is a repo invariant, and Sparkle's system profile is analytics:
-         it appends OS version, CPU, model and language to the feed request. Off by
-         default in Sparkle, stated here so it cannot drift, and refused a second time
-         in AppUpdater.swift's delegate. -->
-    <key>SUEnableSystemProfiling</key>
-    <false/>
+	<key>CFBundleDisplayName</key>
+	<string>Cheerio</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleName</key>
+	<string>Cheerio</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>26.0</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>Cheerio captures system audio so it can transcribe the other participants in your meetings. Nothing leaves this Mac.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Cheerio reads your calendar to suggest recording when a meeting starts and to attach notes to events.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Cheerio records your side of meetings so it can transcribe them on-device.</string>
+	<key>SUAutomaticallyUpdate</key>
+	<false/>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUEnableSystemProfiling</key>
+	<false/>
+	<key>SUFeedURL</key>
+	<string>https://github.com/ObviosCo/cheerio/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>eACjTQLCaS85Qi+Y5eN6ovaeDDMD4xBRmiHHDQCmRqw=</string>
 </dict>
 </plist>
