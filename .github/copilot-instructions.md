@@ -24,8 +24,11 @@ preferences.
 - **Realtime audio callbacks do no work.** AVAudioEngine taps and the tap IOProc must hand
   buffers off immediately (e.g. via `AsyncStream`/`Task`) — flag any parsing, allocation, or
   logging added inside a callback.
-- **Portable logic lives in `CheerioKit`, not the app target.** Only Core Audio tap code
-  belongs in `Cheerio/`.
+- **Anything portable to iOS lives in `CheerioKit`.** Models, transcription, summarization,
+  diarization, and calendar logic belong in the package. The app target (`Cheerio/`) keeps
+  what is genuinely macOS-specific — SwiftUI views, mic capture, the Core Audio system tap,
+  capture orchestration. Flag portable logic added to `Cheerio/`, not app concerns living
+  where they should.
 - **Swift 6 strict concurrency stays on.** Flag new `@unchecked Sendable`,
   `nonisolated(unsafe)`, or relaxed concurrency checking that silences a real data race
   instead of fixing it.
