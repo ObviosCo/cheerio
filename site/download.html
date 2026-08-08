@@ -50,15 +50,25 @@
         <p class="caption">Watch <a href="https://github.com/ObviosCo/cheerio/releases">the releases page</a> to be told when a build lands.</p>
       </div>
 
-      <!-- Replace the card above with this when a release exists:
+      <!-- Replace the card above with this when a release exists.
+
+           The release workflow (.github/workflows/release.yml) publishes a
+           versioned zip made with ditto — `Cheerio-<version>.zip` — not a DMG
+           and not a stable filename, so the href must name the exact version.
+
+           Keep whichever caption matches how that build is actually signed.
+           Today the workflow ad-hoc signs without notarization, so the second
+           one; switch to the first only once notarized releases ship (PR #18
+           sets that up).
 
       <div class="card stack stack--4">
         <div class="stack stack--2">
           <h2 class="sub-title">Cheerio 0.1.0</h2>
           <p class="muted">Released <time datetime="2026-00-00">DATE</time> · Universal? no — Apple Silicon only · 00&nbsp;MB</p>
         </div>
-        <p><a class="button button--primary" href="https://github.com/ObviosCo/cheerio/releases/latest/download/Cheerio.dmg">Download Cheerio.dmg</a></p>
+        <p><a class="button button--primary" href="https://github.com/ObviosCo/cheerio/releases/download/v0.1.0/Cheerio-0.1.0.zip">Download Cheerio 0.1.0 (zip)</a></p>
         <p class="caption">Signed and notarized by Apple. <a href="releases.html#v0-1-0">What's in this release</a></p>
+        <p class="caption">Ad-hoc signed — macOS will warn once on first launch; the steps are under First launch below. <a href="releases.html#v0-1-0">What's in this release</a></p>
       </div>
 
       -->
@@ -87,7 +97,7 @@
       <ol class="stack stack--6" style="padding-left:var(--ch-space-5);max-width:60ch">
         <li>
           <h3 class="sub-title">Open it</h3>
-          <p class="muted">Drag Cheerio to your Applications folder and open it. A signed, notarized build opens the way any app does.</p>
+          <p class="muted">Drag Cheerio to your Applications folder and open it. A notarized build opens the way any app does. Today's builds are ad-hoc signed, so macOS will warn about an unidentified developer once: right-click the app and choose <strong>Open</strong>, or approve it under System&nbsp;Settings → Privacy&nbsp;&amp;&nbsp;Security. Each release's notes say how that build is signed.</p>
         </li>
         <li>
           <h3 class="sub-title">Grant the microphone</h3>
@@ -110,11 +120,13 @@
       <!-- ============================================================
            GATEKEEPER
 
-           Deliberately absent. An unsigned build sends the user through
-           macOS's "unidentified developer" wall, and writing instructions
-           for clicking around that is a bad look — and unnecessary if the
-           build is signed. Do not add bypass steps here without deciding
-           the signing question first.
+           The signing question has a current answer: release.yml ad-hoc
+           signs (no notarization), and its release notes carry the
+           right-click → Open steps — so "Open it" above mirrors them.
+           That's Apple's supported flow, not a bypass; deeper workarounds
+           (xattr etc.) stay out of this page on purpose. When notarized
+           releases ship (PR #18), trim "Open it" back to a single
+           sentence and delete this note.
            ============================================================ -->
     </div>
   </section>

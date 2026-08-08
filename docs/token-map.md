@@ -70,7 +70,7 @@ raw `Copper700` is 3.98:1 on the light page and fails AA.
 | CSS custom property | Color Set | Light | Dark | On page |
 | --- | --- | --- | --- | --- |
 | `--ch-accent` | `Accent/Default` | `#8C5D32` | `#E2B487` | 5.4 / 9.4 |
-| `--ch-accent-hover` | `Accent/Hover` | `#794C20` | `#EFC79C` | 7.0 / — |
+| `--ch-accent-hover` | `Accent/Hover` | `#794C20` | `#F1C9A1` | 7.0 / 11.5 |
 | `--ch-accent-quiet` | `Accent/Quiet` | `#F7EEE7` | `#2A1C10` | fill only |
 
 ## Semantic states
@@ -113,7 +113,8 @@ single-colour by definition, so it carries 1 alone and must be unmistakable at
 
 ## Speaker identity
 
-Nine colour sets. Speaker colour fills the **monogram chip and nothing else** —
+Eleven colour sets: nine identity colours (`Self` plus eight slots) and two
+supporting tokens (`Unresolved`, `OnChip`). Speaker colour fills the **monogram chip and nothing else** —
 never transcript text, never a row background. That rule is what keeps a
 400-line transcript readable.
 
@@ -128,11 +129,13 @@ never transcript text, never a row background. That rule is what keeps a
 | `--ch-speaker-6` | `Speaker/Slot6` | `#46773B` | `#98CF8B` | green |
 | `--ch-speaker-7` | `Speaker/Slot7` | `#533D92` | `#9E8AE7` | violet |
 | `--ch-speaker-8` | `Speaker/Slot8` | `#655C13` | `#B0A75E` | olive |
-| `--ch-speaker-unresolved` | `Speaker/Unresolved` | `#7D8185` | `#70757A` | before identification runs |
+| `--ch-speaker-unresolved` | `Speaker/Unresolved` | `#6F7377` | `#7B8085` | before identification runs |
 | `--ch-speaker-on-chip` | `Speaker/OnChip` | `#FFFFFF` | `#0E1218` | monogram foreground |
 
-Every slot clears 4.5:1 against `Speaker/OnChip` in its own appearance, so the
-monogram is legible in both modes with one colour set per slot.
+Every row — `Unresolved` included — clears 4.5:1 against `Speaker/OnChip` in its
+own appearance, so the monogram is legible in both modes with one colour set per
+slot. (Worst case is `Unresolved` at 4.78 light / 4.71 dark; re-verify if any
+value changes.)
 
 ### Slot assignment
 

@@ -2,9 +2,16 @@
 # Subsets the site's committed webfonts to the characters an English page
 # actually uses, rewriting each woff2 in place.
 #
-# The upstream files cover Latin Extended, Greek and Cyrillic — about 320 KB
-# across the four. The site is English. Subsetting to Latin plus punctuation
-# takes that to roughly a third, with no visible difference.
+# The upstream files cover Latin Extended, Greek and Cyrillic. The site is
+# English. Subsetting to Latin plus punctuation cuts each file to roughly a
+# fifth, with no visible difference.
+#
+# IBM Plex is deliberately NOT subsetted. Its OFL declares "Plex" a Reserved
+# Font Name, and a subset is a Modified Version, which may not use that name
+# without written permission (see site/fonts/IBMPlexSans-LICENSE.txt).
+# Renaming the family internally would satisfy the licence but confuse
+# everyone else; shipping IBM's files unmodified costs ~110 KB and zero
+# lawyers. Literata and JetBrains Mono reserve no names, so they subset.
 #
 # This is NOT a build step. The site is correct without it and nothing in CI
 # depends on it; it is a size pass worth running before shipping, and again
@@ -84,9 +91,8 @@ subset_one() {
 echo "subsetting webfonts in $FONT_DIR to Latin"
 total_before=$(cat "$FONT_DIR"/*.woff2 | wc -c | tr -d ' ')
 
+# No IBM Plex here — Reserved Font Name, see the header.
 for f in "$FONT_DIR"/Literata-Regular.woff2 \
-         "$FONT_DIR"/IBMPlexSans-Regular.woff2 \
-         "$FONT_DIR"/IBMPlexSans-SemiBold.woff2 \
          "$FONT_DIR"/JetBrainsMono-Regular.woff2; do
     subset_one "$f"
 done
