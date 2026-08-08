@@ -18,6 +18,12 @@ struct MeetingListView: View {
     /// to earn their own part of the list, but hiding meetings while looking for one
     /// is already useful today.
     @State private var directivesOnly = false
+    /// The meeting the "Rename" context-menu item was chosen for. Driving an alert
+    /// off this (rather than an inline field in the row) keeps the row layout the
+    /// same whether or not something's being renamed — the row's width is already
+    /// tight with the directive badge and timestamp.
+    @State private var renamingMeeting: Meeting?
+    @State private var renameText = ""
 
     /// Matches title, rough notes, enhanced notes, and transcript text. The library
     /// is one person's meetings, so filtering in memory is cheaper than rebuilding
@@ -66,6 +72,12 @@ struct MeetingListView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(.rect)
                     .tag(meeting)
+                    .contextMenu {
+                        Button("Rename") {
+                            renameText = meeting.title
+                            renamingMeeting = meeting
+                        }
+                    }
                 }
             }
         }
@@ -94,8 +106,13 @@ struct MeetingListView: View {
                 try? await Task.sleep(for: .seconds(30))
             }
         }
-        // Both alerts read the session, not local state, so a recording started from the
-        // menu bar can explain itself here.
+        .alert("Rename meeting", isPresented: $renamingMeeting.presented()) {
+            TextField("Meeting name", text: $renameText)
+            Button("Cancel", role: .cancel) { renamingMeeting = nil }
+            Button("Save") { applyRename() }
+        }
+        // Both alerts below read the session, not local state, so a recording started
+        // from the menu bar can explain itself here.
         .alert("Couldn't start recording", isPresented: startFailed) {
             Button("OK") { session.startFailure = nil }
         } message: {
@@ -196,6 +213,18 @@ struct MeetingListView: View {
             get: { session.startFailure?.message != nil },
             set: { if !$0 { session.startFailure = nil } }
         )
+    }
+
+    /// Commits the "Rename" context-menu flow. Plain SwiftData write, same as the
+    /// live rename in `RecordingView` and the detail view — the only thing specific
+    /// to this affordance is where the new text came from.
+    private func applyRename() {
+        defer { renamingMeeting = nil }
+        guard let renamingMeeting else { return }
+        let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        renamingMeeting.rename(to: trimmed)
+        try? context.save()
     }
 
     private func startRecording(event: CalendarMeeting?) {
