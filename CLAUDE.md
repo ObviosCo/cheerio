@@ -27,6 +27,7 @@ Speaker differentiation *is* verified for in-person meetings: on 2026-07-31, wit
   - **FluidAudio** (Apache-2.0), in `CheerioKit`. Wraps Sortformer on Core ML/ANE for speaker diarization, because `SpeechTranscriber` has no speaker surface at all. Sortformer resolves **at most 4 speakers**.
   - **Sparkle 2** (MIT), on the app target only — declared in `project.yml`, not `Package.swift`, so both SwiftPM cache keys in CI hash `project.yml` too. Automatic updates; see `Cheerio/Updates/AppUpdater.swift` and the network bullet below.
 - `Cheerio/` — macOS app target: `MicrophoneCapture` (AVAudioEngine), `SystemAudioTap` (CATap → aggregate device → IOProc), `CaptureSession` (@Observable orchestrator), `AppUpdater` (Sparkle), SwiftUI views incl. Settings.
+- `CheerioMCP/` — `cheerio-mcp`, a stdio MCP server copied into `Cheerio.app/Contents/Helpers/`. Deliberately thin: `main.swift` plus file-descriptor work, with every answer coming from `CheerioKit/MCP/`. The protocol is hand-written rather than the official Swift SDK, which would have linked `import Network` and `URLSession` into the bundle — see ARCHITECTURE.md before reconsidering that. **It opens the store read-only and must never write**; `Meeting.stableID` backfills `uuid` on access, so the read path goes through `readOnlyExport` instead.
 - No `.xcodeproj` committed — generated via XcodeGen from `project.yml`. **Re-run `xcodegen generate` after adding files**, or the build won't see them.
 
 ## Build
@@ -91,7 +92,7 @@ update them alongside Build whenever the commands change.
 - Two transcription engines (mic/system) for the Me/Them split — that's deliberate; don't merge streams. Diarization sits *on top* of them, per-channel, to tell people apart within one channel.
 - Swift 6, strict concurrency complete. SwiftData for storage. MIT licensed.
 - Formatting is enforced in CI: `swift format lint --strict` with the repo's `.swift-format`
-  config. Run `swift format --in-place --recursive Cheerio CheerioKit/Sources CheerioKit/Tests`
+  config. Run `swift format --in-place --recursive Cheerio CheerioMCP CheerioKit/Sources CheerioKit/Tests`
   before pushing. Release builds come from `.github/workflows/release.yml` on `v*` tags —
   Developer ID-signed and notarized, then EdDSA-signed for Sparkle and published as an
   `appcast.xml` asset on the GitHub Release itself — the app's `SUFeedURL` is

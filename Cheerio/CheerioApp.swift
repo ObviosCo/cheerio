@@ -132,6 +132,9 @@ struct ContentView: View {
             // Only moves directories listed on a Meeting, never anything else in the
             // shared folder we used to write into.
             StorageMigration.migrateAudioIfNeeded(context: context)
+            // Legacy rows carry no uuid, and the bundled MCP helper can't mint one
+            // for them because it never writes. This process can.
+            StorageMigration.backfillMeetingIDs(context: context)
             // Refresh only — never prompt here. The onboarding walkthrough's
             // calendar step is what's allowed to show the TCC dialog; this just
             // picks up whatever the user already decided, there or in System
