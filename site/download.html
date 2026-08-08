@@ -36,12 +36,17 @@
       <!-- ============================================================
            PUBLISHED BUILD
 
-           Versions are date-based: tag v2026.8.8 → version 2026.8.8. The
-           release workflow (.github/workflows/release.yml) publishes a
-           versioned zip made with ditto — `Cheerio-<version>.zip` — not a
-           DMG and not a stable filename, so the href must name the exact
-           version. On each release, update the version, date, size, and
-           both hrefs here, and add an entry to releases.html.
+           Versions follow CalVer (calver.org): YY.MM.MICRO, tagged
+           vYY.MM.MICRO — e.g. tag v26.8.1 → version 26.8.1. YY and MM come
+           from the calendar and are never zero-padded; MICRO is a per-month
+           build counter picked by hand when cutting the tag. (The card below
+           still names v2026.8.8, a release that predates this scheme — its
+           tag and asset names don't change retroactively.) The release
+           workflow (.github/workflows/release.yml) publishes a versioned zip
+           made with ditto — `Cheerio-<version>.zip` — not a DMG and not a
+           stable filename, so the href must name the exact version. On each
+           release, update the version, date, size, and both hrefs here, and
+           add an entry to releases.html.
            ============================================================ -->
       <div class="card stack stack--4">
         <div class="stack stack--2">
