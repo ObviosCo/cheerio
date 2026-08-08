@@ -38,7 +38,18 @@ struct MeetingListView: View {
                 }
                 ForEach(visibleMeetings) { meeting in
                     VStack(alignment: .leading) {
-                        Text(meeting.title).font(.headline)
+                        HStack(spacing: 4) {
+                            Text(meeting.title).font(.headline)
+                            // Nothing creates directives yet, so this is dormant today —
+                            // it only needs to be visible once something does.
+                            if meeting.kind == .directive {
+                                Text("Directive")
+                                    .font(.caption2.weight(.medium))
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1)
+                                    .background(.tint.opacity(0.15), in: .capsule)
+                            }
+                        }
                         // Time as well as date: a busy day otherwise gives every row
                         // the same subtitle.
                         Text(meeting.startedAt.formatted(date: .abbreviated, time: .shortened))
