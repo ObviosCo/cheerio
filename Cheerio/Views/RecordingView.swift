@@ -1,4 +1,5 @@
 import CheerioKit
+import SwiftData
 import SwiftUI
 
 /// Live view during a meeting: transcript on the left, rough-notes
@@ -6,11 +7,23 @@ import SwiftUI
 struct RecordingView: View {
     @Environment(CaptureSession.self) private var session
     @Environment(\.modelContext) private var context
+    @Query(filter: #Predicate<EnrolledSpeaker> { $0.isMe }) private var enrolledMe: [EnrolledSpeaker]
+
+    /// Encourage-not-block, per the onboarding walkthrough: shown at most once ever
+    /// (``OnboardingState/hasShownEnrollmentNudge``), and never stands between
+    /// pressing "record" and the recording actually starting.
+    @State private var showEnrollmentNudge = false
+    @State private var showEnrollmentSheet = false
 
     var body: some View {
         @Bindable var session = session
 
         VStack(spacing: 0) {
+            if showEnrollmentNudge {
+                enrollmentNudgeBanner
+                Divider()
+            }
+
             // Renameable in place: the title is often wrong at the moment you notice
             // it — a calendar match that didn't apply, or a placeholder timestamp.
             if let meeting = session.meeting {
@@ -50,6 +63,47 @@ struct RecordingView: View {
                 .disabled(session.state == .finishing)
             }
         }
+        .onAppear {
+            // Only ever the first recording after a skipped enrollment — this view
+            // reappears on every recording, but the persisted flag keeps it quiet
+            // after the first showing.
+            guard enrolledMe.isEmpty, !OnboardingState.hasShownEnrollmentNudge else { return }
+            OnboardingState.hasShownEnrollmentNudge = true
+            showEnrollmentNudge = true
+        }
+        .sheet(isPresented: $showEnrollmentSheet) {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Add your voice")
+                    .font(.headline)
+                VoiceEnrollmentRecorder(markAsMe: true) { _ in showEnrollmentSheet = false }
+                Button("Done") { showEnrollmentSheet = false }
+                    .buttonStyle(.bordered)
+            }
+            .padding(20)
+            .frame(width: 380)
+        }
+    }
+
+    private var enrollmentNudgeBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "person.wave.2")
+                .foregroundStyle(.tint)
+            Text("Recording without an enrolled voice — speakers will show up as “Me” and “Them” instead of names.")
+                .font(.callout)
+            Spacer()
+            Button("Add my voice") { showEnrollmentSheet = true }
+                .buttonStyle(.borderless)
+            Button {
+                showEnrollmentNudge = false
+            } label: {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.yellow.opacity(0.15))
     }
 
     @ViewBuilder private var recordingPanes: some View {

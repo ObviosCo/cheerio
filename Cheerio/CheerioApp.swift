@@ -29,6 +29,27 @@ struct CheerioApp: App {
                 .environment(captureSession)
         }
         .modelContainer(container)
+        // On a first run, the onboarding window claims launch instead — it opens
+        // this one itself once it closes (see `OnboardingView.onDisappear`).
+        // Evaluated once at process start, which is the only time it matters.
+        .defaultLaunchBehavior(OnboardingState.hasCompleted ? .automatic : .suppressed)
+        .commands {
+            CommandGroup(replacing: .help) {
+                OpenOnboardingCommand()
+            }
+        }
+
+        // The first-run walkthrough. Re-openable later from Settings and the Help
+        // menu above, which is why it's a real window rather than a launch-time-only
+        // sheet.
+        Window("Welcome to Cheerio", id: OnboardingView.windowID) {
+            OnboardingView()
+                .environment(captureSession)
+        }
+        .modelContainer(container)
+        .windowResizability(.contentSize)
+        .windowStyle(.hiddenTitleBar)
+        .defaultLaunchBehavior(OnboardingState.hasCompleted ? .suppressed : .automatic)
 
         // Start and stop without surfacing the window — the state you need mid-call
         // is "is it recording", and that belongs in the menu bar.
@@ -42,6 +63,18 @@ struct CheerioApp: App {
             SettingsView()
         }
         .modelContainer(container)
+    }
+}
+
+/// A small view, not a bare closure, because `.commands` content needs its own
+/// `openWindow` from the environment — the App type doesn't reliably vend one.
+private struct OpenOnboardingCommand: View {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Button("Cheerio Walkthrough") {
+            openWindow(id: OnboardingView.windowID)
+        }
     }
 }
 
@@ -82,8 +115,11 @@ struct ContentView: View {
             // Only moves directories listed on a Meeting, never anything else in the
             // shared folder we used to write into.
             StorageMigration.migrateAudioIfNeeded(context: context)
-            // Optional permission: without it meetings just get timestamp titles.
-            await CalendarService.shared.requestAccess()
+            // Refresh only — never prompt here. The onboarding walkthrough's
+            // calendar step is what's allowed to show the TCC dialog; this just
+            // picks up whatever the user already decided, there or in System
+            // Settings, so `CalendarService`'s cached flag survives a relaunch.
+            await CalendarService.shared.refreshAccessStatus()
             // Audio that aged out while the app was closed.
             _ = try? AudioRetentionService.purge(retention: .current, context: context)
         }
