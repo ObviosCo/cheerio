@@ -15,6 +15,103 @@ struct SettingsView: View {
                 .tabItem { Label("Updates", systemImage: "arrow.down.circle") }
             TranscriptCallbackSettingsView()
                 .tabItem { Label("Callback", systemImage: "terminal") }
+            MCPSettingsView()
+                .tabItem { Label("Agents", systemImage: "sparkles") }
+        }
+    }
+}
+
+/// Setup for the bundled MCP server (issue #28) — the pull half of "actionable", where
+/// an agent asks Cheerio about a meeting rather than waiting to be handed one.
+///
+/// Read-only display and copy buttons, deliberately. There is no "install into Claude
+/// Desktop" button: that would mean Cheerio writing another app's configuration file,
+/// and ``MCPClientSetup`` explains why it doesn't.
+struct MCPSettingsView: View {
+    /// The helper inside *this* copy of Cheerio, so the path a user copies is the one
+    /// that exists — including when they're running a build from Xcode.
+    private var helperPath: String {
+        MCPClientSetup.helperURL(appBundle: Bundle.main.bundleURL).path(percentEncoded: false)
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                Text(
+                    "Cheerio ships a small MCP server, so agents already running on this Mac can look up what was said in a meeting. It reads your meetings and can't change them, start a recording, or run anything. It talks over a pipe to whichever client launched it — nothing is listening, and Cheerio itself sends nothing off this Mac. What the client you connect does with the results is that client\u{2019}s policy: an agent backed by a cloud model will send what it reads to that model."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            } header: {
+                Text("Let agents read your meetings")
+            }
+
+            Section {
+                CopyableSnippet(label: "Server", text: helperPath, monospaced: true)
+                Text("Installed inside Cheerio itself, so it updates when Cheerio does.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                CopyableSnippet(label: "Claude Code", text: MCPClientSetup.claudeCodeCommand(helperPath: helperPath))
+                CopyableSnippet(
+                    label: "Claude Desktop", text: MCPClientSetup.desktopJSON(helperPath: helperPath),
+                    caption: "Add to claude_desktop_config.json")
+                CopyableSnippet(
+                    label: "Codex", text: MCPClientSetup.codexTOML(helperPath: helperPath),
+                    caption: "Add to ~/.codex/config.toml")
+            } header: {
+                Text("Add it to a client")
+            } footer: {
+                Text("Cheerio doesn't edit other apps' settings — copy the one you need and paste it in yourself.")
+                    .font(.caption)
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: 520)
+    }
+}
+
+/// A block of config with a copy button, which is the only interaction this tab has.
+private struct CopyableSnippet: View {
+    let label: String
+    let text: String
+    var caption: String?
+    var monospaced = true
+
+    @State private var copied = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(label)
+                Spacer()
+                Button(copied ? "Copied" : "Copy") { copy() }
+                    .controlSize(.small)
+            }
+            Text(text)
+                .font(.system(.caption, design: monospaced ? .monospaced : .default))
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let caption {
+                Text(caption)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    private func copy() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        copied = true
+        // Long enough to read, short enough that the button is ready again if the paste
+        // didn't land where they meant it to.
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            copied = false
         }
     }
 }

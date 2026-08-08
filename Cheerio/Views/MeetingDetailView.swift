@@ -73,11 +73,18 @@ struct MeetingDetailView: View {
 
     /// The window title bar carries the meeting name, but the detail column needs its
     /// own heading — and the date is how you tell two "Call with Mary" apart.
+    ///
+    /// Editable in place, the same affordance `RecordingView` offers live: a typo
+    /// like the one issue #32 was filed over ("Cheerio pivot to actionable
+    /// transcripts") is otherwise permanent once the meeting has ended. Routed
+    /// through `rename(to:)`, not a direct `$meeting.title` binding, so a rename
+    /// here retires `isTitleAutomatic` the same way it does mid-recording.
     private var header: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(meeting.title)
+            TextField("Meeting name", text: Binding(get: { meeting.title }, set: { meeting.rename(to: $0) }))
+                .textFieldStyle(.plain)
                 .font(.title2.weight(.semibold))
-                .textSelection(.enabled)
+                .onSubmit { save() }
             Text(subtitle)
                 .font(.caption)
                 .foregroundStyle(.secondary)

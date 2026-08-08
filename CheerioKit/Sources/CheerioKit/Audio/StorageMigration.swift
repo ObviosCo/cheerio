@@ -73,4 +73,36 @@ public enum StorageMigration {
             log.error("Audio migration failed: \(error)")
         }
     }
+
+    /// Gives every meeting still missing one a ``Meeting/uuid``, and saves.
+    ///
+    /// ``Meeting/stableID`` backfills lazily, which is the right design for the app —
+    /// but "lazily" means a meeting only gets an identifier once something asks for
+    /// one, and before the bundled MCP helper nothing routinely did. A store carried
+    /// forward from an earlier build can therefore hold a full history where every row
+    /// has `uuid == nil`, and those rows are exactly the ones the helper cannot
+    /// address: minting an identifier is a write, and the helper never writes. Doing
+    /// it here, once, in the process that *is* allowed to write, is what turns "the
+    /// MCP server can't see any of your old meetings" into a non-problem.
+    ///
+    /// Returns how many rows were given one, so a caller can log it. Idempotent: the
+    /// second run fetches nothing and saves nothing.
+    @discardableResult
+    public static func backfillMeetingIDs(context: ModelContext) -> Int {
+        do {
+            let descriptor = FetchDescriptor<Meeting>(predicate: #Predicate { $0.uuid == nil })
+            let pending = try context.fetch(descriptor)
+            guard !pending.isEmpty else { return 0 }
+            // Accessing stableID is the assignment — see its documentation.
+            for meeting in pending { _ = meeting.stableID }
+            try context.save()
+            log.notice("Assigned identifiers to \(pending.count, privacy: .public) meeting(s)")
+            return pending.count
+        } catch {
+            // Not fatal: the app works without these, only the MCP helper's view of
+            // pre-existing meetings is degraded, and it says so per meeting.
+            log.error("Couldn't backfill meeting identifiers: \(error)")
+            return 0
+        }
+    }
 }

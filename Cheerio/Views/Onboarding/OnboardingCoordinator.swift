@@ -16,7 +16,10 @@ final class OnboardingCoordinator {
         case finish
     }
 
-    private(set) var step: Step = .welcome
+    /// Starts on the first step, unless the screenshot harness asked for a later one
+    /// so it can photograph it — see `ScreenshotMode`. An out-of-range value falls
+    /// back to `.welcome` rather than failing.
+    private(set) var step: Step = ScreenshotMode.onboardingStep.flatMap(Step.init(rawValue:)) ?? .welcome
 
     func advance() {
         guard let next = Step(rawValue: step.rawValue + 1) else { return }

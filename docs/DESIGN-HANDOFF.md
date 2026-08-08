@@ -239,6 +239,7 @@ Real HTML and CSS, not a mockup handed over for someone else to build. Semantic 
 
   Full instructions, including what to set before first launch, are in the README's [Building](../README.md#building) section.
 - A walkthrough of the session state machine (`idle` → `preparingModel` → `recording` → `finishing` → `idle`) and how the three scenes relate.
+- **Screenshots of every surface, on demand.** `./Scripts/screenshots/capture.sh` seeds a store of invented meetings, launches the app against a scratch container, and captures the library, all seven walkthrough steps, and three Settings tabs at Retina scale into `Scripts/screenshots/out`. `publish.sh` puts the four the website uses into `site/img`. It's how the images in `site/index.html` were made, it's repeatable, and it needs nothing granted to it — see [`Scripts/screenshots/README.md`](../Scripts/screenshots/README.md), including what it can't catch. Use it to see a change rather than describing one, and re-run it when you change a screen that's on the site.
 - **Please design the transcript views against real output.** Record something and look at it. It has no punctuation in places, mis-hears names, revises itself mid-sentence, and — in an in-person meeting — currently labels everything "Me" until you stop. Clean lorem-ipsum dialogue will lead you to the wrong design.
 
 ## 7. What we need back
