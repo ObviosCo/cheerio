@@ -65,7 +65,10 @@ public struct MeetingExport: Codable, Sendable, Equatable {
         self.participantNames = meeting.participantNames
         self.roughNotes = meeting.roughNotes
         self.enhancedNotes = meeting.enhancedNotes
-        self.actionItems = meeting.actionItems
+        // Reconciled, not read raw: a relabel or isMe change after enhancement can
+        // strand a persisted item on stale identity, and export is the boundary
+        // where staleness would turn into an agent acting on it.
+        self.actionItems = meeting.reconciledActionItems(ownerNames: ownerNames)
         self.segments =
             meeting.segments
             // startTime alone can't order this deterministically: the two engines run

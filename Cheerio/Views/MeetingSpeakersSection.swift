@@ -125,6 +125,9 @@ struct MeetingSpeakersSection: View {
 
     private func relabel(_ summary: SpeakerSummary, to newLabel: String?) {
         meeting.relabelSpeaker(summary, to: newLabel)
+        // Renaming a speaker can change who owns an action item — keep the stored
+        // items in agreement with what an export would now say.
+        meeting.reconcileActionItems(ownerNames: SpeakerLabeling.ownerNames(context: context))
         do {
             try context.save()
         } catch {
@@ -161,8 +164,10 @@ struct MeetingSpeakersSection: View {
             let speaker = EnrolledSpeaker(name: name, audioPath: samplePath, duration: duration)
             context.insert(speaker)
             insertedSpeaker = speaker
-            // Now that this speaker has a name, put it on their lines too.
+            // Now that this speaker has a name, put it on their lines too — and
+            // re-check the action items, since the lines just changed owners.
             meeting.relabelSpeaker(summary, to: name)
+            meeting.reconcileActionItems(ownerNames: SpeakerLabeling.ownerNames(context: context))
             try context.save()
         } catch {
             if let insertedSpeaker { context.delete(insertedSpeaker) }
