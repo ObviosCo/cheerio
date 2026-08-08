@@ -144,6 +144,10 @@ struct MeetingSpeakersSection: View {
         let priorLabels = meeting.segments.map {
             ($0, $0.speakerLabel, $0.isSpeakerLabelManual)
         }
+        // The reconciliation below mutates trust state too; a failed save must put
+        // it back, or a later autosave commits part of an operation the user was
+        // told failed.
+        let priorActionItems = meeting.actionItems
         var insertedSpeaker: EnrolledSpeaker?
         var writtenSamplePath: String?
 
@@ -175,6 +179,7 @@ struct MeetingSpeakersSection: View {
                 segment.speakerLabel = label
                 segment.isSpeakerLabelManual = wasManual
             }
+            meeting.actionItems = priorActionItems
             if let writtenSamplePath {
                 try? AudioStorage.removeFile(atRelativePath: writtenSamplePath)
             }
