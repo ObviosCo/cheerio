@@ -15,6 +15,7 @@ Granola-style AI meeting notes require sending your meetings to someone else's s
 5. **Calendar** — Read today's events via EventKit; suggest recording when a meeting starts; attach notes to the event.
 6. **Library** — Browse, search, and export past meetings (Markdown export).
 7. **Speakers** — Tell people apart *within* a channel, not just Me vs Them: Sortformer diarization as a post-pass over the recorded audio, voices enrolled by name, and a per-meeting roster of who was there. Hand corrections outrank the model. Originally a v1 non-goal; it turned out to be the difference between a usable in-person transcript and one where three people are all "Me".
+8. **Menu-bar first** — The `MenuBarExtra` is the primary surface, not a mirror of the sidebar: start, stop, and tell at a glance whether it's recording, without finding a window first. The window becomes the library — where you read, search, and correct. The reasoning is that the moment you need to start recording is the moment you have the least attention to spare, and it should cost one click from wherever you already are.
 
 ## Non-goals (v1)
 
@@ -36,6 +37,8 @@ Granola-style AI meeting notes require sending your meetings to someone else's s
 ## Success criteria
 
 - Zero-config record button that captures a Zoom call with no bot
+- Starting a recording takes one click from the menu bar, without surfacing the window
+- Whether a recording is running is answerable at a glance, with the app in the background
 - Live transcript visible during the meeting with < 2s lag
 - Enhanced notes generated in < 30s for a 60-minute meeting
 - Audio optionally discarded after transcription (privacy default: keep 7 days)

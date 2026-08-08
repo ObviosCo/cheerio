@@ -295,6 +295,8 @@ These were open when this brief was drafted. They've since been settled, and the
 
 - **The app should be menu-bar-first.** The `MenuBarExtra` becomes the primary surface, not a convenience mirror of the sidebar. The reasoning is speed: the fastest path to starting a meeting shouldn't require finding a window first. The window becomes the library — where you read, search, and correct — rather than the place you go to begin.
 
+  This is committed scope, not a preference: it's [SPEC.md](SPEC.md) goal 8, with two of the success criteria attached to it. Design against it as a given.
+
   This is a real IA change and it lands on you. What belongs in a menu that has to stay small and fast, versus what needs the window? Where does the calendar offer live? Does starting a recording open the window, or stay out of your way until you want it? What's the keyboard path? See design question 4, which this now outranks.
 
 - **Recording mode is *not* about disabling the system tap.** An earlier version of this brief said the tap was pointless for solo recording. That's wrong, and it's worth understanding why: input and output can be different devices. Someone recording alone through AirPods still has system audio worth capturing, and the mic isn't picking it up out of the room. Running both channels is the right default, and it stays.
