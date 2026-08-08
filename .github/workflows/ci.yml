@@ -23,7 +23,7 @@ jobs:
     name: Lint
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # swift-format ships inside the Swift 6 toolchain; config is .swift-format
       # at the repo root. `--strict` turns warnings into a nonzero exit.
@@ -34,7 +34,7 @@ jobs:
     name: Package tests
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Select Xcode
         run: |
@@ -43,7 +43,7 @@ jobs:
           swift --version
 
       - name: Cache SwiftPM
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: CheerioKit/.build
           key: spm-test-${{ runner.os }}-${{ hashFiles('CheerioKit/Package.swift') }}
@@ -57,7 +57,7 @@ jobs:
     name: Build app
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Select Xcode
         run: |
@@ -70,13 +70,13 @@ jobs:
       # ~93 MB from Hugging Face; the checksum manifest lives in the fetch
       # script, so hashing the script keys the cache to the exact model bytes.
       - name: Cache diarization model
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: Cheerio/Resources/Models
           key: model-${{ hashFiles('Scripts/fetch-models.sh') }}
 
       - name: Cache SwiftPM (xcodebuild)
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: SourcePackages
           key: spm-app-${{ runner.os }}-${{ hashFiles('CheerioKit/Package.swift') }}

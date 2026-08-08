@@ -30,7 +30,7 @@ jobs:
     name: Build and publish
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Select Xcode
         run: |
@@ -41,13 +41,13 @@ jobs:
         run: brew install xcodegen
 
       - name: Cache diarization model
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: Cheerio/Resources/Models
           key: model-${{ hashFiles('Scripts/fetch-models.sh') }}
 
       - name: Cache SwiftPM
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: SourcePackages
           key: spm-app-${{ runner.os }}-${{ hashFiles('CheerioKit/Package.swift') }}
@@ -102,7 +102,10 @@ jobs:
           # network entitlement and cannot download it at runtime.
           test -d "$app/Contents/Resources/Sortformer_v2.1.mlmodelc" \
             || { echo "::error::Sortformer model missing from app bundle"; exit 1; }
-          lipo -archs "$app/Contents/MacOS/Cheerio"
+          # Apple Silicon only — a stray Intel slice means ARCHS drifted.
+          archs="$(lipo -archs "$app/Contents/MacOS/Cheerio")"
+          [ "$archs" = "arm64" ] \
+            || { echo "::error::Expected arm64 only, got: $archs"; exit 1; }
 
       # ditto (not zip) preserves symlinks, resource forks, and extended
       # attributes — a plain zip can produce a bundle codesign rejects.
@@ -129,8 +132,9 @@ jobs:
              If it still won't open, clear quarantine from Terminal:
              `xattr -dr com.apple.quarantine /Applications/Cheerio.app`
 
-          Requires **macOS 26 (Tahoe) or later**. Everything runs on-device:
-          no network access, no accounts, no analytics.
+          Requires **macOS 26 (Tahoe) or later on Apple Silicon** — there is
+          no Intel build. Everything runs on-device: no network access, no
+          accounts, no analytics.
           EOF
           gh release create "${GITHUB_REF_NAME}" \
             "Cheerio-${{ steps.version.outputs.suffix }}.zip" \
@@ -141,7 +145,7 @@ jobs:
 
       - name: Upload build artifact
         if: github.ref_type != 'tag'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Cheerio-${{ steps.version.outputs.suffix }}
           path: Cheerio-${{ steps.version.outputs.suffix }}.zip

@@ -69,7 +69,7 @@ Full scope and non-goals: [`docs/SPEC.md`](docs/SPEC.md).
 Prebuilt binaries are attached to [GitHub Releases](https://github.com/ObviosCo/cheerio/releases):
 unzip, drop `Cheerio.app` in `/Applications`, and on first launch right-click → **Open** (or
 approve it under **System Settings → Privacy & Security**). Builds are ad-hoc signed, not
-notarized — macOS will warn once. Requires macOS 26 or later.
+notarized — macOS will warn once. Requires macOS 26 or later on Apple Silicon.
 
 To build from source instead:
 
