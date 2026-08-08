@@ -14,8 +14,9 @@ import Sparkle
 ///   schedule and when the user asks;
 /// - a GET of the zip that appcast points at, if the user accepts an update.
 ///
-/// Both are Cheerio's own distribution endpoints — GitHub Pages for the feed,
-/// GitHub Releases for the build. No analytics, no accounts, no profile: see
+/// Both are assets of Cheerio's own GitHub Releases — the feed via the stable
+/// `releases/latest/download` URL, the build from the release it names. No
+/// analytics, no accounts, no profile: see
 /// ``UpdatePolicy``. Recording and processing a meeting still need nothing from the
 /// network, and ``UpdatePolicy`` keeps update checks out of their way.
 @MainActor
