@@ -42,5 +42,9 @@ generation, and signature-verification guard but skips creating a release or pub
 anything. Prefer it over reasoning abstractly about whether a change works. `gh workflow run
 release.yml` (needs a maintainer to trigger, or repo push access) exercises this for real.
 
+Even a YAML-only change runs the full canonical verification loop from CLAUDE.md's Build
+section before committing — it's cheap, and one rule for every change beats remembering
+which changes are exempt.
+
 Commit with why-not-what messages, trailer `Co-Authored-By: Claude Fable 5
 <noreply@anthropic.com>`. Never push unless asked.

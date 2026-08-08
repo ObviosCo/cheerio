@@ -25,8 +25,9 @@ a piece of code exists the way it does, never *what* you just changed — no "ad
 
 **The verification loop — run every step, in order, before considering the task done:**
 
-1. If `Cheerio/Resources/Models` is missing, run `./Scripts/bootstrap.sh` first (fetches the
-   diarization model, then `xcodegen generate` — that order is load-bearing).
+1. If `Cheerio/Resources/Models` **or** `Cheerio.xcodeproj` is missing, run
+   `./Scripts/bootstrap.sh` first (fetches the diarization model, then `xcodegen generate` —
+   that order is load-bearing; both are gitignored, so any fresh worktree lacks them).
 2. `swift format --in-place --recursive Cheerio CheerioMCP CheerioKit/Sources CheerioKit/Tests`
    (drop `CheerioMCP` if that directory doesn't exist).
 3. `swift format lint --recursive --strict Cheerio CheerioMCP CheerioKit/Sources CheerioKit/Tests`
