@@ -239,6 +239,11 @@ pre {
   transition: background var(--ch-dur-fast) var(--ch-ease),
               border-color var(--ch-dur-fast) var(--ch-ease);
 }
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ch-space-3);
+}
 .button--primary {
   background: var(--ch-accent);
   color: var(--ch-text-on-accent);

@@ -9,6 +9,10 @@
 # four woff2 and some SVG. This workflow copies it and nothing else, so the
 # whole thing stays reviewable in a pull request.
 #
+# The app's Sparkle update feed is *not* served from here: release.yml attaches
+# appcast.xml to each GitHub Release, and the app reads it from that release's
+# stable download URL. site/appcast.xml is only the empty first-release seed.
+#
 # One-time setup: Settings -> Pages -> Source: GitHub Actions.
 
 name: Deploy site

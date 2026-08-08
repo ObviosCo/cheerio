@@ -5,13 +5,82 @@ import SwiftUI
 struct SettingsView: View {
     var body: some View {
         TabView {
+            GeneralSettingsView()
+                .tabItem { Label("General", systemImage: "gearshape") }
             PrivacySettingsView()
                 .tabItem { Label("Privacy", systemImage: "lock") }
             ParticipantsView()
                 .tabItem { Label("Participants", systemImage: "person.2") }
+            UpdateSettingsView()
+                .tabItem { Label("Updates", systemImage: "arrow.down.circle") }
             TranscriptCallbackSettingsView()
                 .tabItem { Label("Callback", systemImage: "terminal") }
         }
+    }
+}
+
+struct UpdateSettingsView: View {
+    /// Both toggles read and write Sparkle's own user defaults through the updater.
+    /// There is no `@AppStorage` here on purpose: a second copy of these switches would
+    /// drift from the ones Sparkle actually consults.
+    @Environment(AppUpdater.self) private var updater
+
+    var body: some View {
+        // `@Environment` has no projected value, so the bindings the toggles need come
+        // from re-wrapping the same object with `@Bindable`. Still one source of truth.
+        @Bindable var updater = updater
+
+        Form {
+            Section {
+                Toggle("Automatically check for updates", isOn: $updater.checksAutomatically)
+                Toggle("Automatically download and install them", isOn: $updater.downloadsAutomatically)
+                    // Nothing to install if nothing ever looks.
+                    .disabled(!updater.checksAutomatically)
+                Text(
+                    """
+                    Checking for updates is the only thing Cheerio uses the network for. It asks the \
+                    release feed whether there is a newer version, and downloads it if you say so. \
+                    Nothing is sent about you or your Mac.
+                    """
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            } header: {
+                Text("Updates")
+            }
+
+            Section {
+                Button("Check for Updates Now") { updater.checkForUpdates() }
+                Text(
+                    "Recording, transcribing and summarizing never touch the network, and no update check starts while a recording is going."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: 420)
+    }
+}
+
+struct GeneralSettingsView: View {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Form {
+            Section {
+                Button("Show the Welcome Walkthrough Again") {
+                    openWindow(id: OnboardingView.windowID)
+                }
+                Text(
+                    "Walks through permissions and voice enrollment again. Nothing you've already set up gets reset or re-asked unless you want it to."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: 420)
     }
 }
 

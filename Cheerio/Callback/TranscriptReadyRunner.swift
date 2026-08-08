@@ -3,6 +3,7 @@ import Darwin
 import Dispatch
 import Foundation
 import OSLog
+import Synchronization
 
 /// Runs the user-configured "transcript ready" command from issue #26.
 ///
@@ -171,23 +172,10 @@ enum TranscriptReadyRunner {
         // Drained concurrently, not just after exit: macOS's default pipe buffer
         // is 64KB, and a command that writes more than that to stderr while
         // nobody's reading would deadlock against the process we're waiting on
-        // below. Only the tail is kept — that's all a "stderr tail" needs to be.
-        let stderrHandle = child.standardError
-        let stderrTailTask = Task.detached(priority: .utility) { () -> [String] in
-            var tail: [String] = []
-            do {
-                for try await line in stderrHandle.bytes.lines {
-                    tail.append(line)
-                    if tail.count > stderrTailLineLimit {
-                        tail.removeFirst(tail.count - stderrTailLineLimit)
-                    }
-                }
-            } catch {
-                // Cancelled or torn down early — whatever was collected already is
-                // still a useful tail.
-            }
-            return tail
-        }
+        // below. Only a bounded window of the most recent bytes is kept — that's
+        // all a "stderr tail" needs to be, and ``StderrTailReader`` explains why
+        // that boundedness has to be in *bytes*.
+        let stderrReader = StderrTailReader(readEnd: child.standardError)
 
         // Also off to the side: a command that doesn't read stdin promptly would
         // otherwise block this function before the timeout race even starts,
@@ -209,8 +197,10 @@ enum TranscriptReadyRunner {
         // every copy of this pipe and ends the read — but a descendant that
         // deliberately left the group (`setsid`, a daemon) could still be holding one,
         // so give up on the tail after a few seconds rather than leaving an orphaned
-        // task waiting on a pipe that may never close.
-        let tail = await withTimeout(.seconds(5), cancelling: stderrTailTask)
+        // reader on a pipe that may never close. See ``StderrTailReader/tail(lineLimit:within:)``
+        // for why giving up there actually ends the read, which cancellation alone
+        // cannot do.
+        let tail = await stderrReader.tail(lineLimit: stderrTailLineLimit, within: .seconds(5))
 
         if timedOut {
             return .failure("Timed out and was terminated")
@@ -334,22 +324,189 @@ enum TranscriptReadyRunner {
             return true
         }
     }
+}
 
-    /// Awaits `task`, giving up and cancelling it after `timeout` — used so a
-    /// stalled read can't leave this function (and the callback pipeline it's
-    /// part of) waiting forever.
-    private static func withTimeout(_ timeout: Duration, cancelling task: Task<[String], Never>) async -> [String] {
-        await withTaskGroup(of: [String]?.self) { group in
-            group.addTask { await task.value }
-            group.addTask {
-                try? await Task.sleep(for: timeout)
-                return nil
-            }
-            let first = await group.next() ?? nil
-            task.cancel()
-            group.cancelAll()
-            return first ?? []
+/// Drains a child's stderr, keeping a fixed-size window of the most recent bytes,
+/// and hands back the last few lines of it.
+///
+/// Bounded in **bytes**, not lines, and that's the point. `FileHandle.bytes.lines`
+/// is the obvious spelling and it has no ceiling at all: it buffers a whole line
+/// before yielding one, so a command that emits a single enormous record with no
+/// newline in it — a JSON blob, a base64 payload, a progress bar redrawn with `\r`
+/// — grows this process's memory for as long as the timeout allows, which is five
+/// minutes. Nothing about a "last 20 lines" tail justifies that. So: fixed-size
+/// chunks into a window that discards from the front once it's full, and lines
+/// split out of the window only at the end. A line longer than the window survives
+/// as its own last 64KB, which is exactly as much of it as anyone would read.
+///
+/// `DispatchIO` rather than a thread parked in `read(2)`, and that choice is the
+/// other half of the fix. Task cancellation cannot resume a blocked `read`, so a
+/// pipe whose write end is held open forever would wedge the reader no matter how
+/// the surrounding task was structured — see ``tail(lineLimit:within:)``.
+private final class StderrTailReader: Sendable {
+    /// Cap on the bytes held while draining. One pipe buffer's worth, and far more
+    /// than twenty lines of a command's error output — but a ceiling either way.
+    private static let byteLimit = 64 * 1024
+    /// Cap on a single delivery, so one unterminated multi-megabyte record arrives
+    /// as many small chunks instead of one enormous allocation.
+    private static let chunkSize = 8 * 1024
+
+    /// The window and the drain's completion, in an object of their own so the
+    /// `DispatchIO` handler can hold them without holding — and so retain-cycling —
+    /// the reader that owns the channel.
+    ///
+    /// A mutex rather than an actor because the handler is a synchronous callback on
+    /// a dispatch queue: hopping into an actor from there would need a `Task`, and
+    /// tasks are not ordered, so chunks could be appended out of order. `SilenceWatch`
+    /// in `SystemAudioTap` reaches for `Synchronization` for the same reason.
+    private final class Window: Sendable {
+        struct State {
+            /// Bytes, not lines: a chunk boundary lands wherever it lands, including
+            /// mid-line and mid-UTF-8-sequence. Decoding happens once, at the end.
+            var bytes: [UInt8] = []
+            var isFinished = false
+            var waiter: CheckedContinuation<Void, Never>?
         }
+
+        let state = Mutex(State())
+
+        /// Appends `data` and drops as much off the front as that pushed past
+        /// `limit`, then reports the completion waiter to resume if `done`.
+        ///
+        /// Returns the continuation instead of resuming it, because resuming runs
+        /// arbitrary code and none of it should run under this lock.
+        func absorb(_ data: DispatchData?, done: Bool, limit: Int) -> CheckedContinuation<Void, Never>? {
+            state.withLock { state in
+                if let data, !data.isEmpty {
+                    state.bytes.append(contentsOf: data)
+                    if state.bytes.count > limit {
+                        state.bytes.removeFirst(state.bytes.count - limit)
+                    }
+                }
+                guard done, !state.isFinished else { return nil }
+                state.isFinished = true
+                let waiter = state.waiter
+                state.waiter = nil
+                return waiter
+            }
+        }
+
+        func finish() {
+            let waiter = state.withLock { state -> CheckedContinuation<Void, Never>? in
+                state.isFinished = true
+                let waiter = state.waiter
+                state.waiter = nil
+                return waiter
+            }
+            waiter?.resume()
+        }
+    }
+
+    private let window = Window()
+    /// `nil` if the channel couldn't be opened, in which case there's simply no
+    /// tail. A callback's diagnostics failing is never a reason to fail the callback.
+    private let channel: DispatchIO?
+
+    /// Starts draining immediately — the caller needs that, because a command
+    /// writing more than a pipe buffer's worth of stderr blocks until somebody
+    /// reads.
+    ///
+    /// Takes a `dup` of `readEnd` and closes the original, because `DispatchIO` owns
+    /// what it reads from: it closes the descriptor from its cleanup handler, once
+    /// every queued operation has finished. A `FileHandle` closes its own on
+    /// `deinit`, and two owners of one descriptor is a double close — where the
+    /// second one, in a process that opens files on other threads, can land on
+    /// somebody else's.
+    init(readEnd: FileHandle) {
+        let descriptor = dup(readEnd.fileDescriptor)
+        try? readEnd.close()
+        guard descriptor >= 0 else {
+            channel = nil
+            window.finish()
+            return
+        }
+        let queue = DispatchQueue(label: "app.cheerio.mac.callback-stderr", qos: .utility)
+        // The cleanup handler is the descriptor's only close: it runs once the channel
+        // is closed *and* every operation queued against it has finished, which is the
+        // one moment at which nothing can still be reading from it.
+        let channel = DispatchIO(
+            type: .stream,
+            fileDescriptor: descriptor,
+            queue: queue,
+            cleanupHandler: { _ in close(descriptor) }
+        )
+        self.channel = channel
+        channel.setLimit(highWater: Self.chunkSize)
+        // `length: .max` streams until EOF (or until the channel is closed), calling
+        // the handler once per chunk with `done` set on the last one.
+        //
+        // Bound locally so the handler captures the window and the limit rather than
+        // `self` — which would be a cycle through the channel that holds the handler.
+        let window = window
+        let limit = Self.byteLimit
+        channel.read(offset: 0, length: .max, queue: queue) { done, data, _ in
+            window.absorb(data, done: done, limit: limit)?.resume()
+        }
+    }
+
+    /// The last `lineLimit` lines of what was drained, waiting up to `timeout` for
+    /// the drain to finish on its own.
+    ///
+    /// On timeout the channel is **closed**, and closing is what makes this return
+    /// rather than merely hoping it will. Cancelling a task cannot resume a read
+    /// blocked on a pipe that never reaches EOF, and EOF is not guaranteed here. The
+    /// timeout path SIGKILLs the child's whole process group, which closes every
+    /// write end held by a group *member* — but a command that double-forks and
+    /// `setsid`s (a disowned `some-daemon &`, or a launcher that daemonizes itself)
+    /// leaves a grandchild outside that group still holding an inherited copy of this
+    /// pipe's write end, possibly for the rest of the login session. No signal this
+    /// runner sends reaches it, and no amount of task cancellation ends a read
+    /// waiting on it. `close(flags: .stop)` needs neither: it ends the channel's
+    /// pending operation, delivers the final handler with `ECANCELED`, and releases
+    /// the descriptor. The grandchild keeps its end, and nobody is left waiting.
+    func tail(lineLimit: Int, within timeout: Duration) async -> [String] {
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await self.waitForDrain() }
+            group.addTask { try? await Task.sleep(for: timeout) }
+            await group.next()
+            group.cancelAll()
+            // Unconditional and idempotent: on the EOF path this only releases the
+            // descriptor, and on the timeout path it is what lets the task above
+            // finish — which `withTaskGroup` waits for before returning. The timeout
+            // path is reached when a daemonized grandchild (double fork, `setsid`)
+            // has escaped the SIGKILLed process group still holding this pipe's write
+            // end, so there is no EOF coming and cancelling the task above would not
+            // end its read. Closing this end is what does. See the note above.
+            channel?.close(flags: .stop)
+        }
+        return lines(limit: lineLimit)
+    }
+
+    private func waitForDrain() async {
+        await withCheckedContinuation { continuation in
+            let alreadyFinished = window.state.withLock { state -> Bool in
+                guard !state.isFinished else { return true }
+                state.waiter = continuation
+                return false
+            }
+            if alreadyFinished { continuation.resume() }
+        }
+    }
+
+    private func lines(limit: Int) -> [String] {
+        let bytes = window.state.withLock { $0.bytes }
+        guard !bytes.isEmpty else { return [] }
+        // Lossy on purpose: the window can begin mid-line and mid-scalar, so the
+        // first entry may be a fragment and invalid bytes become U+FFFD. A tail is
+        // for reading, not for round-tripping.
+        var lines = String(decoding: bytes, as: UTF8.self)
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map(String.init)
+        // Output almost always ends in a newline, and that trailing empty piece isn't
+        // a line — it would otherwise cost one of the `limit` slots.
+        if lines.last?.isEmpty == true { lines.removeLast() }
+        if lines.count > limit { lines.removeFirst(lines.count - limit) }
+        return lines
     }
 }
 

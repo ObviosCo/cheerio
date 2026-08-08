@@ -30,12 +30,20 @@ struct CallbackProcess: Sendable {
     let standardInput: FileHandle
     /// This process's end of the child's stderr. Reads until every process in the
     /// group has closed its copy — which, for a command that leaves descendants
-    /// running, only happens once the group is signalled.
+    /// running, only happens once the group is signalled, and for one that left the
+    /// group behind may never happen at all. Handed straight to
+    /// `StderrTailReader`, which takes ownership of the descriptor and closes this
+    /// handle; nothing else should read from it.
     let standardError: FileHandle
 
     struct SpawnError: Error, LocalizedError {
+        /// Which call reported the failure — `posix_spawn` itself, or one of the
+        /// setup calls that build its arguments. Named because "Invalid argument"
+        /// on its own says nothing about *which* argument, and these are the only
+        /// errors a user ever sees from a callback that wouldn't start.
+        let call: String
         let code: Int32
-        var errorDescription: String? { String(cString: strerror(code)) }
+        var errorDescription: String? { "\(call): \(String(cString: strerror(code)))" }
     }
 
     /// Sends `signal` to the child's entire process group, never to the child
@@ -65,12 +73,27 @@ struct CallbackProcess: Sendable {
     ///
     /// The caller owns the child from here: it must be reaped (see
     /// ``ExitStatus``), and nothing else in the process will do that for it.
+    ///
+    /// Throws ``SpawnError`` if the launch fails *or* if any of the calls that
+    /// describe it does — an unrecorded action would otherwise let `posix_spawn`
+    /// succeed against a child that isn't the one this function promises. Nothing is
+    /// left open on a throw.
     static func spawn(
         executablePath: String,
         arguments: [String],
         environment: [String: String],
         workingDirectory: String
     ) throws -> CallbackProcess {
+        // Every `posix_spawn*` call reports failure by *returning* the errno rather
+        // than setting it, so a zero return is the only thing that means "recorded".
+        func check(_ returnCode: Int32, _ call: String) throws {
+            guard returnCode == 0 else { throw SpawnError(call: call, code: returnCode) }
+        }
+        // The libc calls that follow the usual `-1`-and-`errno` convention instead.
+        func checkErrno(_ returnCode: Int32, _ call: String) throws {
+            guard returnCode != -1 else { throw SpawnError(call: call, code: errno) }
+        }
+
         let stdinPipe = Pipe()
         let stderrPipe = Pipe()
 
@@ -83,32 +106,65 @@ struct CallbackProcess: Sendable {
             stdinPipe.fileHandleForReading, stdinPipe.fileHandleForWriting,
             stderrPipe.fileHandleForReading, stderrPipe.fileHandleForWriting,
         ]
-        for handle in pipeHandles {
-            _ = fcntl(handle.fileDescriptor, F_SETFD, FD_CLOEXEC)
+
+        // Anything thrown below leaves this true, and every end this function opened
+        // is closed on the way out — a caller that got an error has nothing to clean
+        // up, and no descriptor leaks per failed callback. Cleared only once the
+        // returned value owns the two parent ends. Double-closing is not a hazard:
+        // `FileHandle.close()` clears its own descriptor, so the two child ends
+        // closed explicitly after the spawn are no-ops here.
+        var ownsPipeEnds = true
+        defer {
+            if ownsPipeEnds {
+                for handle in pipeHandles { try? handle.close() }
+            }
         }
 
-        // The setup calls below return their own error codes, deliberately unchecked:
-        // they only record what to do, and anything actually wrong with what they
-        // recorded — a closed descriptor, an unreachable working directory, no
-        // `/dev/null` — comes back from `posix_spawn` itself as the errno this throws.
+        for handle in pipeHandles {
+            // Not cosmetic: a child that inherited the stdin *write* end would never
+            // see EOF, and one that inherited the stderr *read* end would keep the
+            // tail reader from ever seeing it. Both hang the runner, so a failure
+            // here has to stop the launch rather than be papered over.
+            try checkErrno(fcntl(handle.fileDescriptor, F_SETFD, FD_CLOEXEC), "fcntl(F_SETFD, FD_CLOEXEC)")
+        }
+
+        // Each setup call below can fail on its own account — `ENOMEM` growing the
+        // action list, `EBADF` for a descriptor that isn't open, `EINVAL` for a flag
+        // this platform doesn't know — and a failure is silent: the action simply
+        // isn't recorded. `posix_spawn` then succeeds against an incomplete
+        // description, launching a child with, say, no stdin pipe, or in the wrong
+        // directory, or in *this* process's group, where the timeout's `killpg` would
+        // signal the app itself. So every one of them is checked before spawning.
         var fileActions: posix_spawn_file_actions_t?
-        posix_spawn_file_actions_init(&fileActions)
+        try check(posix_spawn_file_actions_init(&fileActions), "posix_spawn_file_actions_init")
         defer { posix_spawn_file_actions_destroy(&fileActions) }
-        posix_spawn_file_actions_adddup2(&fileActions, stdinPipe.fileHandleForReading.fileDescriptor, 0)
+        try check(
+            posix_spawn_file_actions_adddup2(&fileActions, stdinPipe.fileHandleForReading.fileDescriptor, 0),
+            "posix_spawn_file_actions_adddup2(stdin)"
+        )
         // Not inherited: a subprocess's stdout has nowhere sensible to go in a GUI
         // app, and the contract only asks for exit status plus a stderr tail.
-        posix_spawn_file_actions_addopen(&fileActions, 1, "/dev/null", O_WRONLY, 0)
-        posix_spawn_file_actions_adddup2(&fileActions, stderrPipe.fileHandleForWriting.fileDescriptor, 2)
+        try check(
+            posix_spawn_file_actions_addopen(&fileActions, 1, "/dev/null", O_WRONLY, 0),
+            "posix_spawn_file_actions_addopen(/dev/null)"
+        )
+        try check(
+            posix_spawn_file_actions_adddup2(&fileActions, stderrPipe.fileHandleForWriting.fileDescriptor, 2),
+            "posix_spawn_file_actions_adddup2(stderr)"
+        )
         // A sensible default working directory for a command that has no shell
         // session to inherit one from.
-        posix_spawn_file_actions_addchdir(&fileActions, workingDirectory)
+        try check(
+            posix_spawn_file_actions_addchdir(&fileActions, workingDirectory),
+            "posix_spawn_file_actions_addchdir"
+        )
 
         var attributes: posix_spawnattr_t?
-        posix_spawnattr_init(&attributes)
+        try check(posix_spawnattr_init(&attributes), "posix_spawnattr_init")
         defer { posix_spawnattr_destroy(&attributes) }
         // A pgroup of 0 means "your own pid": the child becomes the leader of a
         // brand-new group, which is the entire reason this file exists.
-        posix_spawnattr_setpgroup(&attributes, 0)
+        try check(posix_spawnattr_setpgroup(&attributes, 0), "posix_spawnattr_setpgroup")
         // Signal state is inherited across exec, and this app's is not the user
         // command's business. An inherited `SIG_IGN` for `SIGPIPE` (Foundation sets
         // one) would stop `… | head` behaving the way the user expects, and — worse
@@ -117,14 +173,17 @@ struct CallbackProcess: Sendable {
         // full ten-second wait for the `SIGKILL`. So: default dispositions, empty
         // mask, same as `Process` does.
         var allSignals = sigset_t()
-        sigfillset(&allSignals)
-        posix_spawnattr_setsigdefault(&attributes, &allSignals)
+        try checkErrno(sigfillset(&allSignals), "sigfillset")
+        try check(posix_spawnattr_setsigdefault(&attributes, &allSignals), "posix_spawnattr_setsigdefault")
         var noSignals = sigset_t()
-        sigemptyset(&noSignals)
-        posix_spawnattr_setsigmask(&attributes, &noSignals)
-        posix_spawnattr_setflags(
-            &attributes,
-            Int16(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK)
+        try checkErrno(sigemptyset(&noSignals), "sigemptyset")
+        try check(posix_spawnattr_setsigmask(&attributes, &noSignals), "posix_spawnattr_setsigmask")
+        try check(
+            posix_spawnattr_setflags(
+                &attributes,
+                Int16(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK)
+            ),
+            "posix_spawnattr_setflags"
         )
 
         var argv: [UnsafeMutablePointer<CChar>?] = ([executablePath] + arguments).map { strdup($0) }
@@ -144,11 +203,9 @@ struct CallbackProcess: Sendable {
         // the other side can never see EOF, no matter what happens to the child.
         try? stdinPipe.fileHandleForReading.close()
         try? stderrPipe.fileHandleForWriting.close()
-        guard result == 0 else {
-            try? stdinPipe.fileHandleForWriting.close()
-            try? stderrPipe.fileHandleForReading.close()
-            throw SpawnError(code: result)
-        }
+        // The two parent ends are left to the `defer` above on this path.
+        guard result == 0 else { throw SpawnError(call: "posix_spawn", code: result) }
+        ownsPipeEnds = false
         return CallbackProcess(
             processIdentifier: pid,
             standardInput: stdinPipe.fileHandleForWriting,

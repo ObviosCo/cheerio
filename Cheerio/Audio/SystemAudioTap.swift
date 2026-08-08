@@ -75,7 +75,20 @@ final class SystemAudioTap: @unchecked Sendable {
     /// the opening seconds for any non-zero sample so `stop()` can say so out loud.
     private let signalWatch = SilenceWatch()
 
-    init(onBuffer: @escaping @Sendable (sending AVAudioPCMBuffer) -> Void) {
+    /// Whether `stop()` logs the silence/signal verdict at all. Defaults on for the
+    /// real capture path, where minutes of silence really does mean a denied tap.
+    /// The onboarding probe (`OnboardingPermissionStepView.requestSystemAudio()`)
+    /// opts out: it only runs the tap for ~1 second to trigger the TCC prompt, and
+    /// a quiet Mac in that one second looks identical to a denied tap — logging the
+    /// verdict there would be a false alarm, not a diagnosis. Production logging is
+    /// unaffected by this flag; it stays on unless a caller explicitly opts out.
+    private let logsSilenceVerdict: Bool
+
+    init(
+        logsSilenceVerdict: Bool = true,
+        onBuffer: @escaping @Sendable (sending AVAudioPCMBuffer) -> Void
+    ) {
+        self.logsSilenceVerdict = logsSilenceVerdict
         self.onBuffer = onBuffer
     }
 
@@ -159,6 +172,7 @@ final class SystemAudioTap: @unchecked Sendable {
         aggregateID = AudioObjectID(kAudioObjectUnknown)
         tapID = AudioObjectID(kAudioObjectUnknown)
 
+        guard logsSilenceVerdict else { return }
         if signalWatch.didSeeSignal {
             log.notice("System audio tap stopped — captured signal")
         } else {
