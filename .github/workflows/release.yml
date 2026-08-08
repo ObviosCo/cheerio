@@ -113,6 +113,9 @@ jobs:
 
       # --timestamp gets a secure timestamp from Apple so the signature
       # outlives the certificate; notarization requires it.
+      # CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO stops xcodebuild from adding
+      # get-task-allow (the debugger entitlement) — `build` injects it even
+      # in Release, and the notary service rejects any binary carrying it.
       - name: Build Release
         run: |
           set -o pipefail
@@ -125,6 +128,7 @@ jobs:
             -clonedSourcePackagesDirPath SourcePackages \
             CODE_SIGN_IDENTITY="Developer ID Application: Jackson Miller (HXGV36NV7T)" \
             CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO \
             OTHER_CODE_SIGN_FLAGS=--timestamp \
             | xcbeautify --renderer github-actions
 
@@ -136,6 +140,12 @@ jobs:
           # (-dvv, not -dv: Authority lines only appear at verbosity ≥ 2.)
           codesign -dvv "$app" 2>&1 | grep -q "Authority=Developer ID Application" \
             || { echo "::error::App is not signed with Developer ID"; exit 1; }
+          # The notary service rejects the debugger entitlement outright;
+          # catch it here rather than after a round-trip to Apple.
+          if codesign -d --entitlements - "$app" 2>/dev/null | grep -q get-task-allow; then
+            echo "::error::App carries get-task-allow; notarization would reject it"
+            exit 1
+          fi
           # The diarization model must ship inside the app — Cheerio has no
           # network entitlement and cannot download it at runtime.
           test -d "$app/Contents/Resources/Sortformer_v2.1.mlmodelc" \
