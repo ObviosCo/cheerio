@@ -2,12 +2,14 @@
 
 [![CI](https://github.com/ObviosCo/cheerio/actions/workflows/ci.yml/badge.svg)](https://github.com/ObviosCo/cheerio/actions/workflows/ci.yml)
 
-Open-source AI meeting notes for macOS. Like Granola, but single-user, local-only, and free.
+Open-source meeting transcripts for macOS, built to be acted on by the agents already running
+on your machine. Like Granola, but single-user, no subscription, and free.
 
 Cheerio records both sides of a meeting straight off your Mac's audio hardware, transcribes it
 on-device, tells the participants apart by name, and merges the transcript with the rough notes
-you typed during the call into structured enhanced notes. No bot joins your call. Nothing leaves
-the machine.
+you typed during the call into structured enhanced notes. No bot joins your call, and no
+third-party service sits between the recording and the output — the transcript and notes stay
+in your library, ready to hand to whatever comes next.
 
 > **Status: works, lightly tested.** The app builds and runs, 47 package tests pass, and
 > speaker differentiation is verified for in-person meetings. It has **not** been verified
@@ -20,7 +22,19 @@ Granola-style meeting notes are excellent and require shipping your meetings to 
 servers on a subscription. As of macOS 26, Apple ships nearly everything needed to do it
 locally: `SpeechAnalyzer`/`SpeechTranscriber` for transcription, the Foundation Models framework
 for summarization, and Core Audio process taps for system audio. Cheerio is that, assembled —
-plus one on-device model Apple doesn't provide, for telling speakers apart.
+plus one on-device model Apple doesn't provide, for telling speakers apart. That gets you a
+Granola alternative with no service to depend on and nothing to subscribe to.
+
+There's a second half to the story. People already use meeting transcripts as instructions for
+AI agents: record yourself thinking out loud, or record a meeting, then paste the transcript
+into Claude, Codex, or whatever agent is running, and let it act on what was said. That
+workflow already exists — it's just manual, and a chat box is the wrong container for it. Prompt
+boxes are size-limited and easy to overrun; a transcript is naturally long-form, which is
+exactly what makes it a good prompt. Cheerio's job is to make that loop first-class: produce the
+transcript locally, and let the agents already on your machine pick it up instead of you
+copying and pasting it in. (The agent-facing surfaces for this — a bundled MCP server, a
+transcript-ready callback, a directive-capture mode — are on the [roadmap](#roadmap), not built
+yet; see [tracking epic #22](https://github.com/ObviosCo/cheerio/issues/22).)
 
 ## What it does
 
@@ -52,7 +66,10 @@ plus one on-device model Apple doesn't provide, for telling speakers apart.
 
 Full scope and non-goals: [`docs/SPEC.md`](docs/SPEC.md).
 
-## Local-only by construction
+## No service required
+
+Local models are the mechanism, not the point. There's no third-party service Cheerio depends
+on and nothing to pay for month to month — you run it, and you control it.
 
 - **There is no networking code in the app.** No `URLSession`, no sockets, nothing. That is the
   actual guarantee, and it is worth stating precisely: because App Sandbox is off (see below),
@@ -63,6 +80,8 @@ Full scope and non-goals: [`docs/SPEC.md`](docs/SPEC.md).
 - No accounts, no telemetry, no analytics, no crash reporting.
 - The only network activity the app can cause is macOS itself fetching the speech model for
   your locale on first run.
+- Nothing leaves the machine during a recording or while it's being processed — audio,
+  transcript, and notes all stay in the app's local store until you export them yourself.
 
 ## Download
 
@@ -209,13 +228,22 @@ Near-term: acoustic echo cancellation on the mic, verification against a live vi
 recording mode (solo / in-person / video call) to drive echo cancellation, an in-room vs.
 remote toggle per participant, and playback of retained audio.
 
-Both capture channels stay on in every mode. An earlier plan had modes skip the system tap
-for solo and in-person recording, on the assumption that nothing worth capturing comes out
-of the machine — but input and output can be different devices, and someone recording alone
-through AirPods still has system audio worth keeping.
+Also near-term, the actionable-transcripts work ([tracking epic
+#22](https://github.com/ObviosCo/cheerio/issues/22)): owner-attributed action items (who
+committed to what, and whether it's the owner's to act on or someone else's to follow up on), a
+transcript-ready callback that hands the finished export to an agent CLI, a directive-capture
+mode for talking instructions at the app instead of narrating a meeting, and a bundled MCP
+server so local agents can query the library directly. None of this exists yet — it's the plan,
+not the app.
+
+Both capture channels stay on in every mode, including directive mode once it lands. An earlier
+plan had modes skip the system tap for solo and in-person recording, on the assumption that
+nothing worth capturing comes out of the machine — but input and output can be different
+devices, and someone recording alone through AirPods still has system audio worth keeping.
 
 Later: an iOS app for in-person meetings, pluggable summarization models via the `LanguageModel`
-protocol, semantic search, and Obsidian folder auto-export.
+protocol, semantic search, Obsidian folder auto-export, and a first-party CLI once the callback
+and MCP server prove out the shape agents actually want.
 
 ## Contributing
 
