@@ -99,6 +99,49 @@
        it doesn't get an entry.
      ========================================================================== -->
 
+    <article class="release" id="v26-8-9">
+      <div class="stack stack--4">
+        <header class="stack stack--2">
+          <h2 class="release-version"><a href="#v26-8-9">26.8.9</a></h2>
+          <p class="release-meta">
+            <time datetime="2026-08-08">8 August 2026</time>
+            <span aria-hidden="true">·</span>
+            <a href="https://github.com/ObviosCo/cheerio/releases/tag/v26.8.9">Download</a>
+            <span aria-hidden="true">·</span>
+            <a href="https://github.com/ObviosCo/cheerio/compare/v2026.8.8...v26.8.9">Changes since 2026.8.8</a>
+          </p>
+        </header>
+        <p class="release-summary">Transcripts your local AI agents can act on, from an app that now updates itself.</p>
+        <section class="stack stack--2">
+          <h3>Added</h3>
+          <ul>
+            <li>Action items now say who committed to them: your own commitments are action items, everyone else's are follow-ups with a name to chase — and tools reading a meeting get the same distinction.</li>
+            <li>A transcript-ready callback: point Settings → Callback at any command and it runs when a meeting finishes processing, with the full transcript as JSON.</li>
+            <li>Give Direction… in the menu bar — record instructions for your AI assistant without pretending it's a meeting; directives are tagged and filterable in the library.</li>
+            <li>A bundled MCP server, so agents on this Mac can look up your meetings themselves. Setup snippets live in Settings → Agents.</li>
+            <li>A first-run walkthrough that explains each permission before asking and gets your voice enrolled, so speakers come back named instead of "Speaker 2".</li>
+            <li>Meetings can be renamed anywhere their title appears, and recordings left on the placeholder title name themselves from the transcript.</li>
+            <li>The app updates itself: it checks its own releases once a day and can install updates automatically. Both switches are in Settings → Updates.</li>
+            <li>The download is now a DMG that does the drag-to-Applications step for you.</li>
+          </ul>
+        </section>
+        <section class="stack stack--2">
+          <h3>Fixed</h3>
+          <ul>
+            <li>The app asked for calendar access on every launch, even after you'd said no. It now only asks when you choose to connect the calendar.</li>
+          </ul>
+        </section>
+        <section class="stack stack--2">
+          <h3>Known issues</h3>
+          <ul>
+            <li>The mic hears your speakers: on a call played out loud, the transcript says everything twice. Use headphones.</li>
+            <li>The live transcript shows Me/Them during the meeting; names appear once it ends and speaker identification runs.</li>
+            <li>On a very first launch the library window can appear alongside the walkthrough instead of after it.</li>
+          </ul>
+        </section>
+      </div>
+    </article>
+
       <article class="release" id="v2026-8-8">
         <div class="stack stack--4">
           <header class="stack stack--2">
