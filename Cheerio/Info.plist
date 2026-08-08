@@ -14,8 +14,8 @@
 	<string>APPL</string>
 	<!-- Dev placeholder, not a real version — releases are CalVer YY.MM.BUILD
 	     (see .github/workflows/release.yml), and 0.0.0 can't collide with one.
-	     Overwritten on every CI run: tags set it to the tag's own version;
-	     manual (workflow_dispatch) runs leave whatever is already here. -->
+	     A tagged release run overwrites this with the tag's own version; every
+	     other build (local, CI, workflow_dispatch dry runs) ships it as-is. -->
 	<key>CFBundleShortVersionString</key>
 	<string>0.0.0</string>
 	<key>CFBundleVersion</key>

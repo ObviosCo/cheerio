@@ -171,8 +171,10 @@ jobs:
 
             # CalVer (calver.org): YY.MM.MICRO. The month group deliberately
             # excludes a leading zero — (1[0-2]|[1-9]) matches 1-12 but not
-            # "08" — so the scheme reads the same way everywhere it appears.
-            if [[ ! "$tag" =~ ^v([0-9]{2})\.(1[0-2]|[1-9])\.([0-9]+)$ ]]; then
+            # "08" — and BUILD is a positive, unpadded counter ([1-9][0-9]*):
+            # the first release of a month is .1, and "v26.8.01" is not an
+            # alias for it. One canonical spelling per version, everywhere.
+            if [[ ! "$tag" =~ ^v([0-9]{2})\.(1[0-2]|[1-9])\.([1-9][0-9]*)$ ]]; then
               echo "::error::Tag '${tag}' isn't in this repo's version scheme: CalVer YY.MM.BUILD, tagged vYY.MM.BUILD (e.g. v26.8.1 for the first release cut in August 2026). YY and MM come from the calendar and are never zero-padded (v26.8.1, not v26.08.01); BUILD is a per-month counter you choose by hand — see this workflow's header comment. Fix: cut a tag matching that shape."
               exit 1
             fi
