@@ -29,6 +29,14 @@ public final class Meeting {
     public var roughNotes: String
     /// AI-enhanced notes (Markdown), generated after the meeting.
     public var enhancedNotes: String?
+    /// The action items behind ``enhancedNotes``, already vetted by
+    /// ``ActionItem/resolved(from:ownerNames:)``.
+    ///
+    /// Persisted alongside the Markdown rather than parsed back out of it: prose is a
+    /// lossy carrier for `isOwner` and `disposition`, and regenerating them means
+    /// re-running the model over audio that retention may have purged. Defaulted so
+    /// existing stores migrate additively.
+    public var actionItems: [ActionItem] = []
     /// Path to the recorded audio files, relative to Application Support. Nil once purged.
     public var audioDirectory: String?
     /// Which enrolled voices were in this meeting, by name.

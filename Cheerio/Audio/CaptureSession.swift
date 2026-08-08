@@ -249,11 +249,15 @@ final class CaptureSession {
 
             do {
                 let engine = SummarizationEngine()
+                // After diarization, so the labels the owner names are matched against
+                // are the ones the transcript actually carries.
                 let notes = try await engine.generateEnhancedNotes(
                     transcript: meeting.transcriptText,
-                    roughNotes: roughNotes
+                    roughNotes: roughNotes,
+                    ownerNames: SpeakerLabeling.ownerNames(context: context)
                 )
                 meeting.enhancedNotes = notes.markdown
+                meeting.actionItems = notes.actionItems
             } catch {
                 log.error("Enhancement failed: \(error)")
                 // Transcript-only fallback: meeting remains useful without notes.
