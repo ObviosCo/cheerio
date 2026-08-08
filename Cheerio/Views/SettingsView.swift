@@ -189,7 +189,7 @@ struct TranscriptCallbackSettingsView: View {
                     }
                 }
                 Text(
-                    "Runs when a transcript is fully ready — recording stopped, speakers identified, notes generated. The command receives the transcript as JSON on stdin, at the path in CHEERIO_EXPORT_PATH, and gets CHEERIO_MEETING_ID, CHEERIO_MEETING_KIND, and CHEERIO_TITLE in its environment. Never anything from the transcript itself is placed on the command line. Commands resolve against a fixed PATH — the system directories plus /opt/homebrew/bin, /opt/homebrew/sbin, /usr/local/bin, and ~/.local/bin — not your shell profile, so give an absolute path for anything installed elsewhere. Leave blank to turn this off."
+                    "Runs when a meeting finishes processing — recording stopped, and speaker identification and note generation have completed or conclusively failed (the export carries whatever exists). The command receives the transcript as JSON on stdin, at the path in CHEERIO_EXPORT_PATH, and gets CHEERIO_MEETING_ID, CHEERIO_MEETING_KIND, and CHEERIO_TITLE in its environment. Never anything from the transcript itself is placed on the command line. Commands resolve against a fixed PATH — the system directories plus /opt/homebrew/bin, /opt/homebrew/sbin, /usr/local/bin, and ~/.local/bin — not your shell profile, so give an absolute path for anything installed elsewhere. Leave blank to turn this off."
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)

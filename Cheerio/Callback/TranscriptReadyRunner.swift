@@ -203,7 +203,14 @@ enum TranscriptReadyRunner {
         let tail = await stderrReader.tail(lineLimit: stderrTailLineLimit, within: .seconds(5))
 
         if timedOut {
-            return .failure("Timed out and was terminated")
+            // The tail rides along: a command that had to be killed is the one whose
+            // last words are most worth reading.
+            let tailText = tail.joined(separator: "\n")
+            log.error("Transcript-ready callback timed out; stderr tail: \(tailText, privacy: .public)")
+            return .failure(
+                tailText.isEmpty
+                    ? "Timed out and was terminated"
+                    : "Timed out and was terminated. Last output:\n\(tailText)")
         }
         // A death by SIGTERM or SIGKILL is a timed-out command, and it's already been
         // reported as one above — so a signal reaching this switch means the command
