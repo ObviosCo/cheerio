@@ -10,7 +10,7 @@ Read the [README](../README.md) first — it describes what the app does today, 
 
 An open-source AI meeting-notes app for macOS. Think Granola, but free, single-user, and self-contained: transcription runs on Apple's on-device `SpeechAnalyzer`, summarization on the on-device Foundation Model, speaker identification on a Core ML model on the Neural Engine. No accounts, no subscription, no meeting bot joining the call.
 
-Because every model is on the machine, the app works on a plane, doesn't slow down when someone else's API does, and can't be changed out from under you by a vendor deprecating a model. That's a genuinely nice property and it's worth mentioning — but it is **not** the pitch, and the design shouldn't be built around it. The pitch is that it's a good meeting-notes app you own outright.
+Because every model is on the machine, the app works on a plane, doesn't slow down when someone else's API does, and doesn't change behaviour the week a hosted model is swapped underneath it. (Not that it's frozen — these are Apple's frameworks, and Apple ships OS updates. It just doesn't move without you.) That's a genuinely nice property and it's worth mentioning — but it is **not** the pitch, and the design shouldn't be built around it. The pitch is that it's a good meeting-notes app you own outright.
 
 **Who it's for:** individuals who take a lot of meetings and want good notes without a subscription or a bot in the call. Single-user by design — no teams, no sharing.
 
@@ -85,7 +85,7 @@ The app already ships a `MenuBarExtra` ([CheerioApp.swift:35](../Cheerio/Cheerio
 | State | Placeholder symbol | What it means |
 | --- | --- | --- |
 | `idle` | `waveform` | Not recording |
-| `preparingModel` | `arrow.down.circle` | One-time model download on first run |
+| `preparingModel` | `arrow.down.circle` | Getting ready. Entered on **every** start, not just the first — usually a blink, but long and silent on first run while macOS downloads the speech model |
 | `recording` | `record.circle.fill` | Capturing right now |
 | `finishing` | `ellipsis.circle` | Generating notes and identifying speakers |
 
@@ -150,7 +150,7 @@ The most open-ended track, and after the icon the most valuable. Everything belo
 
 The README's [Known issues](../README.md#current-status) and [Roadmap](../README.md#roadmap) cover the engineering side of this list; below is what it means for design.
 
-- **Onboarding or first run of any kind.** A new user gets a window with an empty list and no explanation.
+- **Guided first run.** There *is* an empty state — a `ContentUnavailableView` saying "Select a past meeting or start recording" — so it isn't a blank window. What's missing is everything that would set someone up to succeed: enrolling a voice before the first meeting rather than after, explaining what the two audio channels are, and getting the permissions in place before a recording is already running.
 - **First-run model download UI.** The transcription model downloads on first use; the UI for it is the words "Preparing model…" with no progress and no size estimate.
 - **System-audio and calendar permission handling.** Microphone has a real recovery path (an alert that deep-links into System Settings). The other two have nothing — and system audio is the one users won't understand.
 - **Audio playback.** Audio is recorded and retained but there's no way to hear it.
@@ -225,7 +225,7 @@ Where it lives is a decision for us, not you, but it affects your file layout so
 Start small. A site this project can maintain beats a site it can't.
 
 1. **Home.** What it is, who it's for, what it looks like, and a download button. The screenshot carries most of the weight here — which means the UI work in Track C and this page are the same problem seen twice. Be honest in the copy: the app is early, and the README's status table sets a tone worth matching.
-2. **Download / install.** Direct-download apps have a rough first-launch story — Gatekeeper, an unidentified developer, right-click-open. Design the page that gets someone past that without making the app look sketchy. This subsumes the DMG presentation described in §8.
+2. **Download / install.** How rough the first launch is depends on something we haven't settled: a Developer ID-signed and notarized build opens normally, while an unsigned one puts the user through Gatekeeper's "unidentified developer" wall and a right-click-open. There's no signing set up today. Design for the good case, and ask us before writing any bypass instructions — telling people to work around Gatekeeper is a bad look and may well be unnecessary. This subsumes the DMG presentation described in §8.
 3. **Release notes.** One page, one entry per version, permalinked. This is the page that runs on rails for years, so its template matters more than its first instance — and it's exactly what the voice skill in Track B exists to write.
 
 Anything beyond those three (docs, a changelog feed, a page about how the on-device pipeline works) is welcome as a proposal, not an assumption.
@@ -238,7 +238,7 @@ Real HTML and CSS, not a mockup handed over for someone else to build. Semantic 
 
 ## 6. What we'll give you
 
-- The repo. You'll need macOS 26 and Xcode 26. A fresh clone is three commands, and the middle one does the fiddly parts (it fetches a ~93 MB model that isn't committed):
+- The repo. You'll need macOS 26 and Xcode 26. After cloning, this one command does the fiddly parts — it checks your toolchain, fetches a ~93 MB model that isn't committed, and generates the Xcode project:
 
   ```sh
   ./Scripts/bootstrap.sh

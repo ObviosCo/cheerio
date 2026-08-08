@@ -189,14 +189,19 @@ macOS-only Core Audio, so it stays in the app target.
 Design notes and the gotchas worth knowing before you touch the audio path:
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
-What the app still needs from a designer — an icon, an identity, and a review of the UI:
-[`docs/DESIGN-HANDOFF.md`](docs/DESIGN-HANDOFF.md).
+What the app still needs from a designer — an icon, an identity and voice, a review of the
+UI, and a website: [`docs/DESIGN-HANDOFF.md`](docs/DESIGN-HANDOFF.md).
 
 ## Roadmap
 
 Near-term: acoustic echo cancellation on the mic, verification against a live video call, a
-recording mode (solo / in-person / video call) so the system tap isn't started when it's
-pointless, an in-room vs. remote toggle per participant, and playback of retained audio.
+recording mode (solo / in-person / video call) to drive echo cancellation, an in-room vs.
+remote toggle per participant, and playback of retained audio.
+
+Both capture channels stay on in every mode. An earlier plan had modes skip the system tap
+for solo and in-person recording, on the assumption that nothing worth capturing comes out
+of the machine — but input and output can be different devices, and someone recording alone
+through AirPods still has system audio worth keeping.
 
 Later: an iOS app for in-person meetings, pluggable summarization models via the `LanguageModel`
 protocol, semantic search, and Obsidian folder auto-export.
