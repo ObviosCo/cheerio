@@ -57,7 +57,8 @@ bug and isn't).
 - Formatting is enforced in CI: `swift format lint --strict` with the repo's `.swift-format`
   config. Run `swift format --in-place --recursive Cheerio CheerioKit/Sources CheerioKit/Tests`
   before pushing. Release builds come from `.github/workflows/release.yml` on `v*` tags —
-  ad-hoc signed, so the release notes carry the Gatekeeper instructions.
+  Developer ID-signed and notarized; the five signing/notary secrets it needs
+  are listed in the workflow's header comment.
 - Bundle prefix `app.cheerio` is a placeholder (`project.yml` TODO).
 
 ## Reference
