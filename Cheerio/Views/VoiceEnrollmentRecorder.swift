@@ -190,18 +190,20 @@ struct VoiceEnrollmentRecorder: View {
             }
 
             let capture = MicrophoneCapture { buffer in recorder.submit(buffer) }
-            try capture.start()
-            guard !Task.isCancelled else {
-                // Same as above, but the microphone is now live too.
-                capture.stop()
-                await recorder.finish()
-                try? AudioStorage.removeFile(atRelativePath: relativePath)
-                return
-            }
-
+            // Published *before* the throwing call: if `capture.start()` throws
+            // after partially installing the tap, the catch below can only unwind
+            // what `cleanUpFailedRecording()` can see on `self` — as locals, the
+            // recorder's drain task and the tap would leak.
             pendingPath = relativePath
             self.recorder = recorder
             self.capture = capture
+            try capture.start()
+            guard !Task.isCancelled else {
+                // Cancelled while the microphone was coming up: everything is
+                // published now, so the shared cleanup can unwind all of it.
+                await cleanUpFailedRecording()
+                return
+            }
             elapsed = 0
         } catch {
             errorMessage = error.localizedDescription
