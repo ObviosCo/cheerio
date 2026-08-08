@@ -222,16 +222,16 @@ extension ActionItem {
     /// longer resolves to the owner drops to `followUp`, but a correction in the
     /// other direction never *promotes* — the model's original judgement about a
     /// dependency is gone by now, so `actionable` can't be safely reconstructed.
-    /// Unnamed items (first-person commitments) carry no name to re-check;
     /// `meetingHasOwnerLines` — whether any transcript line still resolves to the
-    /// owner — is the evidence that decides them: if the correction removed every
-    /// owner line, "I'll do it" wasn't the owner talking after all.
+    /// owner — gates *every* item, named or not: if the corrections removed the
+    /// meeting's last owner line, nothing in it is the owner's to act on, whatever
+    /// name an item carries. Named items additionally require their committer to
+    /// still resolve to the owner; unnamed (first-person) ones have only the
+    /// meeting-level evidence to lean on.
     func reconciled(ownerNames: Set<String>, meetingHasOwnerLines: Bool) -> ActionItem {
-        let stillOwner: Bool
+        var stillOwner = isOwner && meetingHasOwnerLines
         if let owner {
-            stillOwner = isOwner && ownerNames.contains { $0.lowercased() == owner.lowercased() }
-        } else {
-            stillOwner = isOwner && meetingHasOwnerLines
+            stillOwner = stillOwner && ownerNames.contains { $0.lowercased() == owner.lowercased() }
         }
         guard stillOwner != isOwner else { return self }
         return ActionItem(text: text, owner: owner, isOwner: false, disposition: .followUp)
