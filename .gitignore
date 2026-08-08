@@ -9,7 +9,8 @@ DerivedData/
 .swiftpm/
 Package.resolved
 # Where CI (and anyone passing -clonedSourcePackagesDirPath) puts resolved
-# packages, including Sparkle's binary xcframework and its command-line tools.
+# packages, including Sparkle's binary xcframework and its command-line tools;
+# running the same command locally leaves it in the tree.
 SourcePackages/
 
 # macOS
@@ -24,3 +25,8 @@ build/
 
 # Screenshot harness output (regenerate with Scripts/screenshots/capture.sh)
 Scripts/screenshots/out/
+
+# Disk images and the venv Scripts/make-dmg.sh needs. Both are build output:
+# the DMG is ~96 MB, and its background art is generated, never committed.
+*.dmg
+.dmg-venv/

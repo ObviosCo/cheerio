@@ -57,11 +57,17 @@ final class CaptureSession {
     /// When the current recording began, for the elapsed-time readout.
     private(set) var startedAt: Date?
 
-    func start(title: String, calendarEventID: String?, context: ModelContext) async throws {
+    func start(
+        title: String,
+        calendarEventID: String?,
+        kind: MeetingKind = .meeting,
+        context: ModelContext
+    ) async throws {
         guard state == .idle else { return }
         state = .preparingModel
         do {
-            try await startCapturing(title: title, calendarEventID: calendarEventID, context: context)
+            try await startCapturing(
+                title: title, calendarEventID: calendarEventID, kind: kind, context: context)
         } catch {
             // Half-started is the worst state to leave: engines running, the recorder
             // holding open files, possibly a live microphone, an empty meeting in the
@@ -75,11 +81,19 @@ final class CaptureSession {
     private func startCapturing(
         title: String,
         calendarEventID: String?,
+        kind: MeetingKind,
         context: ModelContext
     ) async throws {
         try await TranscriptionEngine.ensureModel()
 
         let meeting = Meeting(title: title, calendarEventID: calendarEventID)
+        meeting.kind = kind
+        // Both call sites (MeetingListView, MenuBarView) pass a calendar event's own
+        // title verbatim when one is offered, and only fall back to the timestamped
+        // placeholder ("Meeting <date, time>" / "Direction — <date, time>") when
+        // there isn't one — so "no calendar event" and "this title is the
+        // placeholder" are the same condition here. See `Meeting.isTitleAutomatic`.
+        meeting.isTitleAutomatic = calendarEventID == nil
         // Start the roster at just your own voice: you're the one person guaranteed to
         // be here, and priming anyone else by default spends slots on people who may
         // not be. Left nil when no voice is marked "me", which keeps the old
@@ -262,6 +276,16 @@ final class CaptureSession {
                 log.error("Enhancement failed: \(error)")
                 // Transcript-only fallback: meeting remains useful without notes.
             }
+
+            // Same readiness point as the callback below, one step earlier: after
+            // diarization and enhancement (so the excerpt this reads carries
+            // speaker labels), before the save and the callback (so both carry
+            // whatever title comes out of this, not the timestamp it started
+            // with). Gated on `shouldAutoTitle` so a calendar title or an
+            // in-meeting rename (RecordingView) is never a candidate.
+            if meeting.shouldAutoTitle {
+                await autoTitle(meeting: meeting, context: context)
+            }
             try? context.save()
 
             // The transcript is "ready" — issue #26's callback contract — right
@@ -320,5 +344,48 @@ final class CaptureSession {
 
         let ownerNames = SpeakerLabeling.ownerNames(context: context)
         TranscriptReadyRunner.fireIfNeeded(export: meeting.export(ownerNames: ownerNames))
+    }
+
+    /// Generates and applies a title for a meeting that's still on its placeholder
+    /// — issue #32. Best-effort: a title is a nicety, not something worth
+    /// stranding the recording in `.finishing` over, so any failure is logged and
+    /// the timestamp title stands.
+    private func autoTitle(meeting: Meeting, context: ModelContext) async {
+        do {
+            let generator = TitleGenerator()
+            let title = try await generator.generateTitle(
+                transcript: meeting.transcriptText,
+                recentTitles: recentTitles(excluding: meeting, context: context)
+            )
+            guard !title.isEmpty else { return }
+            // Re-check right before applying, not just at the top of this function:
+            // `generateTitle` suspends for the length of a model call, and the main
+            // actor is free to run a user rename on `meeting` while we're waiting on
+            // it. If that happened, `shouldAutoTitle` is now false and applying this
+            // result would silently overwrite the title the user just typed — the
+            // manual-title-wins invariant (``Meeting/rename(to:)``) has to hold across
+            // the suspension, not just before it.
+            guard meeting.shouldAutoTitle else { return }
+            meeting.applyGeneratedTitle(title)
+        } catch {
+            log.error("Auto-title failed: \(error)")
+        }
+    }
+
+    /// The library's most recent titles, for ``TitleGenerator``'s uniqueness
+    /// constraint — the meeting being titled is excluded, since comparing its
+    /// still-placeholder title against itself would only weaken the constraint.
+    private func recentTitles(excluding meeting: Meeting, context: ModelContext, limit: Int = 10) -> [String] {
+        var descriptor = FetchDescriptor<Meeting>(sortBy: [SortDescriptor(\.startedAt, order: .reverse)])
+        // One extra: `meeting` itself is already in the store (inserted at start)
+        // and usually sorts first, so the window needs room to drop it and still
+        // return `limit` others.
+        descriptor.fetchLimit = limit + 1
+        let meetings = (try? context.fetch(descriptor)) ?? []
+        return
+            meetings
+            .filter { $0.persistentModelID != meeting.persistentModelID }
+            .prefix(limit)
+            .map(\.title)
     }
 }

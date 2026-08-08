@@ -27,6 +27,7 @@ Speaker differentiation *is* verified for in-person meetings: on 2026-07-31, wit
   - **FluidAudio** (Apache-2.0), in `CheerioKit`. Wraps Sortformer on Core ML/ANE for speaker diarization, because `SpeechTranscriber` has no speaker surface at all. Sortformer resolves **at most 4 speakers**.
   - **Sparkle 2** (MIT), on the app target only — declared in `project.yml`, not `Package.swift`, so both SwiftPM cache keys in CI hash `project.yml` too. Automatic updates; see `Cheerio/Updates/AppUpdater.swift` and the network bullet below.
 - `Cheerio/` — macOS app target: `MicrophoneCapture` (AVAudioEngine), `SystemAudioTap` (CATap → aggregate device → IOProc), `CaptureSession` (@Observable orchestrator), `AppUpdater` (Sparkle), SwiftUI views incl. Settings.
+- `CheerioMCP/` — `cheerio-mcp`, a stdio MCP server copied into `Cheerio.app/Contents/Helpers/`. Deliberately thin: `main.swift` plus file-descriptor work, with every answer coming from `CheerioKit/MCP/`. The protocol is hand-written rather than the official Swift SDK, which would have linked `import Network` and `URLSession` into the bundle — see ARCHITECTURE.md before reconsidering that. **It opens the store read-only and must never write**; `Meeting.stableID` backfills `uuid` on access, so the read path goes through `readOnlyExport` instead.
 - No `.xcodeproj` committed — generated via XcodeGen from `project.yml`. **Re-run `xcodegen generate` after adding files**, or the build won't see them.
 
 ## Build
@@ -38,6 +39,19 @@ open Cheerio.xcodeproj    # scheme: Cheerio
 ```
 
 Requires macOS 26+, Xcode 26+. Package tests: `cd CheerioKit && swift test`.
+
+The full verification loop any change must pass before pushing — this list is the
+canonical one; the agent definitions in `.claude/agents/` carry mirrors of it for
+self-containment, so change both together:
+
+```sh
+./Scripts/bootstrap.sh    # only needed if Cheerio/Resources/Models or the .xcodeproj is missing
+swift format --in-place --recursive Cheerio CheerioMCP CheerioKit/Sources CheerioKit/Tests   # drop CheerioMCP if absent
+swift format lint --recursive --strict Cheerio CheerioMCP CheerioKit/Sources CheerioKit/Tests   # drop CheerioMCP if absent
+swift test --package-path CheerioKit
+xcodegen generate         # mandatory after adding/removing files
+xcodebuild build -project Cheerio.xcodeproj -scheme Cheerio -configuration Debug -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -quiet
+```
 
 `bootstrap.sh` wraps `fetch-models.sh` + `xcodegen generate` because the order is
 load-bearing: `project.yml` references the `.mlmodelc` as a folder reference, so
@@ -59,6 +73,15 @@ speakers, so calls transcribe twice — the one issue blocking real use on a vid
 call) and **#9** (the live transcript can only show Me/Them, which looks like a
 bug and isn't).
 
+## Agents
+
+`.claude/agents/` has four checked-in subagent definitions for this repo's recurring work:
+`swift-implementer` (scoped feature/fix on a branch), `review-responder` (Copilot review
+triage), `release-editor` (`.github/workflows/release.yml` and `Scripts/`), and
+`issue-groomer` (closing issues addressed by merged PRs). The Build section's verification
+loop is the single canonical copy; the agent definitions restate it for self-containment, so
+update them alongside Build whenever the commands change.
+
 ## Conventions & constraints
 
 - **App Sandbox must stay off.** A sandboxed build creates the tap with `noErr` at every step and then reads pure digital silence, with no TCC prompt — it looks like a transcription bug but it's a capture-permission failure. Measured: `peak=0.0` sandboxed vs `-1.8 dBFS` unsandboxed, same code. This rules out Mac App Store distribution. `SystemAudioTap`'s `SilenceWatch` logs the verdict at `.notice`/`.error` on stop (`.info` never reaches `log show`).
@@ -69,7 +92,7 @@ bug and isn't).
 - Two transcription engines (mic/system) for the Me/Them split — that's deliberate; don't merge streams. Diarization sits *on top* of them, per-channel, to tell people apart within one channel.
 - Swift 6, strict concurrency complete. SwiftData for storage. MIT licensed.
 - Formatting is enforced in CI: `swift format lint --strict` with the repo's `.swift-format`
-  config. Run `swift format --in-place --recursive Cheerio CheerioKit/Sources CheerioKit/Tests`
+  config. Run `swift format --in-place --recursive Cheerio CheerioMCP CheerioKit/Sources CheerioKit/Tests`
   before pushing. Release builds come from `.github/workflows/release.yml` on `v*` tags —
   Developer ID-signed and notarized, then EdDSA-signed for Sparkle and published as an
   `appcast.xml` asset on the GitHub Release itself — the app's `SUFeedURL` is
@@ -81,6 +104,16 @@ bug and isn't).
   in that workflow's header comment. **Never generate or commit the Sparkle private key** —
   that is the maintainer's to hold; the workflow refuses to release if the key it signs with
   doesn't match the `SUPublicEDKey` in the built app.
+- **Every release ships the app twice**: a DMG (what people download) and a zip (what Sparkle
+  downloads, and the appcast's enclosure — don't switch it to the DMG). The DMG exists because
+  Safari auto-extracts a zip, people run `Cheerio.app` from `~/Downloads`, and macOS translocates
+  it to a read-only mount where Sparkle can never update it. Built by `Scripts/make-dmg.sh` with
+  `dmgbuild` (pinned with hashes in `Scripts/dmg-requirements.txt`), laid out per
+  `Scripts/dmg-settings.py`, over art from `Scripts/render-dmg-background.swift` — generated, not
+  committed. `Scripts/verify-dmg.py` mounts the result and fails the build if the layout doesn't
+  match the settings, because writing a `.DS_Store` fails silently. The DMG is signed, notarized
+  and stapled **separately** from the app: neither container is nested in the other, so one
+  submission can't cover both.
 - Bundle prefix `app.cheerio` is a placeholder (`project.yml` TODO).
 - New user-facing features decide whether the first-run walkthrough (`Cheerio/Views/Onboarding/`) needs to teach them — most won't, but a new permission or something as easy to miss as voice enrollment used to be, does.
 
