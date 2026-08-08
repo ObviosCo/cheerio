@@ -98,14 +98,19 @@ on and nothing to pay for month to month — you run it, and you control it.
 ## Download
 
 Prebuilt binaries are attached to [GitHub Releases](https://github.com/ObviosCo/cheerio/releases):
-unzip and drop `Cheerio.app` in `/Applications`. Builds are signed with a Developer ID
-certificate and notarized by Apple, so Gatekeeper opens them without warnings or right-click
-ceremony. Requires macOS 26 or later on Apple Silicon.
+download `Cheerio-<version>.dmg`, open it, and drag Cheerio to `/Applications`. Install it there
+rather than running it from `~/Downloads` — macOS runs an app from Downloads under app
+translocation, a read-only mount from which Cheerio can't update itself. Builds are signed with
+a Developer ID certificate and notarized by Apple, so Gatekeeper opens them without warnings or
+right-click ceremony. Requires macOS 26 or later on Apple Silicon.
 
-Later versions install themselves. The app checks its own update feed once a day, offers what
-it finds, and can be set to download and install without asking — see **Settings → Updates**,
-and [No service required](#no-service-required) for exactly what that costs in
-network terms.
+The `.zip` on the same release is the identical app; it's what the updater downloads, and
+Sparkle prefers that format. Either one works if you install it to `/Applications`.
+
+Later versions install themselves, so a second download is never needed. The app checks its own
+update feed once a day, offers what it finds, and can be set to download and install without
+asking — see **Settings → Updates**, and [No service required](#no-service-required) for exactly
+what that costs in network terms.
 
 To build from source instead:
 

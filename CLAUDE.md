@@ -81,6 +81,16 @@ bug and isn't).
   in that workflow's header comment. **Never generate or commit the Sparkle private key** —
   that is the maintainer's to hold; the workflow refuses to release if the key it signs with
   doesn't match the `SUPublicEDKey` in the built app.
+- **Every release ships the app twice**: a DMG (what people download) and a zip (what Sparkle
+  downloads, and the appcast's enclosure — don't switch it to the DMG). The DMG exists because
+  Safari auto-extracts a zip, people run `Cheerio.app` from `~/Downloads`, and macOS translocates
+  it to a read-only mount where Sparkle can never update it. Built by `Scripts/make-dmg.sh` with
+  `dmgbuild` (pinned with hashes in `Scripts/dmg-requirements.txt`), laid out per
+  `Scripts/dmg-settings.py`, over art from `Scripts/render-dmg-background.swift` — generated, not
+  committed. `Scripts/verify-dmg.py` mounts the result and fails the build if the layout doesn't
+  match the settings, because writing a `.DS_Store` fails silently. The DMG is signed, notarized
+  and stapled **separately** from the app: neither container is nested in the other, so one
+  submission can't cover both.
 - Bundle prefix `app.cheerio` is a placeholder (`project.yml` TODO).
 - New user-facing features decide whether the first-run walkthrough (`Cheerio/Views/Onboarding/`) needs to teach them — most won't, but a new permission or something as easy to miss as voice enrollment used to be, does.
 

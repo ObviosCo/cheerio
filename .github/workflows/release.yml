@@ -2,10 +2,21 @@
 #
 # Two ways in:
 #   - Push a tag like v26.8.1 → tests run, a Release build is made, and a GitHub
-#     Release is created with the zipped app attached.
-#   - Run manually (workflow_dispatch) → same build, but the zip is uploaded as
-#     a workflow artifact instead of a release. Useful for trying a build of
-#     main without cutting a version.
+#     Release is created with the app attached twice: as a DMG and as a zip.
+#   - Run manually (workflow_dispatch) → same build, but the DMG and zip are
+#     uploaded as workflow artifacts instead of a release. Useful for trying a
+#     build of main without cutting a version, and for eyeballing the DMG window.
+#
+# Why both containers, since they hold the same app:
+#   - The DMG is the human download. Safari auto-extracts a zip, so people
+#     double-click Cheerio.app in ~/Downloads and macOS starts it under app
+#     translocation — a randomised read-only mount where Sparkle can never
+#     update it. Drag-to-Applications is the fix; see Scripts/make-dmg.sh.
+#   - The zip is the updater's download, and stays the appcast's enclosure.
+#     Sparkle installs over the app's real location, so translocation cannot
+#     apply to an update, and zip is the format it prefers.
+# Both are signed, notarized and stapled — separately; see the DMG notarization
+# step for Apple's guidance on why the image needs its own ticket.
 #
 # Tagging: versions are CalVer (calver.org), scheme YY.MM.MICRO — tag
 # v<YY>.<M>.<BUILD>, e.g. v26.8.1 for the first release cut in August 2026.
@@ -38,9 +49,9 @@
 #   3. a guard step re-verifies the signature in that entry against the zip's
 #      bytes with sign_update --verify, and refuses to publish if it doesn't
 #      match — a bad appcast must not be able to ship quietly;
-#   4. the GitHub Release is created with *both* assets at once — the zip and
-#      appcast.xml. The enclosure URL in that feed points at this release's own
-#      zip, so it resolves the moment the release exists: one operation, no
+#   4. the GitHub Release is created with every asset at once — the zip, the DMG
+#      and appcast.xml. The enclosure URL in that feed points at this release's
+#      own zip, so it resolves the moment the release exists: one operation, no
 #      window in which the feed advertises a download that isn't there yet;
 #   5. that is the whole publish. The app's SUFeedURL is
 #      https://github.com/ObviosCo/cheerio/releases/latest/download/appcast.xml,
@@ -55,8 +66,9 @@
 # add artifacts to the thing it is publishing.
 #
 # Manual (workflow_dispatch) runs do steps 2 and 3 as a dry run and attach the
-# appcast to the workflow artifacts. No release is created and nothing is
-# published, so the appcast pipeline can be exercised without cutting a version.
+# appcast to the workflow artifacts, along with the DMG. No release is created
+# and nothing is published, so the appcast pipeline can be exercised — and the
+# disk image's window looked at — without cutting a version.
 #
 # Required repository secrets:
 #   DEVELOPER_ID_P12_BASE64    — base64 of the Developer ID Application .p12
@@ -130,6 +142,24 @@ jobs:
 
       - name: Install XcodeGen
         run: brew install xcodegen
+
+      # dmgbuild builds the download disk image's window layout. Installed here
+      # rather than next to the DMG step so a broken pin fails in the first
+      # minute, not after a twenty-minute notary round trip.
+      #
+      # --require-hashes: the pins in dmg-requirements.txt carry sha256s, so pip
+      # refuses anything else — including a re-upload under the same version.
+      # Build-time only and not redistributed, so no THIRD-PARTY-NOTICES entry;
+      # see Scripts/make-dmg.sh's header for why this tool and not create-dmg.
+      - name: Install DMG tooling
+        run: |
+          python3 -m venv "$RUNNER_TEMP/dmg-venv"
+          "$RUNNER_TEMP/dmg-venv/bin/pip" install --quiet --require-hashes \
+            -r Scripts/dmg-requirements.txt
+          # No --version flag on dmgbuild; --help proves the entry point runs,
+          # and freeze records exactly what got pinned into the build log.
+          "$RUNNER_TEMP/dmg-venv/bin/dmgbuild" --help > /dev/null
+          "$RUNNER_TEMP/dmg-venv/bin/pip" freeze
 
       - name: Cache diarization model
         uses: actions/cache@v6
@@ -500,6 +530,89 @@ jobs:
             build/Build/Products/Release/Cheerio.app \
             "Cheerio-${{ steps.version.outputs.suffix }}.zip"
 
+      # Two containers for the same stapled app, each for a different job:
+      #
+      #   - the zip is what Sparkle downloads. It stays the appcast's enclosure,
+      #     untouched by everything below. Sparkle installs over the app's real
+      #     location, where translocation never applies, and zip is the format
+      #     it prefers.
+      #   - the DMG is what a person downloads. Safari auto-extracts a zip, so
+      #     people run Cheerio.app straight out of ~/Downloads, where macOS
+      #     starts it under app translocation — a randomised read-only mount
+      #     from which Sparkle cannot update anything, permanently and silently.
+      #     The DMG's drag-to-Applications gesture is the fix (issue #55).
+      #
+      # Built after stapling on purpose: the app inside the image has to be the
+      # stapled one, or the DMG ships a copy Gatekeeper must phone home about.
+      - name: Build DMG
+        run: |
+          PATH="$RUNNER_TEMP/dmg-venv/bin:$PATH" Scripts/make-dmg.sh \
+            --app build/Build/Products/Release/Cheerio.app \
+            --output "Cheerio-${{ steps.version.outputs.suffix }}.dmg"
+
+      # A second notarization, not a second submission of the same thing.
+      #
+      # Apple's guidance (Developer Forums thread 671514, DTS): "Sign all your
+      # code from the inside out, up to and including any signable containers.
+      # Then notarise and staple the outermost container." A disk image is a
+      # signable container, and here it *is* an outermost container — the zip is
+      # the other one. Neither is nested in the other, so one submission cannot
+      # cover both: the app was notarized and stapled above for the zip's sake,
+      # and the image needs its own ticket.
+      #
+      # Without that ticket the first mount is where it shows: Gatekeeper has to
+      # ask Apple about an unstapled image, so a user who is offline — or behind
+      # a captive portal, or just unlucky — gets a warning instead of a window.
+      # Stapling makes the check local, which is the same reason the app is
+      # stapled at all.
+      - name: Sign and notarize the DMG
+        env:
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          dmg="Cheerio-${{ steps.version.outputs.suffix }}.dmg"
+          # --timestamp for the same reason as the app: notarization requires a
+          # secure timestamp. No --options runtime — a disk image is not code,
+          # and the hardened runtime is meaningless on it.
+          codesign --force --timestamp --sign "$DEVELOPER_ID" "$dmg"
+          codesign --verify --strict --verbose=2 "$dmg"
+          codesign -dvv "$dmg" 2>&1 | grep -q "Authority=Developer ID Application" \
+            || { echo "::error::${dmg} is not signed with Developer ID"; exit 1; }
+
+          printf '%s' "$NOTARY_KEY_P8" > "$RUNNER_TEMP/AuthKey.p8"
+          notary() {
+            xcrun notarytool "$@" \
+              --key "$RUNNER_TEMP/AuthKey.p8" \
+              --key-id "$NOTARY_KEY_ID" \
+              --issuer "$NOTARY_ISSUER_ID" \
+              --output-format json
+          }
+          # submit and wait split for the same reason as the app's notarization:
+          # on a wait timeout notarytool prints only to stderr, and a combined
+          # submit --wait leaves no submission ID to fetch the log with.
+          notary submit "$dmg" > "$RUNNER_TEMP/dmg-submit.json"
+          sub_id="$(jq -r .id "$RUNNER_TEMP/dmg-submit.json")"
+          echo "DMG submission ID: $sub_id"
+          notary wait "$sub_id" --timeout 2h > "$RUNNER_TEMP/dmg-verdict.json" || true
+          status="$(jq -r .status "$RUNNER_TEMP/dmg-verdict.json" 2>/dev/null || echo unknown)"
+          echo "Notary verdict for the DMG: $status"
+          if [ "$status" != "Accepted" ]; then
+            notary log "$sub_id" || true
+            echo "::error::DMG notarization verdict: $status"
+            exit 1
+          fi
+          xcrun stapler staple "$dmg"
+          # Prove the ticket is actually attached, rather than trusting that
+          # stapler exited 0.
+          xcrun stapler validate "$dmg"
+          # The end-to-end proof, and the check issue #55 asks for by name.
+          # -t open with the primary-signature context is how Gatekeeper
+          # assesses a disk image someone double-clicks; -t execute (used on the
+          # app above) is the wrong policy for a container and passes or fails
+          # for the wrong reasons.
+          spctl --assess -t open --context context:primary-signature -v "$dmg"
+
       # Sparkle's generate_appcast signs the zip and folds an entry for it into the
       # feed. Notes worth knowing:
       #
@@ -529,6 +642,12 @@ jobs:
       #   asserts it came out right.
       # - --maximum-deltas 0 because delta updates would need every previous zip on
       #   disk, and CI keeps none. Full downloads only.
+      # - The DMG is deliberately absent from all of this. The enclosure is and
+      #   stays the zip: Sparkle installs over the app's existing location, so
+      #   translocation — the reason the DMG exists — cannot apply to an update,
+      #   and a disk image would only be something for Sparkle to mount first.
+      #   The DMG is for humans clicking a download button; nothing about the
+      #   update path changes because it exists.
       - name: Generate appcast
         env:
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
@@ -627,8 +746,18 @@ jobs:
           cat > release-notes.md <<'EOF'
           ## Install
 
-          1. Download `Cheerio-*.zip` below and unzip it.
-          2. Move `Cheerio.app` to `/Applications` and open it.
+          1. Download `Cheerio-*.dmg` below and open it.
+          2. Drag `Cheerio` to your Applications folder, then open it from there.
+
+          Install it to `/Applications` rather than running it from
+          `~/Downloads`: macOS runs an app from the Downloads folder under app
+          translocation, a read-only mount from which Cheerio cannot update
+          itself.
+
+          Already running an older Cheerio? You don't need this download —
+          it updates itself. See **Settings → Updates**.
+
+          The `.zip` is the same app, and is what the updater downloads.
 
           The app is signed with a Developer ID certificate and notarized by
           Apple — no security warnings, no extra steps.
@@ -646,6 +775,7 @@ jobs:
           attribution in `THIRD-PARTY-NOTICES.md` inside the app bundle.
           EOF
           zip="Cheerio-${{ steps.version.outputs.suffix }}.zip"
+          dmg="Cheerio-${{ steps.version.outputs.suffix }}.dmg"
           # If the release already exists, this is a re-run after something failed
           # later on, and `create` refuses. The re-run still has to be able to finish
           # the job — a release whose feed was never attached is worse than useless —
@@ -659,8 +789,14 @@ jobs:
           # clients that refetch, there is a window in which the appcast and the zip
           # are a mismatched pair. So: upload only missing assets, and if the zip is
           # already published, prove the local one is byte-identical before continuing.
+          #
+          # The DMG gets the identical treatment. Its bytes aren't signed by an
+          # appcast, but the release page's download link and the website's both
+          # name it, and a URL that quietly starts serving different bytes is the
+          # thing this rule exists to prevent regardless of who consumes it.
           if ! gh release create "${GITHUB_REF_NAME}" \
             "$zip" \
+            "$dmg" \
             appcast/appcast.xml \
             --title "Cheerio ${GITHUB_REF_NAME}" \
             --notes-file release-notes.md \
@@ -672,30 +808,45 @@ jobs:
             gh release view "${GITHUB_REF_NAME}" > /dev/null
             published="$(gh release view "${GITHUB_REF_NAME}" --json assets --jq '.assets[].name')"
 
-            if grep -qxF "$zip" <<<"$published"; then
-              # Same name, already published. Byte-identical is the only safe answer.
-              # Note a re-run of the same tag normally is *not* identical: CFBundleVersion
-              # is the run number, so the app inside differs. That is precisely the case
-              # this must refuse rather than clobber.
-              mkdir -p "$RUNNER_TEMP/published"
-              gh release download "${GITHUB_REF_NAME}" \
-                --pattern "$zip" --dir "$RUNNER_TEMP/published" --clobber
-              if cmp -s "$zip" "$RUNNER_TEMP/published/$zip"; then
-                echo "$zip is already published and byte-identical; leaving it untouched."
-              else
-                echo "::error::${zip} is already published on ${GITHUB_REF_NAME} with different bytes ($(wc -c <"$RUNNER_TEMP/published/$zip" | tr -d ' ') published vs $(wc -c <"$zip" | tr -d ' ') local; sha256 $(shasum -a 256 "$RUNNER_TEMP/published/$zip" | cut -d' ' -f1) vs $(shasum -a 256 "$zip" | cut -d' ' -f1))."
-                echo "::error::A published, signed asset can never be replaced: appcasts already fetched by clients carry an EdDSA signature over the published bytes, and swapping the file under that URL breaks every one of them. Cut a new tag instead."
-                exit 1
+            # Upload an asset if it is missing; if it is already published, refuse
+            # unless the local copy is byte-identical.
+            #
+            # In practice a re-run of the same tag is *never* identical, for either
+            # asset: CFBundleVersion is the run number, so the app differs, and the
+            # DMG additionally carries a fresh volume creation date and signature
+            # timestamp. That is not a shortcoming — those are exactly the cases
+            # that must be refused rather than clobbered. This path exists to let a
+            # run that died between uploads add the asset it never got to.
+            ensure_asset() {
+              local path="$1" name published_copy
+              name="$(basename "$path")"
+              if ! grep -qxF "$name" <<<"$published"; then
+                echo "$name is not published yet; uploading it."
+                gh release upload "${GITHUB_REF_NAME}" "$path"
+                return 0
               fi
-            else
-              echo "$zip is not published yet; uploading it."
-              gh release upload "${GITHUB_REF_NAME}" "$zip"
-            fi
+              mkdir -p "$RUNNER_TEMP/published"
+              published_copy="$RUNNER_TEMP/published/$name"
+              gh release download "${GITHUB_REF_NAME}" \
+                --pattern "$name" --dir "$RUNNER_TEMP/published" --clobber
+              if cmp -s "$path" "$published_copy"; then
+                echo "$name is already published and byte-identical; leaving it untouched."
+                return 0
+              fi
+              echo "::error::${name} is already published on ${GITHUB_REF_NAME} with different bytes ($(wc -c <"$published_copy" | tr -d ' ') published vs $(wc -c <"$path" | tr -d ' ') local; sha256 $(shasum -a 256 "$published_copy" | cut -d' ' -f1) vs $(shasum -a 256 "$path" | cut -d' ' -f1))."
+              echo "::error::A published release asset is never replaced. For the zip, appcasts already fetched by clients carry an EdDSA signature over the published bytes, and swapping the file under that URL breaks every one of them; for the DMG, the release and website download links already point at it. Cut a new tag instead."
+              return 1
+            }
+
+            ensure_asset "$zip"
+            ensure_asset "$dmg"
 
             # The feed is the asset a partial failure most often leaves missing, since
             # it went on in the same call as the zip. Upload it if absent; if it is
             # already there it was published by the run that produced the matching zip,
-            # so it is left alone for the same immutability reason.
+            # so it is left alone for the same immutability reason. Not run through
+            # ensure_asset: the feed is regenerated every run and legitimately differs
+            # from the published one, so a byte-identical check would always refuse.
             if grep -qxF appcast.xml <<<"$published"; then
               echo "appcast.xml is already published; leaving it untouched."
             else
@@ -703,10 +854,14 @@ jobs:
               gh release upload "${GITHUB_REF_NAME}" appcast/appcast.xml
             fi
           fi
-          echo "Released ${GITHUB_REF_NAME} with the zip and appcast.xml attached."
+          echo "Released ${GITHUB_REF_NAME} with the DMG, the zip and appcast.xml attached."
 
-      # Manual runs publish nothing, so the appcast rides along with the zip. It is
-      # the dry run's output: read it, or feed it to a local Sparkle test app.
+      # Manual runs publish nothing, so the dry run's whole output rides along as
+      # artifacts: read the appcast, or feed it to a local Sparkle test app, and
+      # mount the DMG to look at the window. That last one is the point of
+      # attaching it — the layout is machine-checked during the build, but
+      # whether it looks right is a judgement only a person can make, and this
+      # is how to make it without cutting a version.
       - name: Upload build artifact
         if: github.ref_type != 'tag'
         uses: actions/upload-artifact@v7
@@ -714,6 +869,7 @@ jobs:
           name: Cheerio-${{ steps.version.outputs.suffix }}
           path: |
             Cheerio-${{ steps.version.outputs.suffix }}.zip
+            Cheerio-${{ steps.version.outputs.suffix }}.dmg
             appcast/appcast.xml
           if-no-files-found: error
 
@@ -722,3 +878,6 @@ jobs:
         run: |
           security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
           rm -f "$RUNNER_TEMP/AuthKey.p8" "$RUNNER_TEMP/notarize.zip" "$RUNNER_TEMP/ed25519.der"
+          # The DMG's notarization writes the same private key out again, and
+          # leaves its own submission/verdict JSON alongside.
+          rm -f "$RUNNER_TEMP/dmg-submit.json" "$RUNNER_TEMP/dmg-verdict.json"

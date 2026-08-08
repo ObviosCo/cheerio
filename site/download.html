@@ -42,19 +42,28 @@
            build counter picked by hand when cutting the tag. (The card below
            still names v2026.8.8, a release that predates this scheme — its
            tag and asset names don't change retroactively.) The release
-           workflow (.github/workflows/release.yml) publishes a versioned zip
-           made with ditto — `Cheerio-<version>.zip` — not a DMG and not a
-           stable filename, so the href must name the exact version. On each
-           release, update the version, date, size, and both hrefs here, and
-           add an entry to releases.html.
+           workflow (.github/workflows/release.yml) publishes two versioned
+           assets per release, both made from the same signed and stapled app:
+           `Cheerio-<version>.dmg` and `Cheerio-<version>.zip`. Neither has a
+           stable filename, so the href must name the exact version.
+
+           The button points at the DMG, deliberately. Safari auto-extracts a
+           zip, so people end up running Cheerio.app from ~/Downloads, where
+           macOS starts it under app translocation and Sparkle can never update
+           it. The zip still exists — it is what the updater downloads — but it
+           is not what a person should click. See issue #55.
+
+           On each release, update the version, date, size, and the href here,
+           and add an entry to releases.html.
            ============================================================ -->
       <div class="card stack stack--4">
         <div class="stack stack--2">
           <h2 class="sub-title">Cheerio 2026.8.8</h2>
           <p class="muted">Released <time datetime="2026-08-08">8 August 2026</time> · Apple Silicon only · 95&nbsp;MB</p>
         </div>
-        <p><a class="button button--primary" href="https://github.com/ObviosCo/cheerio/releases/download/v2026.8.8/Cheerio-2026.8.8.zip">Download Cheerio 2026.8.8 (zip)</a></p>
-        <p class="caption">Developer ID-signed and notarized by Apple. <a href="releases.html#v2026-8-8">What's in this release</a></p>
+        <p><a class="button button--primary" href="https://github.com/ObviosCo/cheerio/releases/download/v2026.8.8/Cheerio-2026.8.8.dmg">Download Cheerio 2026.8.8 (dmg)</a></p>
+        <p class="caption">Open it and drag Cheerio to your Applications folder. Developer ID-signed and notarized by Apple. <a href="releases.html#v2026-8-8">What's in this release</a></p>
+        <p class="caption">Already have Cheerio? It updates itself — no need to download again.</p>
       </div>
 
       <div class="table-scroll">
@@ -81,7 +90,7 @@
       <ol class="stack stack--6" style="padding-left:var(--ch-space-5);max-width:60ch">
         <li>
           <h3 class="sub-title">Open it</h3>
-          <p class="muted">Drag Cheerio to your Applications folder and open it. The build is signed and notarized, so it opens the way any app does — no warnings, no extra steps.</p>
+          <p class="muted">Open the DMG and drag Cheerio to your Applications folder, then open it from there. The build is signed and notarized, so it opens the way any app does — no warnings, no extra steps. Run it from your Downloads folder instead and macOS starts it under app translocation, a read-only mount where Cheerio can't update itself.</p>
         </li>
         <li>
           <h3 class="sub-title">Grant the microphone</h3>
