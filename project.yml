@@ -94,9 +94,10 @@ targets:
 
   # Read-only MCP server over stdio, so local agents can query meeting history.
   # A separate process, not a mode of the app: an MCP client owns its lifetime and
-  # its pipes. It links CheerioKit and nothing else — no MCP SDK, and so no
-  # networking code (see docs/ARCHITECTURE.md for why that was decided on
-  # evidence rather than preference).
+  # its pipes. It links CheerioKit and nothing else — no MCP SDK, so this target
+  # adds and invokes no networking path of its own (CheerioKit transitively carries
+  # FluidAudio's dormant downloader; see docs/ARCHITECTURE.md for both that asterisk
+  # and why the SDK was declined on evidence rather than preference).
   cheerio-mcp:
     type: tool
     platform: macOS

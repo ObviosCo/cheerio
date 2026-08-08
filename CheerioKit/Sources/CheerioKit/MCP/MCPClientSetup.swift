@@ -58,11 +58,25 @@ public enum MCPClientSetup {
         """
     }
 
-    /// Backslash-escapes the two characters that would otherwise break out of a JSON or
-    /// TOML basic string. Everything else in a POSIX path is literal in both.
+    /// Escapes a path for embedding in a JSON or TOML basic string: backslash, quote,
+    /// and the whole C0 control range. macOS path components can legally contain tabs
+    /// and newlines, and both formats reject raw control characters — emitted
+    /// literally, one odd folder name produces a config file the client can't parse.
+    /// `\uXXXX` is valid in both formats, so one escaper serves the two snippets.
     static func escaped(_ path: String) -> String {
-        path.replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
+        var out = ""
+        out.reserveCapacity(path.count)
+        for scalar in path.unicodeScalars {
+            switch scalar {
+            case "\\": out += "\\\\"
+            case "\"": out += "\\\""
+            case let c where c.value < 0x20:
+                out += String(format: "\\u%04X", c.value)
+            default:
+                out.unicodeScalars.append(scalar)
+            }
+        }
+        return out
     }
 
     /// Single-quoted for a shell, since app bundles live in paths with spaces in them

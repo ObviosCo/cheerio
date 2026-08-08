@@ -119,7 +119,8 @@ track and never theirs to do on your behalf. That comes from who was speaking, s
 permission rather than a priority — see below.
 
 **How it reaches your meetings.** It's launched by the client and talks over that pipe: stdio
-only, nothing listening, no networking code, and no way for anything off your Mac to reach it.
+only, nothing listening, no networking path ever invoked, and no way for anything off your Mac
+to reach it.
 It opens Cheerio's store read-only and never writes to it. If you haven't run Cheerio yet, or
 you've just updated it, the first tool call says so and tells you what to do rather than
 failing cryptically. Details in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).

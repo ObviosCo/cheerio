@@ -11,9 +11,11 @@ import Foundation
 // the loop — the parts that need a process to exercise, which the smoke test in the PR
 // does and a unit test can't.
 //
-// stdio only. There is no socket, no listener, and no networking code anywhere in this
-// target or in what it links: an agent reaches Cheerio because the client launched this
-// process and holds its pipes, and nothing off this machine can reach it at all.
+// stdio only. There is no socket, no listener, and nothing in this target invokes a
+// networking path: an agent reaches Cheerio because the client launched this process
+// and holds its pipes, and nothing off this machine can reach it at all. (Linking
+// CheerioKit does carry FluidAudio's dormant model downloader along — never called,
+// the model ships in the app; docs/ARCHITECTURE.md owns that asterisk.)
 
 /// The version to report over `initialize`.
 ///
@@ -42,7 +44,7 @@ let usage = """
     cheerio-mcp — read Cheerio's meeting history over the Model Context Protocol.
 
     Speaks MCP over stdio: it is launched by an MCP client, not run by hand. Every tool
-    is read-only, and it never writes to the store or opens a network connection.
+    is read-only; it never writes to the store and never invokes a networking path.
 
     Usage: cheerio-mcp [--version | --help]
 

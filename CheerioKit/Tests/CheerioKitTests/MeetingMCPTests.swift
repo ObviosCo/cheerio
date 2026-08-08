@@ -525,8 +525,10 @@ import Testing
         // sets CHEERIO_STORE_PATH itself.
         #expect(Set(cheerio.keys) == ["command"])
 
-        // A quote in the path still yields parseable JSON rather than a broken snippet.
-        let awkward = "/Users/x/say \"hi\"/Cheerio.app/Contents/Helpers/cheerio-mcp"
+        // A quote in the path still yields parseable JSON rather than a broken snippet —
+        // and so do control characters, which macOS path components may legally carry
+        // and which JSON rejects when emitted literally.
+        let awkward = "/Users/x/say \"hi\"/tab\there/line\nbreak/Cheerio.app/Contents/Helpers/cheerio-mcp"
         let escaped = MCPClientSetup.desktopJSON(helperPath: awkward)
         let reparsed = try #require(try JSONSerialization.jsonObject(with: Data(escaped.utf8)) as? [String: Any])
         #expect(((reparsed["mcpServers"] as? [String: Any])?["cheerio"] as? [String: Any])?["command"] as? String == awkward)
