@@ -54,6 +54,24 @@ public final class Meeting {
     /// defaulting non-optionally, which would risk every migrated row landing on the
     /// same value.
     public var uuid: UUID?
+    /// Whether `title` is a placeholder Cheerio generated (the "Meeting <date,
+    /// time>" / "Direction — <date, time>" pattern) rather than one a calendar event
+    /// or a person supplied.
+    ///
+    /// The title parallel to ``TranscriptSegment/isSpeakerLabelManual``: a
+    /// machine-made value stays open to being replaced by a better machine guess
+    /// (``applyGeneratedTitle(_:)``), while a human decision — a calendar event's
+    /// name, or ``rename(to:)`` — closes that door for good. See ``shouldAutoTitle``
+    /// for the actual gate auto-titling checks.
+    ///
+    /// Defaulted `false` so existing rows migrate additively onto "someone decided
+    /// this title," the safe assumption for a title nobody tagged before this
+    /// property existed. `Meeting.init` can't set this correctly itself — it has no
+    /// way to tell a timestamp placeholder from a name someone typed — so whichever
+    /// call site constructs a meeting with a generated placeholder must set it
+    /// `true` explicitly. Today that's ``CaptureSession``, which does so based on
+    /// whether a calendar event supplied the title.
+    public var isTitleAutomatic: Bool = false
 
     @Relationship(deleteRule: .cascade, inverse: \TranscriptSegment.meeting)
     public var segments: [TranscriptSegment] = []
@@ -68,6 +86,36 @@ public final class Meeting {
     public var kind: MeetingKind {
         get { MeetingKind(rawValue: kindRaw) ?? .meeting }
         set { kindRaw = newValue.rawValue }
+    }
+
+    /// Whether this meeting is eligible for auto-titling: the title is still the
+    /// machine-made placeholder, and no calendar event supplied it instead.
+    ///
+    /// The `calendarEventID` check is belt-and-suspenders alongside
+    /// ``isTitleAutomatic`` — a correctly-maintained flag already implies this, but
+    /// checking both means a bug that leaves the flag `true` on a calendar-derived
+    /// title still can't cost the user that title.
+    public var shouldAutoTitle: Bool {
+        isTitleAutomatic && calendarEventID == nil
+    }
+
+    /// A person naming this meeting — the rename affordance in the library list and
+    /// the detail view. Always wins: like
+    /// ``TranscriptSegment/assignSpeaker(_:)`` retiring the diarizer's claim on a
+    /// line once a human names it, this retires ``isTitleAutomatic`` for good, so no
+    /// later auto-title pass can overwrite it.
+    public func rename(to newTitle: String) {
+        title = newTitle
+        isTitleAutomatic = false
+    }
+
+    /// Applies a model-generated title in place of the placeholder — issue #32's
+    /// auto-title. Leaves ``isTitleAutomatic`` set, unlike ``rename(to:)``: this is
+    /// still just the machine's best guess, so a later, better transcript could in
+    /// principle retitle the meeting again. Only a person typing a name closes that
+    /// door.
+    public func applyGeneratedTitle(_ newTitle: String) {
+        title = newTitle
     }
 
     /// A stable identifier for this meeting, usable across processes — unlike
