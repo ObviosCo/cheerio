@@ -57,7 +57,18 @@ public struct MeetingExport: Codable, Sendable, Equatable {
     ///   ``Meeting/isOwnerAttributed(_:ownerNames:)`` per segment. Threaded through
     ///   rather than looked up here, so this stays free of a `ModelContext`.
     public init(meeting: Meeting, ownerNames: Set<String>) {
-        self.uuid = meeting.stableID
+        self.init(meeting: meeting, uuid: meeting.stableID, ownerNames: ownerNames)
+    }
+
+    /// The same snapshot with the identifier supplied rather than read off the
+    /// meeting, which is what lets a read-only consumer build one.
+    ///
+    /// ``Meeting/stableID`` *assigns* `uuid` when it finds it nil, so the ordinary
+    /// initializer mutates the model it is handed — fine in the app, which saves
+    /// afterwards, and not fine at all in the MCP helper, whose whole contract is that
+    /// it never writes. See ``Meeting/readOnlyExport(ownerNames:)``.
+    init(meeting: Meeting, uuid: UUID, ownerNames: Set<String>) {
+        self.uuid = uuid
         self.title = meeting.title
         self.kind = meeting.kind
         self.startedAt = meeting.startedAt
@@ -108,5 +119,22 @@ extension Meeting {
     /// See ``MeetingExport/init(meeting:ownerNames:)``.
     public func export(ownerNames: Set<String>) -> MeetingExport {
         MeetingExport(meeting: self, ownerNames: ownerNames)
+    }
+
+    /// The export for a consumer that must not write to the store, or nil when this
+    /// meeting has no identifier yet.
+    ///
+    /// Nil is not a failure so much as a fact about the row: `uuid` is nil for
+    /// meetings recorded before the field existed, and the identifier they will
+    /// eventually carry is the one the *app* mints on first access to
+    /// ``stableID`` — see ``StorageMigration/backfillMeetingIDs(context:)``, which
+    /// does that for the whole store on launch. A read-only reader cannot mint it
+    /// (that's a write) and must not guess at it: any identifier derived here would
+    /// differ from the one the app is about to persist, so an agent that cached it
+    /// would be holding a key to nothing, and MCP and the transcript-ready callback
+    /// would be naming the same meeting two different things.
+    public func readOnlyExport(ownerNames: Set<String>) -> MeetingExport? {
+        guard let uuid else { return nil }
+        return MeetingExport(meeting: self, uuid: uuid, ownerNames: ownerNames)
     }
 }

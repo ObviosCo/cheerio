@@ -66,14 +66,75 @@ yet; see [tracking epic #22](https://github.com/ObviosCo/cheerio/issues/22).)
 
 Full scope and non-goals: [`docs/SPEC.md`](docs/SPEC.md).
 
+## Use with Claude Desktop, Claude Code, or any MCP client
+
+Cheerio ships a small MCP server, `cheerio-mcp`, inside the app bundle — so the agents already
+running on your Mac can look up what was said in a meeting instead of you copy-pasting a
+transcript into them. It installs and updates with the app; there is nothing separate to
+download.
+
+Five tools, all read-only:
+
+| Tool | What it does |
+| --- | --- |
+| `list_meetings` | Recent meetings, newest first. Filter by kind and date, paged. A recording in progress is included and marked. |
+| `search_meetings` | Free text across titles, notes, speaker names, and every transcript line — the same match the app's own search uses. |
+| `get_meeting` | One meeting in full: metadata, your rough notes, the enhanced notes, action items, transcript. |
+| `get_transcript` | Just the speaker-labelled lines, each flagged with whether it was you talking. |
+| `get_action_items` | Action items as structure, with `owner` and `disposition`. |
+
+Nothing can write, delete, start a recording, or run a command.
+
+**Adding it.** Cheerio's **Settings → Agents** shows the path to the helper inside your copy of
+the app and a copy button for each client's config. From a terminal it's:
+
+```sh
+claude mcp add cheerio -- /Applications/Cheerio.app/Contents/Helpers/cheerio-mcp
+```
+
+For Claude Desktop, add this to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "cheerio": {
+      "command": "/Applications/Cheerio.app/Contents/Helpers/cheerio-mcp"
+    }
+  }
+}
+```
+
+For Codex, in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.cheerio]
+command = "/Applications/Cheerio.app/Contents/Helpers/cheerio-mcp"
+```
+
+Cheerio never edits those files for you — you paste the snippet in yourself.
+
+**A note on `disposition`.** Action items say who committed. `actionable` means *you* did, and
+an agent may carry it out; `followUp` means someone else committed, or nobody, so it's yours to
+track and never theirs to do on your behalf. That comes from who was speaking, so it's a
+permission rather than a priority — see below.
+
+**How it reaches your meetings.** It's launched by the client and talks over that pipe: stdio
+only, nothing listening, no networking code, and no way for anything off your Mac to reach it.
+It opens Cheerio's store read-only and never writes to it. If you haven't run Cheerio yet, or
+you've just updated it, the first tool call says so and tells you what to do rather than
+failing cryptically. Details in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
 ## No service required
 
 Local models are the mechanism, not the point. There's no third-party service Cheerio depends
 on and nothing to pay for month to month — you run it, and you control it.
 
-- **There is no networking code in the app.** No `URLSession`, no sockets, nothing. That is the
-  actual guarantee, and it is worth stating precisely: because App Sandbox is off (see below),
-  entitlements no longer *enforce* the boundary — the absence of networking code is what does.
+- **There is no networking code in the app.** No `URLSession`, no sockets, nothing — including
+  in the bundled MCP server, which talks over a pipe. That is the actual guarantee, and it is
+  worth stating precisely: because App Sandbox is off (see below), entitlements no longer
+  *enforce* the boundary — the absence of networking code is what does. The one asterisk is
+  that FluidAudio, the diarization dependency, ships model-download code Cheerio never calls,
+  because the model is bundled and its URL passed in.
 - **Both models run on-device.** Speech and summarization use Apple's local models; diarization
   runs the bundled Sortformer model on the Neural Engine. The diarization model is downloaded
   at *build* time by a script, never at runtime.
@@ -206,11 +267,14 @@ cheerio/
 │       ├── Transcription/    # SpeechAnalyzer/SpeechTranscriber wrapper
 │       ├── Diarization/      # Sortformer speaker attribution
 │       ├── Summarization/    # Foundation Models wrapper, @Generable output
+│       ├── Callback/         # Transcript-ready callback payload + settings
+│       ├── MCP/              # Read-only store access, tools, JSON-RPC responder
 │       └── Calendar/         # EventKit wrapper
-└── Cheerio/          # macOS app target
-    ├── Audio/        # Mic capture, Core Audio process tap, capture session
-    ├── Resources/    # Models/ — fetched, never committed
-    └── Views/        # SwiftUI
+├── Cheerio/          # macOS app target
+│   ├── Audio/        # Mic capture, Core Audio process tap, capture session
+│   ├── Resources/    # Models/ — fetched, never committed
+│   └── Views/        # SwiftUI
+└── CheerioMCP/       # cheerio-mcp — stdio MCP server, bundled inside the app
 ```
 
 The rule: anything that could run on iOS lives in `CheerioKit`. System-audio capture is
@@ -258,7 +322,7 @@ CI runs `swift format lint --strict` (config in [`.swift-format`](.swift-format)
 tests, and an app build on every PR. Format locally before pushing:
 
 ```sh
-swift format --in-place --recursive Cheerio CheerioKit/Sources CheerioKit/Tests
+swift format --in-place --recursive Cheerio CheerioMCP CheerioKit/Sources CheerioKit/Tests
 ```
 
 ## License

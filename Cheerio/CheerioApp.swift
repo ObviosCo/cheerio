@@ -82,6 +82,9 @@ struct ContentView: View {
             // Only moves directories listed on a Meeting, never anything else in the
             // shared folder we used to write into.
             StorageMigration.migrateAudioIfNeeded(context: context)
+            // Legacy rows carry no uuid, and the bundled MCP helper can't mint one
+            // for them because it never writes. This process can.
+            StorageMigration.backfillMeetingIDs(context: context)
             // Optional permission: without it meetings just get timestamp titles.
             await CalendarService.shared.requestAccess()
             // Audio that aged out while the app was closed.

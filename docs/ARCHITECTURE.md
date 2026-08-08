@@ -13,11 +13,14 @@ cheerio/
 │       ├── Transcription/   # SpeechAnalyzer/SpeechTranscriber wrapper
 │       ├── Diarization/     # SpeakerAttributionService — Sortformer via FluidAudio
 │       ├── Summarization/   # Foundation Models wrapper + @Generable output types
+│       ├── Callback/        # Transcript-ready callback payload + settings
+│       ├── MCP/             # Read-only store access, tool handlers, JSON-RPC responder
 │       └── Calendar/        # EventKit wrapper
-└── Cheerio/             # macOS app target
-    ├── Audio/           # Mic capture, Core Audio process tap, capture session, labelling
-    ├── Resources/       # Models/ — fetched at build time, never committed
-    └── Views/           # SwiftUI
+├── Cheerio/             # macOS app target
+│   ├── Audio/           # Mic capture, Core Audio process tap, capture session, labelling
+│   ├── Resources/       # Models/ — fetched at build time, never committed
+│   └── Views/           # SwiftUI
+└── CheerioMCP/          # cheerio-mcp: stdio MCP server, bundled in Contents/Helpers/
 ```
 
 Rule: anything that could run on iOS goes in `CheerioKit`. System-audio capture is macOS-only Core Audio, so it lives in the app target.
@@ -90,6 +93,51 @@ An action item carries an `owner` and a `disposition`: `actionable` means the ow
 - The failure it is designed around: an agent doing someone else's committed work is far worse than the owner re-reading a follow-up they could have delegated.
 
 `Meeting.actionItems` persists the vetted items next to the Markdown, and `MeetingExport` carries them, so downstream consumers route on structure rather than parsing prose.
+
+## The bundled MCP server
+
+`cheerio-mcp` is a command-line tool built from `CheerioMCP/` and copied into `Cheerio.app/Contents/Helpers/`, so it installs and versions with the app. It speaks the Model Context Protocol over stdio and exposes five read-only tools: `list_meetings`, `get_meeting`, `get_transcript`, `search_meetings`, `get_action_items`. It reports the *app's* version, read out of `Contents/Info.plist` two directories up, rather than carrying a number of its own.
+
+The callback (#26) pushes; this pulls. An agent mid-way through unrelated work can ask what was decided on Tuesday without Cheerio having initiated anything.
+
+Where the code lives is the design: everything that answers a question is in `CheerioKit/MCP/` — `MeetingStore` (opening), `MeetingQueryService` (queries), `MeetingMCPTool` (the tool surface), `CheerioMCPResponder` (one JSON-RPC message in, one out). `CheerioMCP/` holds only `main.swift` and the file-descriptor work. That split is what makes the server testable without a transport, which matters more here than usual because the protocol is hand-written.
+
+`Contents/Helpers` rather than `Contents/MacOS`: Xcode has no named copy destination for it, so `project.yml` uses the "Wrapper" destination with a subpath. The point is that `Contents/MacOS` keeps holding exactly one executable, so nothing — Launch Services included — can mistake the helper for the app's main binary. The nested executable is code-signed in its own right; an unsigned one fails notarization for the whole bundle.
+
+### Why the protocol is hand-written
+
+The official [`modelcontextprotocol/swift-sdk`](https://github.com/modelcontextprotocol/swift-sdk) was the default choice and was rejected on measurements, not taste:
+
+- Its `MCP` library target contains `import Network` (`NetworkTransport`) and seven `URLSession` call sites (`HTTPClientTransport` and the OAuth stack). Those compile and link on macOS whether or not you construct them.
+- Depending on the `MCP` product alone resolves `swift-nio`, `swift-atomics` and `swift-collections` — six external packages, ~33 MB of source, against a repo that has exactly one pinned dependency today. Its own manifest has a `branch: "main"` dependency, which can't be pinned exactly.
+- The `LICENSE` is a mid-transition mix of Apache-2.0 and MIT with no per-file markers, which complicates `THIRD-PARTY-NOTICES.md` rather than settling it.
+- It is pre-1.0, and the open issue on `StdioTransport` interleaving concurrent sends under `EAGAIN` backpressure is a framing bug in precisely the transport this would use.
+
+What a stdio, tools-only, read-only server needs is `initialize`, `tools/list`, `tools/call`, `ping`, newline-delimited framing and a JSON-RPC error envelope — a few hundred lines. **The trade accepted: protocol drift is now Cheerio's problem.** The mitigations are that the supported revisions are listed explicitly in `CheerioMCPResponder.supportedProtocolVersions`, that an unrecognized version negotiates down rather than failing, and that every response shape a client depends on is pinned by `CheerioMCPResponderTests`.
+
+Being precise about the networking claim, since it is the load-bearing argument above: **the helper adds no networking code**, verified by grep and by `otool -L` showing no `Network.framework`. It does inherit a CFNetwork link, because it links `CheerioKit` and therefore FluidAudio, which ships `URLSession`-based model downloaders that Cheerio never calls (the model is bundled and its URL passed in). The app has that same link today. The distinction that matters is between a dependency whose networking is in a code path we provably don't use, and one whose networking is in the transport layer of the component we would be using.
+
+Cost worth knowing: the helper links all of `CheerioKit`, so it pulls in Speech, FoundationModels, EventKit and FluidAudio for a binary that only reads SwiftData — about 13 MB in a Debug build. Splitting the package would fix it and isn't worth the churn yet.
+
+### Reading the store from a second process
+
+The helper opens the app's store with `ModelConfiguration(url:allowsSave: false)` and never calls `save()`. Concurrent access is safe because SwiftData sits on Core Data's SQLite store in WAL mode: a reader takes a snapshot and neither blocks nor is blocked by the single writer. Verified against a copy of a real 14-meeting, 1095-segment store, read correctly from a second process while the file was untouched (identical checksum after a full tool sweep).
+
+Three things this turned up, all of which shape the design:
+
+- **A read-only open cannot migrate.** Point the helper at a store written by an older schema and `ModelContainer` fails with `NSCocoaErrorDomain 134110`, "Cannot migrate store in-place: attempt to write a readonly database" — adding columns is a write. `MeetingStore.Failure.unreadable` says so in words, and tells the user to launch the matching Cheerio once. It never falls back to opening writably.
+- **A missing store must not be created.** `ModelConfiguration` pointed at a nonexistent file makes one, so the helper checks for the file first: answering "you have no meetings" out of an empty database it had just laid down would be worse than any error. `MeetingStore.Failure.noStore` explains it, and the store is opened lazily on the first tool call rather than at launch, so a client started before Cheerio ever ran recovers by itself once it has.
+- **`Meeting.stableID` writes.** It backfills `uuid` on first access, which is right for the app and disqualifying for a read-only reader — so `MeetingExport`'s ordinary initializer is unusable here. `Meeting.readOnlyExport(ownerNames:)` reads `uuid` directly and returns nil when it is absent. Legacy rows are then *listed* with a null `uuid` and an `unavailable` explanation rather than hidden, and can't be fetched by id. The helper does not derive a substitute identifier: the one the app will mint differs from anything guessed here, so a cached guess would be a key to nothing and MCP and the callback would name the same meeting two different things. Instead `StorageMigration.backfillMeetingIDs` runs at app launch, in the process that *is* allowed to write. That is not theoretical tidying — every one of the 14 meetings in the real store read as `uuid == nil` after migration, so without it the helper could not have addressed a single one.
+
+Contexts are created fresh per call, not held: the app keeps recording and relabelling underneath, and a long-lived context would answer the second question out of the row cache it filled answering the first.
+
+`CHEERIO_STORE_PATH` overrides which store file is read. It exists so a smoke test or a bug report can be pointed at a *copy* without editing code, and it's an environment variable rather than an argument because MCP client configs treat `env` as a first-class field.
+
+### Setup, and what Cheerio doesn't do
+
+Settings shows the helper's path inside this copy of the app and copyable config for Claude Code, Claude Desktop and Codex. It does not write those files. A meeting recorder silently rewriting the configuration of the agent that reads it is the wrong direction of trust, and unrecoverable if the format changes underneath.
+
+stdio only: no socket is opened, nothing listens, and an agent reaches Cheerio only because the client launched the process and holds its pipes. `SPEC.md` carves this out of the "no server component" non-goal on exactly that basis. Diagnostics go to stderr — one stray write to stdout would desynchronize a client's framing.
 
 ## Storage
 

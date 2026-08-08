@@ -8,6 +8,9 @@ DerivedData/
 .build/
 .swiftpm/
 Package.resolved
+# Where CI's xcodebuild clones package checkouts (-clonedSourcePackagesDirPath);
+# running the same command locally leaves it in the tree.
+SourcePackages/
 
 # macOS
 .DS_Store

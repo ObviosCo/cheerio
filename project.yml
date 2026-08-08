@@ -55,6 +55,20 @@ targets:
         basedOnDependencyAnalysis: false
     dependencies:
       - package: CheerioKit
+      # The bundled MCP server (issue #28), copied to Contents/Helpers/ so it
+      # installs and versions with the app. "Wrapper" is the .app itself, and a
+      # subpath under it is the only way to reach Helpers — Xcode's named
+      # destinations cover MacOS, Resources and Frameworks but not this one.
+      # Contents/MacOS would also work; Helpers keeps MacOS holding exactly one
+      # executable, so nothing can mistake the helper for the app's main binary.
+      # codeSign matters: a nested executable has its own signature, and an
+      # unsigned one fails notarization for the whole bundle.
+      - target: cheerio-mcp
+        embed: true
+        codeSign: true
+        copy:
+          destination: wrapper
+          subpath: Contents/Helpers
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.cheerio.mac
@@ -63,3 +77,28 @@ targets:
         CODE_SIGN_ENTITLEMENTS: Cheerio/Cheerio.entitlements
         ENABLE_HARDENED_RUNTIME: true
         GENERATE_INFOPLIST_FILE: false
+
+  # Read-only MCP server over stdio, so local agents can query meeting history.
+  # A separate process, not a mode of the app: an MCP client owns its lifetime and
+  # its pipes. It links CheerioKit and nothing else — no MCP SDK, and so no
+  # networking code (see docs/ARCHITECTURE.md for why that was decided on
+  # evidence rather than preference).
+  cheerio-mcp:
+    type: tool
+    platform: macOS
+    sources:
+      - path: CheerioMCP
+    dependencies:
+      - package: CheerioKit
+    settings:
+      base:
+        PRODUCT_NAME: cheerio-mcp
+        # No Info.plist, embedded or otherwise. The helper reports the *app's*
+        # version by reading Contents/Info.plist two directories up, and giving it
+        # one of its own would also give it a CFBundleIdentifier — which would make
+        # Bundle.main.bundleIdentifier resolve to the helper and send anything
+        # deriving a container path from it to the wrong directory.
+        GENERATE_INFOPLIST_FILE: false
+        CREATE_INFOPLIST_SECTION_IN_BINARY: false
+        ENABLE_HARDENED_RUNTIME: true
+        SKIP_INSTALL: true
