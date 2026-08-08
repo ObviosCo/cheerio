@@ -110,7 +110,7 @@ Deliberately lightweight. This is an open-source utility, not a company. What we
 
    All colors need light and dark values, delivered as **named Color Set entries for `Assets.xcassets`** so code references semantic names, not hex.
 
-3. **Typography.** Strong recommendation: **use the system font (SF Pro / SF Mono)** and give us a type scale mapped to SwiftUI's semantic styles rather than a custom face. It costs nothing, supports Dynamic Type, and makes the app feel native — and because macOS supplies it through system APIs, nothing ships in the repo or the bundle. Note that this is *not* the same as redistributable: Apple's license covers using the system font on Apple platforms, not shipping the font files. Never hand us SF Pro or SF Mono files to bundle. A display face is fine for the wordmark, the README, and the website (§5) — anywhere outside the app binary — provided it's OFL or similar, genuinely redistributable, and self-hosted rather than pulled from a CDN. It must never be required to run the app.
+3. **Typography.** Strong recommendation: **use the system font (SF Pro / SF Mono)** and give us a type scale mapped to SwiftUI's semantic styles rather than a custom face. It costs nothing, supports Dynamic Type, and makes the app feel native — and because macOS supplies it through system APIs, nothing ships in the repo or the bundle. Note that this is *not* the same as redistributable: Apple's license covers using the system font on Apple platforms, not shipping the font files. Never hand us SF Pro or SF Mono files to bundle. A display face is fine for the wordmark, the README, and the website (§5) — anywhere outside the app binary — provided it's OFL or similar and genuinely redistributable. It must never be required to run the app.
 
 4. **Voice — and a copy edit.** The app has a *lot* of prose in it, and much of it is genuinely good: it explains constraints where the user hits them, in plain language ("Have them talk naturally for about 30 seconds — read something aloud if it helps"). The [README](../README.md) is the closest thing to an established register — direct, specific, willing to name what doesn't work — and is worth reading as a voice reference before you write any UI copy.
 
@@ -212,7 +212,11 @@ Roughly in priority order.
 
 Because there's no App Store listing, the website *is* the product page: where someone lands from a link, decides whether this is for them, and downloads a build. It also has a second job the App Store would normally do — telling people what changed in each release.
 
-**It lives in this repo and ships on GitHub Pages.** That's a constraint with teeth: **the site must be static.** No server, no build step that can't run in CI, no analytics, no embedded third-party scripts or fonts — the same "nothing phones home" property the app has should hold for the site, and for the same reason it's easy to lose by accident.
+**It lives in this repo and ships on GitHub Pages.** That's a real constraint: **the site must be static.** No server, and no build step that can't run in CI.
+
+Two smaller preferences, offered as engineering defaults rather than principles. Keep third-party requests low — self-hosted fonts and no embedded scripts mean fewer things that can break, go slow, or disappear, and the whole site stays reviewable in a pull request. And no analytics, which is an existing repo rule (see the README's Contributing section), not a new one for you.
+
+Worth being clear, because an earlier draft of this brief got it wrong: the app has no networking code because every model runs on the machine, which is a *consequence* of how it's built, not a values position. Don't carry it over to the website as one. A website makes network requests; that's what a website is.
 
 Where it lives is a decision for us, not you, but it affects your file layout so it's worth naming: Pages can serve from `/docs` on `main` (which already holds the Markdown docs, so Jekyll would pick those up too), or from a `site/` directory published by an Action. Propose what suits the design; we'll wire it up.
 
@@ -228,7 +232,7 @@ Anything beyond those three (docs, a changelog feed, a page about how the on-dev
 
 ### What we need
 
-Real HTML and CSS, not a mockup handed over for someone else to build. Semantic markup, system font stack or a self-hosted OFL face (**no Google Fonts CDN** — that's a network call to someone else's server on every page load), light and dark via `prefers-color-scheme`, responsive down to a phone, and it should be legible with CSS disabled. Same accessibility bar as the app: AA contrast, real focus states, alt text, keyboard-navigable.
+Real HTML and CSS, not a mockup handed over for someone else to build. Semantic markup, a system font stack or a self-hosted OFL face, light and dark via `prefers-color-scheme`, responsive down to a phone, and it should be legible with CSS disabled. Same accessibility bar as the app: AA contrast, real focus states, alt text, keyboard-navigable.
 
 ---
 
@@ -268,7 +272,7 @@ This is a public MIT-licensed repository, and it ships outside the App Store.
 - For context on how carefully this is handled, read the README's [License](../README.md#license) section: the speaker model is under the NVIDIA Open Model License and is fetched by script rather than committed, specifically so the source tree stays MIT while a built app bundles an NVIDIA-licensed model. The one third-party dependency (FluidAudio) is Apache-2.0 and pinned exactly. Please hold your assets to the same standard.
 - Confirm in writing that the work can be committed to a public repo under MIT, and tell us up front if you want an attribution line — we're happy to give one, we just need it declared rather than discovered.
 
-- **The website inherits all of this**, and adds one rule of its own: no third-party CDNs, for fonts or anything else. Self-host or use the system stack. See §5.
+- **The website inherits all of this.** Anything it embeds — a face, an icon, an image — is redistributable and committed to the repo under a license we can name, same as everything else. See §5.
 
 **Distribution presentation.** Because the App Store is ruled out, the download experience is ours to build: a DMG (background art, window layout, drag-to-Applications affordance), the GitHub release page, and whatever first-launch reassurance a notarized-but-not-App-Store app needs. The website's download page (§5) is the front of this; the DMG is the last step of it. Both are things a normal Mac app would get for free from a store listing.
 
