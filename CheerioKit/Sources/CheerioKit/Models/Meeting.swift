@@ -9,6 +9,15 @@ public enum SpeakerChannel: String, Codable, Sendable {
     case them
 }
 
+/// What a recording is, so downstream agents can route on the difference.
+///
+/// A directive session (talking instructions at your agent, alone) isn't a meeting —
+/// nothing here creates one yet, but the model needs the tag before anything can.
+public enum MeetingKind: String, Codable, Sendable {
+    case meeting
+    case directive
+}
+
 @Model
 public final class Meeting {
     public var title: String
@@ -28,6 +37,15 @@ public final class Meeting {
     /// the right answer for an all-remote call, where priming anyone is pointless
     /// because the mic/system split already separates you from them.
     public var participantNames: [String]?
+    /// Raw storage for ``kind``, following the same pattern as
+    /// ``TranscriptSegment/channelRaw`` — a string survives an unrecognized future case
+    /// better than an enum would. Defaulted so existing stores migrate additively.
+    public var kindRaw: String = MeetingKind.meeting.rawValue
+    /// Process-independent identifier. Nil for meetings written before this field
+    /// existed — see ``stableID``, which backfills it lazily rather than this property
+    /// defaulting non-optionally, which would risk every migrated row landing on the
+    /// same value.
+    public var uuid: UUID?
 
     @Relationship(deleteRule: .cascade, inverse: \TranscriptSegment.meeting)
     public var segments: [TranscriptSegment] = []
@@ -37,6 +55,27 @@ public final class Meeting {
         self.startedAt = startedAt
         self.calendarEventID = calendarEventID
         self.roughNotes = ""
+    }
+
+    public var kind: MeetingKind {
+        get { MeetingKind(rawValue: kindRaw) ?? .meeting }
+        set { kindRaw = newValue.rawValue }
+    }
+
+    /// A stable identifier for this meeting, usable across processes — unlike
+    /// SwiftData's `persistentModelID`, which is only valid within the process that
+    /// minted it and can't be handed to the transcript-ready callback or MCP server.
+    ///
+    /// Backfills on first access: assigning `UUID()` here, rather than giving `uuid` a
+    /// non-optional default, is what keeps every meeting already in the store from
+    /// migrating onto the *same* generated value. Call this (or rely on any caller
+    /// that does, like ``MeetingExport``) instead of reading `uuid` directly whenever
+    /// the identifier needs to exist.
+    public var stableID: UUID {
+        if let uuid { return uuid }
+        let id = UUID()
+        uuid = id
+        return id
     }
 
     /// Case-insensitive match across everything the user might remember about a
@@ -260,5 +299,37 @@ extension Meeting {
         segments
             .filter { speaker.matches($0) && $0.channel == speaker.channel }
             .map { AudioExcerpt.Range(start: $0.startTime, end: $0.endTime) }
+    }
+
+    /// The mechanical half of the speaker-trust rule: whether a line came from the
+    /// meeting's owner, for anything that needs to act only on what *you* said
+    /// (owner-attributed actions, the transcript export). One function so both
+    /// consumers agree instead of re-deriving it.
+    ///
+    /// `ownerNames` is whichever enrolled names have `isMe == true` — normally one,
+    /// but the caller decides, so this stays free of any lookup of its own.
+    ///
+    /// A segment is the owner's when either:
+    /// - its resolved label names an enrolled `isMe` speaker, on *either* channel
+    ///   (diarization can put your own voice's echo on the system tap), or
+    /// - it has no human-assigned identity at all — no label, or one the diarizer
+    ///   invented rather than a person naming it — and it came in on the mic.
+    ///
+    /// A manual or enrolled label naming someone who isn't the owner is never
+    /// owner-attributed, even on the mic channel: a label is a person saying "this is
+    /// who spoke," and that testimony outranks which physical channel picked it up.
+    /// That includes a *manually assigned* "Speaker 1" — `isSpeakerLabelManual` is
+    /// checked before the label's spelling, so hand-naming a guest with a
+    /// diarizer-looking name can't quietly promote their lines to owner-attributed.
+    public static func isOwnerAttributed(_ segment: TranscriptSegment, ownerNames: Set<String>) -> Bool {
+        if let label = segment.speakerLabel {
+            if ownerNames.contains(label) { return true }
+            // A human named this line: whoever they named, it isn't the owner (that
+            // case returned above), no matter what the label looks like.
+            guard !segment.isSpeakerLabelManual else { return false }
+            guard TranscriptSegment.isDiarizerGeneratedLabel(label) else { return false }
+            return segment.channel == .me
+        }
+        return segment.channel == .me
     }
 }

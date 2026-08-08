@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import CheerioKit
@@ -49,5 +50,57 @@ import Testing
         // "Me"/"Them" are channel fallbacks, not content. Searching the rendered
         // transcript matched their "[Me] " prefix, so "me" hit every meeting.
         #expect(!meeting.matches("them"))
+    }
+
+    @Test func kindDefaultsToMeeting() {
+        let meeting = Meeting(title: "Standup")
+        #expect(meeting.kind == .meeting)
+        #expect(meeting.kindRaw == "meeting")
+    }
+
+    @Test func kindRoundTripsThroughRawStorage() {
+        let meeting = Meeting(title: "Talking to my agent")
+        meeting.kind = .directive
+        #expect(meeting.kindRaw == "directive")
+        #expect(meeting.kind == .directive)
+    }
+
+    @Test func unrecognizedKindRawFallsBackToMeeting() {
+        // Mirrors a store written by a future version with a case we don't know yet.
+        let meeting = Meeting(title: "Standup")
+        meeting.kindRaw = "some-future-kind"
+        #expect(meeting.kind == .meeting)
+    }
+
+    @Test func stableIDBackfillsDistinctValuesOnAccess() {
+        // Simulates two meetings that already existed in the store when `uuid` was
+        // added: both start nil, as a lightweight-migrated row would.
+        let first = Meeting(title: "First")
+        let second = Meeting(title: "Second")
+        #expect(first.uuid == nil)
+        #expect(second.uuid == nil)
+
+        let firstID = first.stableID
+        let secondID = second.stableID
+
+        // The bug this guards against: a non-optional `UUID` default filling every
+        // migrated row with the *same* generated value.
+        #expect(firstID != secondID)
+        #expect(first.uuid == firstID)
+        #expect(second.uuid == secondID)
+    }
+
+    @Test func stableIDIsIdempotent() {
+        let meeting = Meeting(title: "Standup")
+        let first = meeting.stableID
+        let second = meeting.stableID
+        #expect(first == second)
+    }
+
+    @Test func stableIDLeavesAnAlreadySetUUIDAlone() {
+        let meeting = Meeting(title: "Standup")
+        let existing = UUID()
+        meeting.uuid = existing
+        #expect(meeting.stableID == existing)
     }
 }
