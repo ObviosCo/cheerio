@@ -12,8 +12,12 @@
 	<string>Cheerio</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
+	<!-- Dev placeholder, not a real version — releases are CalVer YY.MM.BUILD
+	     (see .github/workflows/release.yml), and 0.0.0 can't collide with one.
+	     Overwritten on every CI run: tags set it to the tag's own version;
+	     manual (workflow_dispatch) runs leave whatever is already here. -->
 	<key>CFBundleShortVersionString</key>
-	<string>0.1.0</string>
+	<string>0.0.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>

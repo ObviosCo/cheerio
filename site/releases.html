@@ -74,11 +74,16 @@
      </article>
 
      RULES
-     - Versions are date-based: YYYY.M.D, no leading zeros, tagged vYYYY.M.D.
-       A second release on the same day is distinguished by the build number,
-       not the version — wait for tomorrow or overwrite the release.
-     - The id is the version with dots as hyphens, prefixed v: 2026.8.8 -> v2026-8-8.
+     - Versions follow CalVer (calver.org): YY.MM.MICRO, tagged vYY.MM.MICRO.
+       YY and MM come straight off the calendar and are never zero-padded
+       (v26.8.1, not v26.08.01). MICRO is a per-month build counter picked by
+       hand when cutting the tag — check the previous release for the month
+       and increment it, or start at 1. A month can have several releases
+       (26.8.1, 26.8.2, ...); a new month always resets MICRO to 1.
+     - The id is the version with dots as hyphens, prefixed v: 26.8.1 -> v26-8-1.
        It is a permalink. Never change one after it ships.
+       (Note: the entry below, v2026-8-8, predates this scheme and keeps its
+       original id and version string — permalinks don't get rewritten.)
      - Headings, in this order, and only the ones that apply:
        Added / Changed / Fixed / Known issues / Breaking.
        Breaking goes FIRST when present, not last.
