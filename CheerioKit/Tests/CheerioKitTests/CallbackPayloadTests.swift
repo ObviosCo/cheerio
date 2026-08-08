@@ -34,7 +34,10 @@ import Testing
         let prepared = try CallbackPayload.prepare(export: export, in: directory)
 
         #expect(FileManager.default.fileExists(atPath: prepared.fileURL.path))
-        #expect(prepared.fileURL.lastPathComponent == "\(export.uuid.uuidString).json")
+        // `<meeting>.<invocation>.json` — the meeting still names the file, so a
+        // user debugging their command can find the right payload by eye.
+        #expect(prepared.fileURL.lastPathComponent.hasPrefix("\(export.uuid.uuidString)."))
+        #expect(prepared.fileURL.pathExtension == "json")
         #expect(prepared.environment["CHEERIO_MEETING_ID"] == export.uuid.uuidString)
         #expect(prepared.environment["CHEERIO_MEETING_KIND"] == "directive")
         #expect(prepared.environment["CHEERIO_TITLE"] == "Ship review")
@@ -66,17 +69,30 @@ import Testing
         #expect(FileManager.default.fileExists(atPath: secondPrepared.fileURL.path))
     }
 
-    @Test func rerunningTheSameMeetingOverwritesRatherThanFailing() throws {
-        // The "run now on last meeting" test button can fire more than once for
-        // the same meeting — that must never throw over a file that already exists.
+    @Test func rerunningTheSameMeetingGetsItsOwnFile() throws {
+        // The "run now on last meeting" test button can fire more than once for the
+        // same meeting, and callbacks run detached. If both invocations shared a
+        // filename, the second atomic write could replace the file before the first
+        // command ever opened CHEERIO_EXPORT_PATH — the file and that run's stdin
+        // would then disagree, which the contract says can't happen. So: one file
+        // per invocation, and the earlier one stays exactly as it was written.
         let directory = Self.makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let export = Self.makeExport(uuid: "33333333-3333-3333-3333-333333333333")
-        _ = try CallbackPayload.prepare(export: export, in: directory)
+        let first = try CallbackPayload.prepare(export: export, in: directory)
         let second = try CallbackPayload.prepare(export: export, in: directory)
 
+        #expect(first.fileURL != second.fileURL)
+        #expect(first.environment["CHEERIO_EXPORT_PATH"] != second.environment["CHEERIO_EXPORT_PATH"])
+        #expect(FileManager.default.fileExists(atPath: first.fileURL.path))
         #expect(FileManager.default.fileExists(atPath: second.fileURL.path))
+        // Both invocations describe the same meeting, so the *contents* match even
+        // though the paths don't — uniqueness is about the file, not the payload.
+        #expect(try Data(contentsOf: first.fileURL) == first.jsonData)
+        #expect(try Data(contentsOf: second.fileURL) == second.jsonData)
+        #expect(first.jsonData == second.jsonData)
+        #expect(first.environment["CHEERIO_MEETING_ID"] == second.environment["CHEERIO_MEETING_ID"])
     }
 
     @Test func defaultDirectoryLivesUnderApplicationSupport() throws {

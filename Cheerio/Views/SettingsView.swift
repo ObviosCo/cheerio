@@ -74,6 +74,9 @@ struct PrivacySettingsView: View {
 /// disables it, per ``TranscriptCallbackSettings``.
 struct TranscriptCallbackSettingsView: View {
     @Environment(\.modelContext) private var context
+    /// Only for the readiness check below — this tab never starts or stops
+    /// anything.
+    @Environment(CaptureSession.self) private var session
     @AppStorage(TranscriptCallbackSettings.commandDefaultsKey) private var command = ""
     @AppStorage(TranscriptCallbackScope.defaultsKey) private var scopeRaw = TranscriptCallbackScope.default.rawValue
 
@@ -95,7 +98,16 @@ struct TranscriptCallbackSettingsView: View {
         command.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private var lastMeeting: Meeting? { completedMeetings.first }
+    /// Nil while a recording is in flight. `CaptureSession.stop` sets `endedAt`
+    /// *before* diarization and enhancement run, so between those two moments the
+    /// most recent `endedAt != nil` meeting has channel-only labels and no notes.
+    /// Exporting it then would contradict the single definition of "ready" that
+    /// `stop` documents at its `fireTranscriptReadyCallback` call — the test button
+    /// exists to rehearse the real callback, so it has to wait for the same point.
+    private var lastMeeting: Meeting? {
+        guard session.state == .idle else { return nil }
+        return completedMeetings.first
+    }
 
     var body: some View {
         Form {
@@ -119,6 +131,11 @@ struct TranscriptCallbackSettingsView: View {
             Section {
                 Button("Run now on last meeting") { runNow() }
                     .disabled(lastMeeting == nil || trimmedCommand.isEmpty)
+                if session.state != .idle {
+                    Text("Waiting for the current recording to finish processing.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 statusView
             } footer: {
                 Text(
@@ -154,6 +171,12 @@ struct TranscriptCallbackSettingsView: View {
     private func runNow() {
         guard let lastMeeting, !trimmedCommand.isEmpty else { return }
         let ownerNames = SpeakerLabeling.ownerNames(context: context)
-        TranscriptReadyRunner.fireForTest(command: trimmedCommand, export: lastMeeting.export(ownerNames: ownerNames))
+        let export = lastMeeting.export(ownerNames: ownerNames)
+        // Building the export reads `stableID`, which backfills `uuid` for a meeting
+        // recorded before that field existed. Persist that before the command sees
+        // it as CHEERIO_MEETING_ID — an external consumer must never be handed an
+        // identifier that a quit-before-autosave would replace with a different one.
+        try? context.save()
+        TranscriptReadyRunner.fireForTest(command: trimmedCommand, export: export)
     }
 }

@@ -297,6 +297,17 @@ final class CaptureSession {
     /// pipeline this is — this function only builds the export and hands it to
     /// the runner, it doesn't decide when "ready" is.
     private func fireTranscriptReadyCallback(for meeting: Meeting, context: ModelContext) {
+        // Touch `stableID` and save *before* building the export, not as part of it.
+        // `Meeting.export` reads `stableID`, which backfills `uuid` on a meeting
+        // recorded before that field existed — and the save above already happened,
+        // so that backfill would otherwise sit unsaved in memory. The callback is
+        // about to hand that UUID to an external consumer as CHEERIO_MEETING_ID; if
+        // the app quit before the next autosave, the meeting would come back with a
+        // *different* ID and the consumer's reference would point at nothing.
+        // Persist it first, then publish it.
+        _ = meeting.stableID
+        try? context.save()
+
         let ownerNames = SpeakerLabeling.ownerNames(context: context)
         TranscriptReadyRunner.fireIfNeeded(export: meeting.export(ownerNames: ownerNames))
     }

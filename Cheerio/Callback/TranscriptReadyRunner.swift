@@ -42,22 +42,31 @@ enum TranscriptReadyRunner {
     }
 
     private static func fire(command: String, export: MeetingExport) {
+        // Identifies this invocation to the shared status object. Runs are detached
+        // and can overlap, so a result has to say which run it came from — see
+        // `TranscriptCallbackStatus.currentRunID` for the last-started-wins rule
+        // that stops a slow earlier run from reporting over a newer one.
+        let runID = UUID()
         Task.detached(priority: .utility) {
-            await MainActor.run { TranscriptCallbackStatus.shared.markRunning(title: export.title) }
+            await MainActor.run { TranscriptCallbackStatus.shared.markRunning(runID: runID, title: export.title) }
             do {
                 let payload = try CallbackPayload.prepare(export: export)
                 switch await run(command: command, payload: payload) {
                 case .success:
-                    await MainActor.run { TranscriptCallbackStatus.shared.markSucceeded(title: export.title) }
+                    await MainActor.run {
+                        TranscriptCallbackStatus.shared.markSucceeded(runID: runID, title: export.title)
+                    }
                 case .failure(let detail):
                     await MainActor.run {
-                        TranscriptCallbackStatus.shared.markFailed(title: export.title, detail: detail)
+                        TranscriptCallbackStatus.shared.markFailed(runID: runID, title: export.title, detail: detail)
                     }
                 }
             } catch {
                 log.error("Transcript-ready callback couldn't prepare its payload: \(error, privacy: .public)")
                 let detail = "Couldn't prepare payload: \(error.localizedDescription)"
-                await MainActor.run { TranscriptCallbackStatus.shared.markFailed(title: export.title, detail: detail) }
+                await MainActor.run {
+                    TranscriptCallbackStatus.shared.markFailed(runID: runID, title: export.title, detail: detail)
+                }
             }
         }
     }
