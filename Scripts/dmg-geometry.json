@@ -1,0 +1,8 @@
+{
+  "_comment": "Single source of truth for the DMG window's icon-well/arrow geometry. Read by Scripts/render-dmg-background.swift (which draws the wells and the arrow at these coordinates) and Scripts/dmg-settings.py (which tells Finder to put the icons at the same coordinates). Change a value here and both halves move together instead of drifting apart by hand. Scripts/verify-dmg.py checks the built image against dmg-settings.py, which checks against this file, so this file is the thing to edit.",
+  "width": 640,
+  "height": 400,
+  "icon_size": 128,
+  "left_icon_center": [168, 172],
+  "right_icon_center": [472, 172]
+}
