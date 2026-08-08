@@ -75,10 +75,13 @@ bug and isn't).
 
 ## Agents
 
-`.claude/agents/` has four checked-in subagent definitions for this repo's recurring work:
-`swift-implementer` (scoped feature/fix on a branch), `review-responder` (Copilot review
-triage), `release-editor` (`.github/workflows/release.yml` and `Scripts/`), and
-`issue-groomer` (closing issues addressed by merged PRs). The Build section's verification
+`.claude/agents/` has five checked-in subagent definitions for this repo's recurring work:
+`orchestrator` (runs a whole body of work end to end — directive transcript → issues →
+delegated PRs → reviewed merges → release — delegating to the other four and reviewing
+everything before it ships), `swift-implementer` (scoped feature/fix on a branch),
+`review-responder` (Copilot review triage), `release-editor`
+(`.github/workflows/release.yml` and `Scripts/`), and `issue-groomer` (closing issues
+addressed by merged PRs). The Build section's verification
 loop is the single canonical copy; the agent definitions restate it for self-containment, so
 update them alongside Build whenever the commands change.
 
