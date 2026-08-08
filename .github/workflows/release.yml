@@ -161,7 +161,18 @@ jobs:
             --key "$RUNNER_TEMP/AuthKey.p8" \
             --key-id "$NOTARY_KEY_ID" \
             --issuer "$NOTARY_ISSUER_ID" \
-            --wait --timeout 30m
+            --wait --timeout 30m \
+            --output-format json | tee "$RUNNER_TEMP/notary.json"
+          # On rejection, surface Apple's per-file reasons — "status: Invalid"
+          # alone is useless for debugging.
+          if [ "$(jq -r .status "$RUNNER_TEMP/notary.json")" != "Accepted" ]; then
+            xcrun notarytool log "$(jq -r .id "$RUNNER_TEMP/notary.json")" \
+              --key "$RUNNER_TEMP/AuthKey.p8" \
+              --key-id "$NOTARY_KEY_ID" \
+              --issuer "$NOTARY_ISSUER_ID"
+            echo "::error::Notarization was not accepted"
+            exit 1
+          fi
           xcrun stapler staple "$app"
           # The end-to-end proof: Gatekeeper itself accepts the app.
           spctl --assess --type execute --verbose=2 "$app"
