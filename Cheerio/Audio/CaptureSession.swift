@@ -306,7 +306,17 @@ final class CaptureSession {
         // *different* ID and the consumer's reference would point at nothing.
         // Persist it first, then publish it.
         _ = meeting.stableID
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            // And if that save fails, don't fire at all. A callback carrying an ID
+            // that may not survive a relaunch is worse than no callback: the
+            // consumer files away a reference that quietly points at nothing,
+            // whereas a callback that never ran is a visible no-op the user can
+            // retry from Settings.
+            log.error("Couldn't persist the meeting ID for the transcript-ready callback; not firing: \(error)")
+            return
+        }
 
         let ownerNames = SpeakerLabeling.ownerNames(context: context)
         TranscriptReadyRunner.fireIfNeeded(export: meeting.export(ownerNames: ownerNames))

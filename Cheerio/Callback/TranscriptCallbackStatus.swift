@@ -48,4 +48,15 @@ final class TranscriptCallbackStatus {
         guard runID == currentRunID else { return }
         outcome = .failed(title: title, detail: detail)
     }
+
+    /// Reports an invocation that failed before it ever started — refusing to run
+    /// because the meeting's ID couldn't be persisted, say. It claims the status
+    /// line the way `markRunning` does, because a run that died before launch is
+    /// still the newest thing the user asked for, and the alternative is failing
+    /// silently while the line shows an older run's result.
+    func markFailedBeforeStarting(title: String, detail: String) {
+        let runID = UUID()
+        markRunning(runID: runID, title: title)
+        markFailed(runID: runID, title: title, detail: detail)
+    }
 }
