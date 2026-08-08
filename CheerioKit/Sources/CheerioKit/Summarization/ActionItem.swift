@@ -49,9 +49,14 @@ public struct ActionItem: Codable, Sendable, Equatable {
         self.disposition = disposition
     }
 
-    /// Decoding is a construction path like any other, so it carries the same
-    /// invariant: JSON claiming `isOwner: false` with `actionable` — hand-edited,
-    /// or from a future buggy writer — comes back demoted rather than trusted.
+    /// Decoding enforces the *representable* invariant — `isOwner: false` with
+    /// `actionable` comes back demoted — but it cannot verify an identity claim:
+    /// JSON asserting `isOwner: true` has no owner evidence to check against in
+    /// here. That check belongs to reconciliation, and the consumption boundary
+    /// always applies it — ``MeetingExport`` serializes through
+    /// ``Meeting/reconciledActionItems(ownerNames:)``, so a decoded item's
+    /// identity claim is re-verified against current enrollment before any
+    /// external consumer sees it.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let text = try container.decode(String.self, forKey: .text)

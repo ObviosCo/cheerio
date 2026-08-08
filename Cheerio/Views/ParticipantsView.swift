@@ -239,7 +239,18 @@ struct ParticipantsView: View {
 
     private func remove(_ speaker: EnrolledSpeaker) {
         let audioPath = speaker.audioPath
+        let wasOwner = speaker.isMe
         context.delete(speaker)
+        // Deleting the "me" enrollment changes who the owner is just as surely as
+        // flipping the flag does — every meeting's persisted items need the same
+        // re-check setMe runs, inside the same save.
+        if wasOwner {
+            let ownerNames = SpeakerLabeling.ownerNames(context: context)
+            let meetings = (try? context.fetch(FetchDescriptor<Meeting>())) ?? []
+            for meeting in meetings where !meeting.actionItems.isEmpty {
+                meeting.reconcileActionItems(ownerNames: ownerNames)
+            }
+        }
         do {
             // Persist the deletion *before* touching the file. The other order meant a
             // failed save resurrected the enrollment on next launch pointing at audio
