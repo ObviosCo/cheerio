@@ -4,13 +4,20 @@ import SwiftUI
 
 @main
 struct CheerioApp: App {
-    @State private var captureSession = CaptureSession()
+    @State private var captureSession: CaptureSession
+
+    /// Sparkle. Created with the session because it asks the session whether a
+    /// recording is in progress before letting a scheduled check run.
+    @State private var updater: AppUpdater
 
     /// One container shared by both scenes — `.modelContainer(for:)` on each would
     /// open two containers against the same store file.
     private let container: ModelContainer
 
     init() {
+        let session = CaptureSession()
+        _captureSession = State(initialValue: session)
+        _updater = State(initialValue: AppUpdater(session: session))
         do {
             let configuration = try ModelConfiguration(url: AudioStorage.storeURL())
             container = try ModelContainer(
@@ -29,12 +36,38 @@ struct CheerioApp: App {
                 .environment(captureSession)
         }
         .modelContainer(container)
+        // On a first run, the onboarding window claims launch instead — it opens
+        // this one itself once it closes (see `OnboardingView.onDisappear`).
+        // Evaluated once at process start, which is the only time it matters.
+        .defaultLaunchBehavior(OnboardingState.hasCompleted ? .automatic : .suppressed)
+        .commands {
+            // Where macOS apps put it: the app menu, right under "About Cheerio".
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") { updater.checkForUpdates() }
+            }
+            CommandGroup(replacing: .help) {
+                OpenOnboardingCommand()
+            }
+        }
+
+        // The first-run walkthrough. Re-openable later from Settings and the Help
+        // menu above, which is why it's a real window rather than a launch-time-only
+        // sheet.
+        Window("Welcome to Cheerio", id: OnboardingView.windowID) {
+            OnboardingView()
+                .environment(captureSession)
+        }
+        .modelContainer(container)
+        .windowResizability(.contentSize)
+        .windowStyle(.hiddenTitleBar)
+        .defaultLaunchBehavior(OnboardingState.hasCompleted ? .suppressed : .automatic)
 
         // Start and stop without surfacing the window — the state you need mid-call
         // is "is it recording", and that belongs in the menu bar.
         MenuBarExtra("Cheerio", systemImage: captureSession.state.menuBarSymbol) {
             MenuBarView()
                 .environment(captureSession)
+                .environment(updater)
         }
         .modelContainer(container)
 
@@ -44,8 +77,21 @@ struct CheerioApp: App {
                 // button has to stay disabled while a recording is still being
                 // finished — see `TranscriptCallbackSettingsView`.
                 .environment(captureSession)
+                .environment(updater)
         }
         .modelContainer(container)
+    }
+}
+
+/// A small view, not a bare closure, because `.commands` content needs its own
+/// `openWindow` from the environment — the App type doesn't reliably vend one.
+private struct OpenOnboardingCommand: View {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Button("Cheerio Walkthrough") {
+            openWindow(id: OnboardingView.windowID)
+        }
     }
 }
 
@@ -89,8 +135,11 @@ struct ContentView: View {
             // Legacy rows carry no uuid, and the bundled MCP helper can't mint one
             // for them because it never writes. This process can.
             StorageMigration.backfillMeetingIDs(context: context)
-            // Optional permission: without it meetings just get timestamp titles.
-            await CalendarService.shared.requestAccess()
+            // Refresh only — never prompt here. The onboarding walkthrough's
+            // calendar step is what's allowed to show the TCC dialog; this just
+            // picks up whatever the user already decided, there or in System
+            // Settings, so `CalendarService`'s cached flag survives a relaunch.
+            await CalendarService.shared.refreshAccessStatus()
             // Audio that aged out while the app was closed.
             _ = try? AudioRetentionService.purge(retention: .current, context: context)
         }

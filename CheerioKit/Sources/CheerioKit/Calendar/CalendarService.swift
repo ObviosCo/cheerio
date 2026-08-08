@@ -18,7 +18,10 @@ public struct CalendarMeeting: Identifiable, Sendable {
 /// Read-only EventKit wrapper. Used to suggest recording when a meeting
 /// starts and to link meetings to calendar events.
 public actor CalendarService {
-    /// Single-user app, single event store — access is requested once at launch.
+    /// Single-user app, single event store. Launch only refreshes the cached access
+    /// status from whatever the user already decided (`refreshAccessStatus()`,
+    /// which never prompts) — actually requesting access happens exclusively from
+    /// something the user chose to do (see `requestAccess()`).
     public static let shared = CalendarService()
 
     private let store = EKEventStore()
@@ -26,8 +29,15 @@ public actor CalendarService {
 
     public init() {}
 
-    /// Requests full calendar access. Returns false if denied — the app
-    /// works fine without it, just without meeting suggestions.
+    /// Requests full calendar access, prompting the system dialog if the user
+    /// hasn't decided yet. Returns false if denied — the app works fine without
+    /// it, just without meeting suggestions.
+    ///
+    /// Only call this from something the user chose to do (the onboarding
+    /// walkthrough's calendar step, or reopening it from Settings). Calendar is
+    /// explicitly optional and explained before it's requested — a call here from
+    /// an unconditional launch-time task would prompt again moments after someone
+    /// deliberately skipped it in the walkthrough.
     @discardableResult
     public func requestAccess() async -> Bool {
         do {
@@ -35,6 +45,16 @@ public actor CalendarService {
         } catch {
             hasAccess = false
         }
+        return hasAccess
+    }
+
+    /// Refreshes the cached access flag from whatever the user already decided,
+    /// without ever prompting. Safe to call on every launch: `authorizationStatus`
+    /// is a plain read, unlike `requestFullAccessToEvents`, which shows the system
+    /// dialog the first time it's ever called.
+    @discardableResult
+    public func refreshAccessStatus() -> Bool {
+        hasAccess = EKEventStore.authorizationStatus(for: .event) == .fullAccess
         return hasAccess
     }
 

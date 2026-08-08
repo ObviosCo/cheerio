@@ -8,7 +8,8 @@ DerivedData/
 .build/
 .swiftpm/
 Package.resolved
-# Where CI's xcodebuild clones package checkouts (-clonedSourcePackagesDirPath);
+# Where CI (and anyone passing -clonedSourcePackagesDirPath) puts resolved
+# packages, including Sparkle's binary xcframework and its command-line tools;
 # running the same command locally leaves it in the tree.
 SourcePackages/
 
@@ -17,3 +18,7 @@ SourcePackages/
 
 # Fetched by Scripts/fetch-models.sh, not committed (~93 MB)
 Cheerio/Resources/Models/
+
+# Local xcodebuild output (release.yml builds into build/ via -derivedDataPath;
+# a stray local build once nearly swept ~400MB of derived data into a commit).
+build/

@@ -129,27 +129,44 @@ failing cryptically. Details in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 Local models are the mechanism, not the point. There's no third-party service Cheerio depends
 on and nothing to pay for month to month — you run it, and you control it.
 
-- **There is no networking code in the app.** No `URLSession`, no sockets, nothing — including
-  in the bundled MCP server, which talks over a pipe. That is the actual guarantee, and it is
-  worth stating precisely: because App Sandbox is off (see below), entitlements no longer
-  *enforce* the boundary — the absence of networking code is what does. The one asterisk is
-  that FluidAudio, the diarization dependency, ships model-download code Cheerio never calls,
-  because the model is bundled and its URL passed in.
+- **Nothing needs the network while a meeting is recorded or processed.** That is the
+  invariant, and it holds with the machine in airplane mode: capture, transcription, speaker
+  attribution and note generation all run on-device, start to finish. The bundled MCP server
+  is no exception — it talks over a pipe and links no networking framework at all. (The one
+  code-level asterisk: FluidAudio, the diarization dependency, ships model-download code
+  Cheerio never calls, because the model is bundled and its URL passed in.)
+- **The app's only network access is checking for its own updates.** Sparkle fetches the
+  update feed at `https://github.com/ObviosCo/cheerio/releases/latest/download/appcast.xml` on a
+  daily schedule, and the zip if you accept an update — two requests, not one, both to GitHub
+  Releases. Neither a
+  scheduled nor a manual check will *start* while a recording is running (see
+  [`Cheerio/Updates/AppUpdater.swift`](Cheerio/Updates/AppUpdater.swift)); an update already
+  downloading when you hit record is left to finish rather than aborted mid-transfer. You can
+  switch the checks off entirely in **Settings → Updates**; nothing else changes if you do.
+- **No profile, no analytics — the requests carry nothing optional.** Sparkle's system profile — OS
+  version, CPU, model, language appended to the feed request — is off, and the updater
+  delegate refuses to add any feed parameters at all. What GitHub sees is what any HTTPS
+  download shows a server: connection metadata and a User-Agent naming the app and Sparkle
+  versions. No accounts, no telemetry, no analytics, no crash reporting.
 - **Both models run on-device.** Speech and summarization use Apple's local models; diarization
   runs the bundled Sortformer model on the Neural Engine. The diarization model is downloaded
   at *build* time by a script, never at runtime.
-- No accounts, no telemetry, no analytics, no crash reporting.
-- The only network activity the app can cause is macOS itself fetching the speech model for
-  your locale on first run.
+- The only other network activity the app can cause is macOS itself fetching the speech model
+  for your locale on first run.
 - Nothing leaves the machine during a recording or while it's being processed — audio,
   transcript, and notes all stay in the app's local store until you export them yourself.
 
 ## Download
 
 Prebuilt binaries are attached to [GitHub Releases](https://github.com/ObviosCo/cheerio/releases):
-unzip, drop `Cheerio.app` in `/Applications`, and on first launch right-click → **Open** (or
-approve it under **System Settings → Privacy & Security**). Builds are ad-hoc signed, not
-notarized — macOS will warn once. Requires macOS 26 or later on Apple Silicon.
+unzip and drop `Cheerio.app` in `/Applications`. Builds are signed with a Developer ID
+certificate and notarized by Apple, so Gatekeeper opens them without warnings or right-click
+ceremony. Requires macOS 26 or later on Apple Silicon.
+
+Later versions install themselves. The app checks its own update feed once a day, offers what
+it finds, and can be set to download and install without asking — see **Settings → Updates**,
+and [No service required](#no-service-required) for exactly what that costs in
+network terms.
 
 To build from source instead:
 
@@ -273,6 +290,7 @@ cheerio/
 ├── Cheerio/          # macOS app target
 │   ├── Audio/        # Mic capture, Core Audio process tap, capture session
 │   ├── Resources/    # Models/ — fetched, never committed
+│   ├── Updates/      # Sparkle: the app's only network access
 │   └── Views/        # SwiftUI
 └── CheerioMCP/       # cheerio-mcp — stdio MCP server, bundled inside the app
 ```
@@ -312,11 +330,11 @@ and MCP server prove out the shape agents actually want.
 ## Contributing
 
 Issues and pull requests are welcome. Two constraints are not up for negotiation: **nothing
-may need the network while recording or processing a meeting** (today the app has no
-networking code at all — a one-time setup download would be acceptable, a dependency during
-capture never is), and no analytics or accounts. Beyond that,
-keep portable logic in `CheerioKit`, do no work on realtime audio callbacks, and leave strict
-concurrency on.
+may need the network while recording or processing a meeting** (the app's only networking is
+the Sparkle update check, against Cheerio's own distribution endpoints, and it steps aside
+while a recording is running — a one-time setup download would also be acceptable, a
+dependency during capture never is), and no analytics or accounts. Beyond that, keep portable
+logic in `CheerioKit`, do no work on realtime audio callbacks, and leave strict concurrency on.
 
 CI runs `swift format lint --strict` (config in [`.swift-format`](.swift-format)), the package
 tests, and an app build on every PR. Format locally before pushing:
@@ -327,9 +345,10 @@ swift format --in-place --recursive Cheerio CheerioMCP CheerioKit/Sources Cheeri
 
 ## License
 
-Cheerio itself is MIT — see [LICENSE](LICENSE).
+Cheerio itself is MIT — see [LICENSE](LICENSE). So is **Sparkle**, the updater; its notice
+still has to travel with a build, and does.
 
-Two things it depends on are not:
+Two things it depends on are neither MIT nor permissive in the same way:
 
 - **FluidAudio** (Apache-2.0), the Swift wrapper around Sortformer.
 - **Sortformer v2.1**, the diarization model — © NVIDIA, licensed

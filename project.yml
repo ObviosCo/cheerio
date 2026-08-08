@@ -21,6 +21,15 @@ settings:
 packages:
   CheerioKit:
     path: CheerioKit
+  # Automatic updates for a Developer ID app distributed outside the App Store.
+  # Pinned exactly, like FluidAudio: the updater is the one component that, if it
+  # regresses, can break every installed copy at once. Sparkle ships as a binary
+  # xcframework, so `exactVersion` also pins the checksum SwiftPM verifies.
+  # Bumping this version invalidates the SwiftPM caches in ci.yml and
+  # release.yml, which key on project.yml for exactly that reason.
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: 2.9.5
 # Declared explicitly so the scheme exists without opening Xcode — headless
 # xcodebuild (CI) can't use the schemes the Xcode UI auto-generates.
 schemes:
@@ -55,6 +64,7 @@ targets:
         basedOnDependencyAnalysis: false
     dependencies:
       - package: CheerioKit
+      - package: Sparkle
       # The bundled MCP server (issue #28), copied to Contents/Helpers/ so it
       # installs and versions with the app. "Wrapper" is the .app itself, and a
       # subpath under it is the only way to reach Helpers — Xcode's named
@@ -72,6 +82,10 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.cheerio.mac
+        # Hand-maintained, not generated (GENERATE_INFOPLIST_FILE is off below), so
+        # there are no `info:` properties here to add keys to. Sparkle's settings —
+        # including the SUPublicEDKey slot a maintainer has to fill in once — live in
+        # that file. See .github/workflows/release.yml's header for the key ceremony.
         INFOPLIST_FILE: Cheerio/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_ENTITLEMENTS: Cheerio/Cheerio.entitlements
