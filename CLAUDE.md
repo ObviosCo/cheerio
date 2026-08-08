@@ -4,7 +4,7 @@ Open-source, single-user Granola alternative. macOS-first, local-only: SpeechAna
 
 ## State of the repo
 
-Builds and runs; 47 package tests across 8 suites pass. **Not yet verified against a live call** — see task 1 below.
+Builds and runs; 47 package tests across 8 suites pass. **Not yet verified against a live call** — see issue #5.
 
 Two build warnings remain, both `Binding<Optional<Wrapped>>` captured in a `@Sendable` closure in `Views/Binding+Presented.swift`.
 
@@ -34,23 +34,21 @@ removing files. The model is licensed under the **NVIDIA Open Model License**, n
 MIT; keeping it out of the repo keeps the source tree MIT while the built app ships
 an NVIDIA-licensed model.
 
-## Immediate tasks
+## Tasks
 
-1. **Mic picks up the speakers.** Verified end to end on 2026-07-28: both channels transcribe, notes generate, both CAFs write. But with audio on speakers the mic also hears it, so system audio lands in *both* channels and the transcript duplicates itself — which then skews the summary. Fix is almost certainly `AVAudioEngine.inputNode.setVoiceProcessingEnabled(true)` in `MicrophoneCapture` for acoustic echo cancellation; note it can throw and can change the input format, so re-verify the mic path after enabling.
+**Tasks live in GitHub issues, not in this file.** `gh issue list` is the current
+list; don't add a to-do section back here.
 
-   **App Sandbox must stay off.** A sandboxed build creates the tap with `noErr` at every step and then reads pure digital silence, with no TCC prompt — it looks like a transcription bug but it's a capture-permission failure. Measured: `peak=0.0` sandboxed vs `-1.8 dBFS` unsandboxed, same code. This rules out Mac App Store distribution. `SystemAudioTap`'s `SilenceWatch` logs the verdict at `.notice`/`.error` on stop (`.info` never reaches `log show`).
-2. **Live transcript shows channels, not names.** `RecordingView.transcriptLine` renders `Me`/`Them` off `line.channel`; diarization is a post-pass over the CAF files, so names only land once the recording stops. In a local meeting everyone is on the mic, so *every* live line reads "Me" — which looks like a differentiation failure and isn't. Names during capture would mean running Sortformer streaming alongside the engines rather than after them.
-3. **In-room vs remote isn't modelled yet.** `Meeting.participantNames` now picks the roster per meeting (see `ParticipantRosterMenu`), and `SpeakerLabeling` drops the "me" voice from the system-tap channel since you can't be on the far end of your own call. But everyone else gets primed against *both* channels, because nothing records which side they were on — so an in-room colleague still burns a slot on the system tap, and vice versa. A per-participant in-room/remote toggle would recover those slots. Related: the roster can be set during or after a recording, not before it starts, so an ad-hoc recording's automatic pass runs with just your voice unless you set it mid-meeting.
-
-4. Calendar is read-only: SPEC goal 5 also wants "suggest recording when a meeting starts" and "attach notes to the event". Neither is implemented — `calendarEventID` is stored but never used afterward.
-
-5. `RecordingMode` (solo / in-person / video call) was designed but not built. What it should drive is mic voice processing: AEC on for video calls to kill speaker bleed, and `voiceProcessingAGCEnabled` is a separate toggle from AEC (an earlier note here wrongly conflated them). What it should **not** do is gate the system tap. Both channels stay on in every mode — input and output can be different devices, so someone recording alone through AirPods still has system audio worth keeping. An earlier version of this note said the tap was pointless for solo work; that was wrong.
-6. `SummarizationEngine.chunked` splits on a character budget; a single line longer than the budget still goes through whole, and an over-long first line appends an empty chunk.
-7. Playback of retained audio — files are written and purged but there's no UI to hear them.
+The two worth knowing before you touch the audio path: **#5** (the mic hears your
+speakers, so calls transcribe twice — the one issue blocking real use on a video
+call) and **#9** (the live transcript can only show Me/Them, which looks like a
+bug and isn't).
 
 ## Conventions & constraints
 
-- Local-only by construction: **no network entitlement, ever**. No analytics, no accounts.
+- **App Sandbox must stay off.** A sandboxed build creates the tap with `noErr` at every step and then reads pure digital silence, with no TCC prompt — it looks like a transcription bug but it's a capture-permission failure. Measured: `peak=0.0` sandboxed vs `-1.8 dBFS` unsandboxed, same code. This rules out Mac App Store distribution. `SystemAudioTap`'s `SilenceWatch` logs the verdict at `.notice`/`.error` on stop (`.info` never reaches `log show`).
+- **Both capture channels run in every recording mode.** Input and output can be different devices, so a solo recording through AirPods still has system audio worth keeping. `RecordingMode` (#12) drives echo cancellation, never whether the tap starts.
+- Local-only by construction: **no networking code and no network entitlement, ever**. With the sandbox off the entitlement enforces nothing, so the absence of `URLSession`, sockets, and `import Network` is the actual invariant — protect it in review. No analytics, no accounts.
 - Anything portable to iOS lives in `CheerioKit`; Core Audio tap code stays in the app target.
 - Realtime audio callbacks do no work — hand buffers off immediately (AsyncStream/Task).
 - Two transcription engines (mic/system) for the Me/Them split — that's deliberate; don't merge streams. Diarization sits *on top* of them, per-channel, to tell people apart within one channel.
