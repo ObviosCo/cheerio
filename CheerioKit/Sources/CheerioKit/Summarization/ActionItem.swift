@@ -34,7 +34,11 @@ public struct ActionItem: Codable, Sendable, Equatable {
     public var isOwner: Bool
     public var disposition: Disposition
 
-    public init(text: String, owner: String? = nil, isOwner: Bool, disposition: Disposition) {
+    /// Module-internal on purpose: production callers go through
+    /// ``resolved(from:ownerNames:)``, so no client can mint an impossible trust
+    /// state like `isOwner: false, disposition: .actionable`. Tests reach it via
+    /// `@testable`.
+    init(text: String, owner: String? = nil, isOwner: Bool, disposition: Disposition) {
         self.text = text
         self.owner = owner
         self.isOwner = isOwner

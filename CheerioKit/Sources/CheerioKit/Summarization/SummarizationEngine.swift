@@ -47,8 +47,11 @@ public actor SummarizationEngine {
 
     private let model: SystemLanguageModel
 
-    /// - Parameter model: injected rather than reached for, so v2 can hand in another
-    ///   model through the WWDC26 `LanguageModel` protocol without this actor changing.
+    /// - Parameter model: injected rather than reached for. The macOS 26 SDK's
+    ///   `LanguageModelSession` only accepts the concrete `SystemLanguageModel` — no
+    ///   `LanguageModel` protocol has shipped yet — so this is as pluggable as the
+    ///   framework allows today; when the protocol lands (announced at WWDC26), this
+    ///   parameter is the one place to widen.
     public init(model: SystemLanguageModel = .default) {
         self.model = model
     }
