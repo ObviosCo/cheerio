@@ -1,6 +1,7 @@
 import AppKit
 import CoreGraphics
 import Foundation
+import ImageIO
 
 // Captures one window of a running process, at the display's native scale.
 //
@@ -20,6 +21,18 @@ import Foundation
 //    success with a 200×218 image of it.
 // 3. Wait for the window to actually be there. The app is launched a moment earlier
 //    and SwiftUI's first frame isn't instant.
+//
+// Two more failure modes look like success to `screencapture` and are only visible in
+// the pixels it hands back:
+//
+// - `screencapture -l<id>` of *another process's* window is itself gated by Screen
+//   Recording TCC — on a fresh machine or CI runner it's the invoking terminal that
+//   needs the grant, not this binary. Denied, macOS hands back a full-size, solid
+//   black frame rather than an error, so the size check alone doesn't catch it; see
+//   `isSuspiciouslyBlank` below.
+// - A native-1x (non-Retina) display produces a capture that's the same pixel size as
+//   the window's point size, not double it. Labelled `-2x` and then halved again by
+//   the shell, that becomes a mislabeled 0.5x asset. See the scale check below.
 
 struct Options {
     var pid: pid_t = -1
@@ -74,6 +87,40 @@ func pixelSize(of path: String) -> (width: Int, height: Int)? {
         let height = properties[kCGImagePropertyPixelHeight] as? Int
     else { return nil }
     return (width, height)
+}
+
+/// True if every sampled pixel is pure black — what a Screen Recording permission
+/// denial looks like, rather than a decode failure or an actually-dark window.
+///
+/// A real Cheerio window always has visible chrome (title bar, traffic lights, text)
+/// that isn't (0, 0, 0), so a solid-black frame at the right size is the TCC denial,
+/// not content. Sampled on a grid rather than decoded fully: fast, and one non-black
+/// pixel anywhere is enough to clear it.
+func isSuspiciouslyBlank(at path: String) -> Bool {
+    guard let source = CGImageSourceCreateWithURL(URL(filePath: path) as CFURL, nil),
+        let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
+    else { return false }
+    let width = image.width, height = image.height
+    guard width > 0, height > 0 else { return false }
+    var pixels = [UInt8](repeating: 0, count: width * height * 4)
+    guard
+        let context = CGContext(
+            data: &pixels, width: width, height: height, bitsPerComponent: 8,
+            bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+    else { return false }
+    context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+    let stepX = max(1, width / 40)
+    let stepY = max(1, height / 40)
+    for y in stride(from: 0, to: height, by: stepY) {
+        for x in stride(from: 0, to: width, by: stepX) {
+            let offset = (y * width + x) * 4
+            if pixels[offset] != 0 || pixels[offset + 1] != 0 || pixels[offset + 2] != 0 {
+                return false
+            }
+        }
+    }
+    return true
 }
 
 func windows(for pid: pid_t) -> [Window] {
@@ -156,6 +203,41 @@ for attempt in 1...3 {
     if capture.terminationStatus == 0, let captured,
         captured.width >= Int(window.width), captured.height >= Int(window.height)
     {
+        // Neither of these is transient — retrying gets the same black frame or the
+        // same display, so both exit immediately instead of falling through to the
+        // retry below.
+        if isSuspiciouslyBlank(at: options.out) {
+            try? FileManager.default.removeItem(atPath: options.out)
+            FileHandle.standardError.write(
+                Data(
+                    """
+                    \(options.out) came back a solid black frame at the right size — \
+                    that's what macOS hands back for `screencapture -l` of another \
+                    process's window when Screen Recording permission hasn't been \
+                    granted, not a transient failure. Grant Screen Recording to \
+                    whatever process is invoking this script (your terminal, for a \
+                    local run) in System Settings → Privacy & Security → Screen \
+                    Recording, then re-run. CI captures should use the XCUITest path \
+                    (issue #61) instead, which isn't gated the same way.\n
+                    """.utf8))
+            exit(1)
+        }
+        let scaleX = Double(captured.width) / Double(window.width)
+        let scaleY = Double(captured.height) / Double(window.height)
+        guard scaleX >= 1.5, scaleY >= 1.5 else {
+            try? FileManager.default.removeItem(atPath: options.out)
+            FileHandle.standardError.write(
+                Data(
+                    """
+                    \(options.out) is \(captured.width)×\(captured.height)px for a \
+                    \(Int(window.width))×\(Int(window.height))pt window — that's \
+                    \(String(format: "%.1f", scaleX))x, not the 2x a Retina display \
+                    gives. This harness (and the shell's own halving into a 1x asset) \
+                    requires a Retina display; run it on one rather than publish a \
+                    mislabeled asset.\n
+                    """.utf8))
+            exit(1)
+        }
         print("captured \(window.id) “\(window.title)” → \(options.out)")
         exit(0)
     }

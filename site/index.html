@@ -120,7 +120,7 @@
                srcset="img/settings-callback.png 1x, img/settings-callback-2x.png 2x"
                width="480" height="450" loading="lazy"
                alt="Cheerio's Settings window on the Callback tab, headed “When a transcript is ready”. A monospaced Command field holds claude -p &quot;Turn my action items into tasks&quot;, with a “Run for” menu set to All recordings below it.">
-          <figcaption>When a meeting finishes processing, Cheerio can hand it to a command you name — the transcript as JSON on stdin, the meeting's ID and title in the environment. That's how your own tooling gets the notes without you pasting them anywhere.</figcaption>
+          <figcaption>When a meeting finishes processing, Cheerio can hand it to a command you name — the transcript as JSON on stdin, the meeting's ID and title in the environment. That's how your own tooling gets the notes without you pasting them anywhere. Cheerio itself never sends a transcript anywhere; naming <em>claude -p</em> here is your call, not Cheerio's, and a cloud-backed agent sends whatever it's handed on to its own model.</figcaption>
         </figure>
       </div>
     </div>

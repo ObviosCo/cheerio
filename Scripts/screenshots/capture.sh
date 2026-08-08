@@ -2,11 +2,17 @@
 #
 # Photographs the app against a seeded demo store.
 #
-#     ./Scripts/screenshots/capture.sh [--app <Cheerio.app>] [--out <dir>]
+#     ./Scripts/screenshots/capture.sh [--app <Cheerio.app>] [--out <dir>] [--skip-build]
 #
 # Writes a fixed set of PNGs to Scripts/screenshots/out (gitignored), each at the
 # display's native scale as `<name>-2x.png` plus a half-size `<name>.png`, which is
 # the 1x/2x pair site/index.html's `srcset` expects.
+#
+# Rebuilds Cheerio (Debug) by default, so a capture always comes off the code that's
+# actually checked out rather than whatever last happened to be sitting in build/.
+# Pass --skip-build to reuse an existing build/screenshots app as-is when iterating
+# on the harness itself and the app hasn't changed; pass --app to point at a build of
+# your own instead, which is used as-is and never rebuilt.
 #
 # How it stays away from your real data:
 #
@@ -35,12 +41,14 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${HERE}/../.." && pwd)"
 OUT="${HERE}/out"
 APP=""
+SKIP_BUILD=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --app) APP="$2"; shift 2 ;;
         --out) OUT="$2"; shift 2 ;;
-        -h|--help) sed -n '2,30p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        --skip-build) SKIP_BUILD=1; shift ;;
+        -h|--help) sed -n '2,36p' "${BASH_SOURCE[0]}"; exit 0 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
 done
@@ -48,10 +56,15 @@ done
 step() { printf '\033[34m→\033[0m %s\n' "$1"; }
 fail() { printf '\n\033[31m✗\033[0m %s\n\n' "$1" >&2; exit 1; }
 
-# 1. The app. Built into build/ (gitignored) unless one was passed in.
+# 1. The app. Built into build/ (gitignored) unless one was passed in. Rebuilt on
+#    every run by default — otherwise a stale build from a previous run keeps getting
+#    photographed after the code has moved on, silently. --skip-build opts back into
+#    the old "build once, iterate on the harness" behaviour; --app bypasses both.
 if [ -z "$APP" ]; then
     APP="${ROOT}/build/screenshots/Build/Products/Debug/Cheerio.app"
-    if [ ! -d "$APP" ]; then
+    if [ "$SKIP_BUILD" = 1 ]; then
+        [ -d "$APP" ] || fail "No app at ${APP} — drop --skip-build to build one, or pass --app."
+    else
         [ -d "${ROOT}/Cheerio.xcodeproj" ] || fail "No Cheerio.xcodeproj — run ./Scripts/bootstrap.sh first."
         step "Building Cheerio (Debug)"
         xcodebuild -project "${ROOT}/Cheerio.xcodeproj" -scheme Cheerio -configuration Debug \
@@ -64,7 +77,14 @@ BUNDLE_ID="$(defaults read "${APP}/Contents/Info" CFBundleIdentifier)"
 
 # 2. Scratch container, and a copy of your real preferences to put back afterwards.
 SCRATCH="$(mktemp -d /tmp/cheerio-screenshots.XXXXXX)"
-PREFS_BACKUP="$(mktemp /tmp/cheerio-prefs.XXXXXX.plist)"
+# BSD mktemp only substitutes trailing X's — a template like `prefs.XXXXXX.plist`
+# leaves the X's untouched (same literal name every run), and a second run then dies
+# under set -e when mkstemp refuses to recreate it. X's stay trailing; the extension
+# — which nothing here actually depends on, `defaults export` doesn't care — is added
+# by renaming afterwards.
+PREFS_BACKUP="$(mktemp /tmp/cheerio-prefs.XXXXXX)"
+mv "$PREFS_BACKUP" "${PREFS_BACKUP}.plist"
+PREFS_BACKUP="${PREFS_BACKUP}.plist"
 HAD_PREFS=0
 if defaults read "$BUNDLE_ID" >/dev/null 2>&1; then
     defaults export "$BUNDLE_ID" "$PREFS_BACKUP"
@@ -160,10 +180,13 @@ done
 
 step "Settings"
 # Tab order is the order of `SettingsView`'s TabView: General, Privacy,
-# Participants, Updates, Callback. SwiftUI stores the selection in this default, so
-# passing it as a launch argument opens the tab without a click. The Settings
-# window takes the selected tab's name as its title, which is also how it's told
-# apart from the library window behind it.
+# Participants, Updates, Callback, Agents. SwiftUI stores the selection in this
+# default, so passing it as a launch argument opens the tab without a click. The
+# Settings window takes the selected tab's name as its title, which is also how
+# it's told apart from the library window behind it.
+#
+# Agents (index 5) isn't shot here yet — it has nothing to show but a helper path
+# and a copy button, and it joins this gallery once capture runs on CI (issue #61).
 settings_shot() { # <name> <tab index> <window title> [extra app arguments...]
     local name="$1" tab="$2" title="$3"; shift 3
     shot "$name" --title-contains "$title" -- "${LIBRARY_ARGS[@]}" \
