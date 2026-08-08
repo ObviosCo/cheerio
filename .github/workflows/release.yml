@@ -72,8 +72,15 @@ permissions:
   contents: write
   actions: write
 
+# One fixed group across every ref, not one per tag: the appcast at site/appcast.xml
+# is a single shared mutable file, published by reading its current blob SHA and then
+# writing a new one (see "Publish appcast to the Pages site" below). Two tags released
+# concurrently would each read the same stale SHA and race to write it back, with the
+# second writer silently dropping the first release's appcast entry. Serializing all
+# release runs — regardless of tag — through one group is what makes that read-modify-
+# write safe.
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 jobs:

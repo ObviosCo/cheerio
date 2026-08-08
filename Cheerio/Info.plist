@@ -30,8 +30,10 @@
 
     <!-- Sparkle (automatic updates). This is the app's only network access, and the
          only reason it has any: the appcast below and the zip it points at, both on
-         Cheerio's own distribution endpoints. Nothing here runs while a recording is
-         in progress — see AppUpdater.swift. -->
+         Cheerio's own distribution endpoints. No check here starts while a recording
+         is in progress — see AppUpdater.swift. (A check or download already admitted
+         while idle is not aborted if a recording starts mid-cycle; that's a
+         documented edge, not machinery.) -->
 
     <!-- Published from site/appcast.xml by .github/workflows/release.yml. -->
     <key>SUFeedURL</key>

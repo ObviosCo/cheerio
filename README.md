@@ -76,10 +76,11 @@ on and nothing to pay for month to month — you run it, and you control it.
   attribution and note generation all run on-device, start to finish.
 - **The app's only network access is checking for its own updates.** Sparkle fetches the
   update feed at `https://obviosco.github.io/cheerio/appcast.xml` on a daily schedule, and the
-  zip from GitHub Releases if you accept an update. Both are Cheerio's own distribution
-  endpoints, and both are refused while a recording is running (see
-  [`Cheerio/Updates/AppUpdater.swift`](Cheerio/Updates/AppUpdater.swift)). You can switch the
-  checks off entirely in **Settings → Updates**; nothing else changes if you do.
+  zip from GitHub Releases if you accept an update — two requests, not one. Neither a
+  scheduled nor a manual check will *start* while a recording is running (see
+  [`Cheerio/Updates/AppUpdater.swift`](Cheerio/Updates/AppUpdater.swift)); an update already
+  downloading when you hit record is left to finish rather than aborted mid-transfer. You can
+  switch the checks off entirely in **Settings → Updates**; nothing else changes if you do.
 - **Nothing about you or your Mac is ever sent.** Sparkle's optional system profile — OS
   version, CPU, model, language appended to the feed request — is off, and the updater
   delegate refuses to add any feed parameters at all. No accounts, no telemetry, no analytics,
@@ -101,7 +102,7 @@ ceremony. Requires macOS 26 or later on Apple Silicon.
 
 Later versions install themselves. The app checks its own update feed once a day, offers what
 it finds, and can be set to download and install without asking — see **Settings → Updates**,
-and [Local-only by construction](#local-only-by-construction) for exactly what that costs in
+and [No service required](#no-service-required) for exactly what that costs in
 network terms.
 
 To build from source instead:

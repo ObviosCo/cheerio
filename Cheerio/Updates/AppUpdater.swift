@@ -114,24 +114,31 @@ final class UpdatePolicy: NSObject, SPUUpdaterDelegate {
         super.init()
     }
 
-    /// Keeps a scheduled check away from an active recording.
+    /// Gates the *start* of every update check — scheduled or user-initiated — away
+    /// from an active recording.
     ///
     /// Left alone, Sparkle's 24-hour timer will fire whenever it likes, and "whenever
     /// it likes" includes the middle of a call: it would put an update window in front
     /// of the meeting you are in, and with automatic installs turned on it would stage
     /// a replacement app under a process that is writing audio to disk.
     ///
-    /// Only *background* checks are refused. `.updates` is the user having just picked
-    /// "Check for Updates…" — they can see the meeting they're in, and Sparkle installs
-    /// nothing without another click.
+    /// Every check is refused while `session.state != .idle`, including `.updates` —
+    /// the user having just picked "Check for Updates…". Sparkle surfaces this
+    /// method's thrown error as the check's result, so a manual check mid-meeting
+    /// shows the user `UpdateDeferral.recordingInProgress`'s message instead of
+    /// silently doing nothing; that's the right UX for a check the user asked for.
     ///
-    /// Honest about what refusing costs: Sparkle treats this as a deferral, not a
-    /// shutdown — it reschedules — but it also records the attempt as the last check,
-    /// so a check vetoed mid-meeting is retried on the next interval (about a day
-    /// later) rather than as soon as the meeting ends. That is the whole of the
-    /// behavior; there is deliberately no catch-up machinery.
+    /// Honest about what this does and doesn't cover: it's a start-time gate only. A
+    /// check (or a download) already admitted while idle is not aborted if a recording
+    /// starts partway through it. That's a documented edge, not machinery — there is
+    /// deliberately no mechanism to cancel work in flight.
+    ///
+    /// Also honest about what refusing costs a *background* check: Sparkle treats this
+    /// as a deferral, not a shutdown — it reschedules — but it also records the
+    /// attempt as the last check, so a check vetoed mid-meeting is retried on the next
+    /// interval (about a day later) rather than as soon as the meeting ends. That is
+    /// the whole of the behavior; there is deliberately no catch-up machinery.
     func updater(_ updater: SPUUpdater, mayPerform updateCheck: SPUUpdateCheck) throws {
-        guard updateCheck == .updatesInBackground else { return }
         guard session.state == .idle else {
             throw UpdateDeferral.recordingInProgress
         }
