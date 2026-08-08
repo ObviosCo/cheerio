@@ -175,7 +175,8 @@ extension Meeting {
         var order: [Key] = []
         var grouped: [Key: [TranscriptSegment]] = [:]
         for segment in segments {
-            let scoped = TranscriptSegment.isDiarizerGeneratedLabel(segment.speakerLabel)
+            let scoped =
+                TranscriptSegment.isDiarizerGeneratedLabel(segment.speakerLabel)
                 ? segment.channel
                 : nil
             let key = Key(label: segment.displayLabel, channel: scoped)

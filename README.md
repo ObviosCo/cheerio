@@ -1,5 +1,7 @@
 # Cheerio
 
+[![CI](https://github.com/ObviosCo/cheerio/actions/workflows/ci.yml/badge.svg)](https://github.com/ObviosCo/cheerio/actions/workflows/ci.yml)
+
 Open-source AI meeting notes for macOS. Like Granola, but single-user, local-only, and free.
 
 Cheerio records both sides of a meeting straight off your Mac's audio hardware, transcribes it
@@ -61,6 +63,15 @@ Full scope and non-goals: [`docs/SPEC.md`](docs/SPEC.md).
 - No accounts, no telemetry, no analytics, no crash reporting.
 - The only network activity the app can cause is macOS itself fetching the speech model for
   your locale on first run.
+
+## Download
+
+Prebuilt binaries are attached to [GitHub Releases](https://github.com/ObviosCo/cheerio/releases):
+unzip, drop `Cheerio.app` in `/Applications`, and on first launch right-click → **Open** (or
+approve it under **System Settings → Privacy & Security**). Builds are ad-hoc signed, not
+notarized — macOS will warn once. Requires macOS 26 or later on Apple Silicon.
+
+To build from source instead:
 
 ## Requirements
 
@@ -212,6 +223,13 @@ Issues and pull requests are welcome. Two constraints are not up for negotiation
 networking code and no network entitlement, ever**, and no analytics or accounts. Beyond that,
 keep portable logic in `CheerioKit`, do no work on realtime audio callbacks, and leave strict
 concurrency on.
+
+CI runs `swift format lint --strict` (config in [`.swift-format`](.swift-format)), the package
+tests, and an app build on every PR. Format locally before pushing:
+
+```sh
+swift format --in-place --recursive Cheerio CheerioKit/Sources CheerioKit/Tests
+```
 
 ## License
 

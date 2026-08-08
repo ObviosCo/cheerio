@@ -36,8 +36,8 @@ enum SpeakerLabeling {
     static func label(meeting: Meeting, context: ModelContext) async throws {
         guard let modelURL = BundledModels.speakerDiarization else { throw LabelingError.modelMissing }
         guard let relativePath = meeting.audioDirectory,
-              let directory = try? AudioStorage.url(forRelativePath: relativePath),
-              FileManager.default.fileExists(atPath: directory.path)
+            let directory = try? AudioStorage.url(forRelativePath: relativePath),
+            FileManager.default.fileExists(atPath: directory.path)
         else { throw LabelingError.audioUnavailable }
 
         let service = SpeakerAttributionService(modelURL: modelURL)
@@ -89,7 +89,8 @@ enum SpeakerLabeling {
             // outranks the model, and clobbering that would make correcting pointless.
             for segment in meeting.segments
             where segment.channel == channel && !segment.isSpeakerLabelManual {
-                segment.speakerLabel = informative
+                segment.speakerLabel =
+                    informative
                     ? SpeakerAttribution.dominantLabel(
                         start: segment.startTime,
                         end: segment.endTime,
@@ -132,7 +133,7 @@ enum SpeakerLabeling {
     static func availableEnrolled(context: ModelContext) -> [EnrolledSpeaker] {
         allEnrolled(context: context).filter { speaker in
             guard let url = try? AudioStorage.url(forRelativePath: speaker.audioPath),
-                  FileManager.default.fileExists(atPath: url.path)
+                FileManager.default.fileExists(atPath: url.path)
             else {
                 log.error("Voice sample missing for \(speaker.name, privacy: .public)")
                 return false

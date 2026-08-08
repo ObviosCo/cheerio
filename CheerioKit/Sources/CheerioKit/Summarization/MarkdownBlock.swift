@@ -70,7 +70,7 @@ extension MarkdownBlock {
         guard !digits.isEmpty, digits.count <= 3 else { return nil }
         let afterDigits = line.dropFirst(digits.count)
         guard let punctuation = afterDigits.first, punctuation == "." || punctuation == ")",
-              afterDigits.dropFirst().first == " "
+            afterDigits.dropFirst().first == " "
         else { return nil }
         let text = afterDigits.dropFirst(2).trimmingCharacters(in: .whitespaces)
         return .listItem(marker: "\(digits)\(punctuation)", text: text)

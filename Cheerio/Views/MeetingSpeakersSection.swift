@@ -36,9 +36,11 @@ struct MeetingSpeakersSection: View {
                         row(for: summary)
                     }
                     Divider()
-                    Text("Renaming a speaker updates every line they're on. Corrections stick — “Re-identify speakers” leaves hand-named lines alone.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text(
+                        "Renaming a speaker updates every line they're on. Corrections stick — “Re-identify speakers” leaves hand-named lines alone."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             } label: {
@@ -203,10 +205,12 @@ private struct EnrollFromMeetingSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Use as voice sample")
                 .font(.headline)
-            Text("Takes the \(Int(summary.duration.rounded()))s this speaker was recorded for in this meeting and saves it as their reference clip.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            Text(
+                "Takes the \(Int(summary.duration.rounded()))s this speaker was recorded for in this meeting and saves it as their reference clip."
+            )
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
 
             TextField("Name", text: $name)
                 .onSubmit(commit)
@@ -224,10 +228,12 @@ private struct EnrollFromMeetingSheet: View {
             }
 
             if isDuplicate {
-                Text("“\(trimmedName)” is already enrolled — this adds a second sample under the same name, which wastes one of the four speaker slots.")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
+                Text(
+                    "“\(trimmedName)” is already enrolled — this adds a second sample under the same name, which wastes one of the four speaker slots."
+                )
+                .font(.caption)
+                .foregroundStyle(.orange)
+                .fixedSize(horizontal: false, vertical: true)
             }
 
             HStack {

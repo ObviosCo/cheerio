@@ -40,8 +40,10 @@ struct ParticipantsView: View {
             } header: {
                 Text("Enrolled voices")
             } footer: {
-                Text("Save as many voices as you like. At most \(SpeakerAttributionService.maximumSpeakers) are primed for any one meeting, chosen per meeting under “Who was here” — so a voice that wasn't in the room doesn't take a slot from someone who was.")
-                    .font(.caption)
+                Text(
+                    "Save as many voices as you like. At most \(SpeakerAttributionService.maximumSpeakers) are primed for any one meeting, chosen per meeting under “Who was here” — so a voice that wasn't in the room doesn't take a slot from someone who was."
+                )
+                .font(.caption)
             }
 
             Section("Add a voice") {
@@ -68,9 +70,11 @@ struct ParticipantsView: View {
                 } else {
                     // Up front, not after the fact: this guidance only appeared once
                     // recording had already started, so nobody knew how long to talk.
-                    Text("Have them talk naturally for about \(Int(EnrolledSpeaker.recommendedDuration)) seconds — read something aloud if it helps. Shorter samples get mistaken for similar voices, or split into two speakers mid-meeting.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text(
+                        "Have them talk naturally for about \(Int(EnrolledSpeaker.recommendedDuration)) seconds — read something aloud if it helps. Shorter samples get mistaken for similar voices, or split into two speakers mid-meeting."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                     Button("Record voice sample") { Task { await startRecording() } }
                         .disabled(pendingName.trimmingCharacters(in: .whitespaces).isEmpty)
                 }

@@ -101,11 +101,12 @@ final class CaptureSession {
         try await systemEngine.start()
 
         for engine in [micEngine, systemEngine] {
-            consumerTasks.append(Task { [weak self] in
-                for await update in engine.results {
-                    self?.handle(update, context: context)
-                }
-            })
+            consumerTasks.append(
+                Task { [weak self] in
+                    for await update in engine.results {
+                        self?.handle(update, context: context)
+                    }
+                })
         }
 
         // Audio-to-disk is a safety net, not a requirement: if it can't be set up
