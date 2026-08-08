@@ -88,10 +88,18 @@ struct OnboardingPermissionStepView: View {
     @ViewBuilder private var statusView: some View {
         switch status {
         case .notRequested, .requesting:
-            Button(kind.buttonLabel) { Task { await request() } }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(status == .requesting)
+            // The state flips synchronously in the action, before the Task is
+            // spawned: setting it inside `request()` left a window where a
+            // double-click enqueued two requests (two EventKit prompts, or two
+            // concurrent system-audio probe taps) before the button disabled.
+            Button(kind.buttonLabel) {
+                guard status != .requesting else { return }
+                status = .requesting
+                Task { await request() }
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(status == .requesting)
         case .granted:
             Label("Access granted", systemImage: "checkmark.circle.fill")
                 .foregroundStyle(.green)

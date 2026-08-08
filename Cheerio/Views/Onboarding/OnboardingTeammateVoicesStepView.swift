@@ -20,7 +20,7 @@ struct OnboardingTeammateVoicesStepView: View {
                 OnboardingHighlightRow(
                     symbol: "person.badge.plus",
                     text:
-                        "Enroll a teammate any time from Settings → Participants — the same 30-second recording you just did for yourself."
+                        "Enroll a teammate any time from Settings → Participants — a 30-second recording, the same way your own voice is enrolled."
                 )
                 OnboardingHighlightRow(
                     symbol: "hand.raised",
