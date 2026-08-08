@@ -124,7 +124,7 @@ extension CaptureSession.State {
     /// VoiceOver text for the menu-bar glyph — the icon alone can't be the only
     /// signal (docs/DESIGN-HANDOFF.md §4's "no state communicated by color
     /// alone" bar extends to shape-alone for assistive tech).
-    fileprivate var menuBarAccessibilityLabel: String {
+    var menuBarAccessibilityLabel: String {
         switch self {
         case .idle: "Cheerio: not recording"
         case .preparingModel: "Cheerio: preparing to record"
