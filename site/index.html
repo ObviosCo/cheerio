@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cheerio — AI meeting notes for macOS, on your own machine</title>
+<meta name="description" content="Open-source meeting notes for macOS. Records both sides of a call, transcribes and summarises on-device, and tells participants apart by name. No accounts, no subscription, no bot in the call.">
+<link rel="icon" href="logo/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="site.css">
+<meta property="og:title" content="Cheerio — AI meeting notes for macOS">
+<meta property="og:description" content="Records both sides of a call, transcribes and summarises on-device, and tells participants apart by name. Free and MIT-licensed.">
+<meta property="og:image" content="https://obviosco.github.io/cheerio/img/social-card.png">
+<meta property="og:type" content="website">
+</head>
+<body>
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="wordmark" href="./">Cheeri<svg class="wordmark-ring" viewBox="0 0 100 100" width="16" height="16" aria-hidden="true" focusable="false"><circle cx="50" cy="50" r="37" fill="none" stroke="currentColor" stroke-width="26"/></svg><span class="visually-hidden">o</span></a>
+    <nav class="site-nav" aria-label="Main">
+      <ul>
+        <li><a href="./" aria-current="page">Overview</a></li>
+        <li><a href="download.html">Download</a></li>
+        <li><a href="releases.html">Release notes</a></li>
+        <li><a href="https://github.com/ObviosCo/cheerio">Source</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+  <section class="section">
+    <div class="wrap stack stack--6">
+      <h1 class="claim">Meeting notes that never leave your Mac.</h1>
+      <p class="lede">Cheerio records both sides of a meeting, transcribes them on-device, tells the participants apart by name, and merges your rough notes with the transcript into something structured. No account, no subscription, and no bot joining the call.</p>
+      <div class="stack stack--3">
+        <p><a class="button button--primary" href="download.html">Get Cheerio</a></p>
+        <p class="caption">Free and MIT-licensed. Requires macOS 26 or later on Apple&nbsp;Silicon.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap">
+      <figure class="shot">
+        <img src="img/library.png"
+             srcset="img/library.png 1x, img/library-2x.png 2x"
+             width="1440" height="900"
+             alt="The Cheerio window. A sidebar lists past meetings by date; the detail pane shows enhanced notes with a summary and action items, a speakers panel naming four people, and a transcript below where each line is labelled with a coloured monogram for whoever said it.">
+        <figcaption>Reading a finished meeting: enhanced notes on top, the speakers the model resolved, and the full transcript with every line attributed.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap stack stack--8">
+      <div class="stack stack--3">
+        <p class="label">What it does</p>
+        <h2 class="section-title">Five things, and it does them locally.</h2>
+      </div>
+      <ul class="features">
+        <li>
+          <h3 class="sub-title">Captures without a bot</h3>
+          <p>Two independent streams — your microphone, and everyone else through a Core Audio process tap on system output. Works with Zoom, Meet, Teams, or anything else that makes sound, because it records audio rather than joining a call. Nothing has to support it first.</p>
+        </li>
+        <li>
+          <h3 class="sub-title">Transcribes on the machine</h3>
+          <p>Each stream gets its own transcriber, which is where the <em>Me</em> and <em>Them</em> split comes from. The live transcript appears as you talk; the final text is kept with timestamps.</p>
+        </li>
+        <li>
+          <h3 class="sub-title">Tells people apart by name</h3>
+          <p>The channel split can't separate three people sitting in one room, so a diarization pass runs over the recording afterwards. Enroll a voice once and it comes back named instead of <em>Speaker&nbsp;2</em>. Fix a label by hand and your correction outranks the model.</p>
+        </li>
+        <li>
+          <h3 class="sub-title">Treats your rough notes as the point</h3>
+          <p>A scratchpad sits beside the live transcript. What you bothered to type is the strongest signal about what mattered, so it's the first input to the summary, not an afterthought.</p>
+        </li>
+        <li>
+          <h3 class="sub-title">Keeps the audio only as long as you want</h3>
+          <p>Raw audio is written per channel so a failed transcription isn't fatal, then purged on your schedule — immediately, 24&nbsp;hours, 7&nbsp;days, 30&nbsp;days, or never. Seven days is the default.</p>
+        </li>
+        <li>
+          <h3 class="sub-title">Searches and exports</h3>
+          <p>Browse past meetings, search across titles, notes, transcripts and speaker names, and export any meeting as Markdown.</p>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap stack stack--6">
+      <div class="stack stack--3">
+        <p class="label">Where it's up to</p>
+        <h2 class="section-title">It works, and it's lightly tested.</h2>
+        <p class="muted" style="max-width:60ch">The app builds, runs, and records real meetings. Two things are worth knowing before you install it, and neither is hidden in a changelog.</p>
+      </div>
+
+      <div class="table-scroll">
+        <table>
+          <caption>Verified on macOS&nbsp;27 with Xcode&nbsp;26.</caption>
+          <thead>
+            <tr><th scope="col">Check</th><th scope="col">Result</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Package tests</th><td>47 tests, 8 suites, all pass</td></tr>
+            <tr><th scope="row">App build</th><td>Succeeds, 2 warnings</td></tr>
+            <tr><th scope="row">End-to-end capture</th><td>Verified 28 July 2026 — both channels transcribe and notes generate</td></tr>
+            <tr><th scope="row">Speaker differentiation, in person</th><td>Verified 31 July 2026 — 9 of 9 segments labelled correctly across 1–2&nbsp;second alternating turns</td></tr>
+            <tr><th scope="row">Live video call</th><td>Not yet verified</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="notice notice--attention">
+        <strong class="notice-label">Known issue · use headphones</strong>
+        <p>With meeting audio playing out loud, your microphone hears your speakers, so remote participants land in both channels and the transcript duplicates itself — which then skews the summary. Headphones avoid it entirely. Echo cancellation on the mic input is the next thing being built.</p>
+      </div>
+
+      <div class="notice notice--info">
+        <strong class="notice-label">Names arrive after you stop</strong>
+        <p>Speaker identification runs over the recorded audio once the meeting ends, so during a recording the transcript only knows which of the two audio channels a line came from. In an in-person meeting everyone is on the microphone, which makes the live transcript look like it can't tell anyone apart. It can, a moment later.</p>
+      </div>
+
+      <p class="small"><a href="https://github.com/ObviosCo/cheerio#current-status">The full status list is in the README</a>, including the four-speaker cap and what isn't built yet.</p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap">
+      <div class="card stack stack--4">
+        <h2 class="sub-title">Why it runs on your machine</h2>
+        <p class="muted">Every model Cheerio uses is already on your Mac — Apple's for speech and summarising, plus one bundled model for telling voices apart. There's no networking code in the app: no requests, no sockets, nothing. The one exception is macOS itself fetching the speech model for your language the first time you record.</p>
+        <p class="muted">That's a consequence of how it's built rather than a promise being sold to you. It does mean the app works on a plane, doesn't slow down when someone else's service does, and doesn't change behaviour the week a hosted model gets swapped underneath it.</p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap stack stack--4">
+    <nav aria-label="Footer">
+      <ul>
+        <li><a href="download.html">Download</a></li>
+        <li><a href="releases.html">Release notes</a></li>
+        <li><a href="https://github.com/ObviosCo/cheerio">Source</a></li>
+        <li><a href="https://github.com/ObviosCo/cheerio/issues">Issues</a></li>
+      </ul>
+    </nav>
+    <p class="caption">Cheerio is MIT-licensed. It bundles a diarization model under the NVIDIA Open Model License — check that before redistributing a build.</p>
+  </div>
+</footer>
+
+</body>
+</html>

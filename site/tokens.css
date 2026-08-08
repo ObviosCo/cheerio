@@ -1,0 +1,350 @@
+/* Cheerio design tokens
+ * Generated for the Cheerio website (github.com/ObviosCo/cheerio). MIT.
+ *
+ * SCOPE. These are the WEBSITE tokens. The macOS app consumes the same system
+ * through named colour sets in Assets.xcassets and the system font — see
+ * docs/token-map.md for the crossover table. Type tokens below apply to the
+ * website and wordmark only; the app uses SF via SwiftUI's semantic styles.
+ *
+ * Every colour has a light and a dark value. Nothing in this system is
+ * communicated by colour alone.
+ */
+
+/* ---- Self-hosted faces -----------------------------------------------
+ * Committed to site/fonts/ with their licences. No third-party requests:
+ * cache partitioning killed the shared-CDN benefit years ago, so hosting
+ * these on our own origin is both faster (no extra DNS + TLS on the render
+ * path) and free of the IP transfer that EU courts have repeatedly found
+ * unlawful without consent. Provenance for each file is in site/fonts/README.md.
+ *
+ * font-display: swap — text is readable in the fallback immediately and
+ * reflows once. On a page whose job is "decide if this is for you and
+ * download it", invisible text is the worse failure.
+ */
+@font-face {
+  font-family: "Literata";
+  src: url("fonts/Literata-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("fonts/IBMPlexSans-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("fonts/IBMPlexSans-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("fonts/JetBrainsMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: light dark;
+
+  /* ---- Brand: anchored by the shipped app icon (PR #15) ---------------- */
+  --ch-navy-900: #1E2B3F;   /* icon gradient, deep end */
+  --ch-navy-700: #2A3A55;   /* derived midpoint */
+  --ch-navy-500: #35496B;   /* icon gradient, light end */
+  --ch-copper-700: #A87040; /* icon ring, deep end */
+  --ch-copper-500: #C08757; /* derived midpoint */
+  --ch-copper-300: #D49E6C; /* icon ring, light end */
+
+  /* ---- Surfaces -------------------------------------------------------- */
+  --ch-surface-page: #FAFAF9;
+  --ch-surface-raised: #FFFFFF;
+  --ch-surface-sunken: #F2F4F5;
+
+  /* ---- Text ------------------------------------------------------------ */
+  --ch-text-primary: #171B1F;
+  --ch-text-secondary: #606468;
+  --ch-text-tertiary: #83868A;
+  --ch-text-on-accent: #FFFFFF;
+
+  /* ---- Borders --------------------------------------------------------- */
+  --ch-border-subtle: #E3E5E7;
+  --ch-border-default: #CED1D4;
+  --ch-border-strong: #A8ABAE;
+
+  /* ---- Accent: copper, darkened to clear AA as text -------------------- */
+  --ch-accent: #8C5D32;
+  --ch-accent-hover: #794C20;
+  --ch-accent-quiet: #F7EEE7;
+
+  /* ---- Semantic states (CVD-safe; always paired with icon + label) ----- */
+  --ch-success: #1A7A5C;
+  --ch-attention: #946000;
+  --ch-error: #C04525;
+  --ch-info: #2B6CB0;
+
+  /* ---- Recording ------------------------------------------------------- */
+  /* Copper, not red. The icon is a copper ring; recording fills it. Red is
+     reserved for failure. Colour is never the signal on its own — the filled
+     ring, the word "Recording" and the running timer always travel together. */
+  --ch-recording: #9D5F2A;
+  --ch-recording-quiet: #FAE7D9;
+
+  /* ---- Speaker identity ------------------------------------------------
+     Slot order is separation priority, not aesthetic sequence: two speakers
+     get slots 1 and 2, which are the furthest apart under every form of
+     colour blindness. Speaker colour fills the monogram chip and nothing
+     else — never transcript text, never a row background. */
+  --ch-speaker-self: #1D395B;
+  --ch-speaker-1: #B74441;
+  --ch-speaker-2: #0068B0;
+  --ch-speaker-3: #007967;
+  --ch-speaker-4: #844398;
+  --ch-speaker-5: #007D96;
+  --ch-speaker-6: #46773B;
+  --ch-speaker-7: #533D92;
+  --ch-speaker-8: #655C13;
+  --ch-speaker-unresolved: #7D8185;
+  --ch-speaker-on-chip: #FFFFFF;
+
+  /* ---- Type: WEBSITE AND WORDMARK ONLY. The app uses SF. --------------- */
+  /* Two sans weights are committed: 400 and 600. Do not call for anything else.
+     700 gets synthesised into mush; 500 fails more quietly — CSS resolves it
+     down to 400, so the page renders lighter than the spec says and nobody
+     notices. Labels and eyebrows are 600. */
+  --ch-font-display: Literata, Georgia, "Times New Roman", serif;
+  --ch-font-sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --ch-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --ch-size-display: 3.5rem;   /* 56 — the hero claim. Serif. */
+  --ch-size-h1: 2.5rem;        /* 40 — page title. Serif. */
+  --ch-size-h2: 1.5rem;        /* 24 — section. Sans 600. */
+  --ch-size-h3: 1.1875rem;     /* 19 — subsection. Sans 600. */
+  --ch-size-body: 1.0625rem;   /* 17 */
+  --ch-size-small: 0.9375rem;  /* 15 */
+  --ch-size-caption: 0.8125rem;/* 13 */
+  --ch-size-label: 0.75rem;    /* 12 — uppercase, tracked, weight 600 */
+  --ch-size-code: 0.875rem;    /* 14 */
+
+  --ch-leading-tight: 1.12;
+  --ch-leading-snug: 1.3;
+  --ch-leading-body: 1.6;
+  --ch-tracking-display: -0.018em;
+  --ch-tracking-heading: -0.01em;
+  --ch-tracking-label: 0.08em;
+
+  /* ---- Spacing: 4px grid ----------------------------------------------- */
+  --ch-space-1: 4px;   --ch-space-2: 8px;   --ch-space-3: 12px;
+  --ch-space-4: 16px;  --ch-space-5: 20px;  --ch-space-6: 24px;
+  --ch-space-8: 32px;  --ch-space-10: 40px; --ch-space-12: 48px;
+  --ch-space-16: 64px; --ch-space-20: 80px; --ch-space-24: 96px;
+
+  /* ---- Radii ----------------------------------------------------------- */
+  --ch-radius-sm: 4px; --ch-radius-md: 8px; --ch-radius-lg: 12px;
+  --ch-radius-xl: 16px; --ch-radius-full: 999px;
+
+  /* ---- Motion: quiet, no bounce ---------------------------------------- */
+  --ch-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --ch-dur-fast: 120ms; --ch-dur-base: 200ms; --ch-dur-slow: 360ms;
+
+  /* ---- Elevation: navy-tinted, never black ----------------------------- */
+  --ch-shadow-subtle: 0 1px 2px rgba(30, 43, 63, 0.06), 0 1px 1px rgba(30, 43, 63, 0.04);
+  --ch-shadow-medium: 0 2px 8px rgba(30, 43, 63, 0.08), 0 1px 2px rgba(30, 43, 63, 0.06);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-ch-theme="light"]) {
+    --ch-surface-page: #14181F;
+    --ch-surface-raised: #1C222C;
+    --ch-surface-sunken: #090E13;
+    --ch-text-primary: #EBEFF2;
+    --ch-text-secondary: #A6ABB1;
+    --ch-text-tertiary: #7B8187;
+    --ch-text-on-accent: #0E1218;
+    --ch-border-subtle: #25292F;
+    --ch-border-default: #353B42;
+    --ch-border-strong: #515961;
+    --ch-accent: #E2B487;
+    --ch-accent-hover: #F1C9A1;
+    --ch-accent-quiet: #2A1C10;
+    --ch-success: #69D4BE;
+    --ch-attention: #E9B364;
+    --ch-error: #FAA493;
+    --ch-info: #8FC1FF;
+    --ch-recording: #DBA26F;
+    --ch-recording-quiet: #312012;
+    --ch-speaker-self: #85A7D3;
+    --ch-speaker-1: #F78D85;
+    --ch-speaker-2: #72B2EF;
+    --ch-speaker-3: #61C6B1;
+    --ch-speaker-4: #CC91DE;
+    --ch-speaker-5: #83D6EA;
+    --ch-speaker-6: #98CF8B;
+    --ch-speaker-7: #9E8AE7;
+    --ch-speaker-8: #B0A75E;
+    --ch-speaker-unresolved: #70757A;
+    --ch-speaker-on-chip: #0E1218;
+    --ch-shadow-subtle: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --ch-shadow-medium: 0 2px 8px rgba(0, 0, 0, 0.5);
+  }
+}
+
+/* Forced appearance. Set data-ch-theme on any element and its subtree follows —
+   used by the token spec page to show light and dark side by side, and available
+   to the site if a manual theme switch is ever added. */
+[data-ch-theme="light"] {
+  color-scheme: light;
+  /* ---- Brand: anchored by the shipped app icon (PR #15) ---------------- */
+  --ch-navy-900: #1E2B3F;   /* icon gradient, deep end */
+  --ch-navy-700: #2A3A55;   /* derived midpoint */
+  --ch-navy-500: #35496B;   /* icon gradient, light end */
+  --ch-copper-700: #A87040; /* icon ring, deep end */
+  --ch-copper-500: #C08757; /* derived midpoint */
+  --ch-copper-300: #D49E6C; /* icon ring, light end */
+
+  /* ---- Surfaces -------------------------------------------------------- */
+  --ch-surface-page: #FAFAF9;
+  --ch-surface-raised: #FFFFFF;
+  --ch-surface-sunken: #F2F4F5;
+
+  /* ---- Text ------------------------------------------------------------ */
+  --ch-text-primary: #171B1F;
+  --ch-text-secondary: #606468;
+  --ch-text-tertiary: #83868A;
+  --ch-text-on-accent: #FFFFFF;
+
+  /* ---- Borders --------------------------------------------------------- */
+  --ch-border-subtle: #E3E5E7;
+  --ch-border-default: #CED1D4;
+  --ch-border-strong: #A8ABAE;
+
+  /* ---- Accent: copper, darkened to clear AA as text -------------------- */
+  --ch-accent: #8C5D32;
+  --ch-accent-hover: #794C20;
+  --ch-accent-quiet: #F7EEE7;
+
+  /* ---- Semantic states (CVD-safe; always paired with icon + label) ----- */
+  --ch-success: #1A7A5C;
+  --ch-attention: #946000;
+  --ch-error: #C04525;
+  --ch-info: #2B6CB0;
+
+  /* ---- Recording ------------------------------------------------------- */
+  /* Copper, not red. The icon is a copper ring; recording fills it. Red is
+     reserved for failure. Colour is never the signal on its own — the filled
+     ring, the word "Recording" and the running timer always travel together. */
+  --ch-recording: #9D5F2A;
+  --ch-recording-quiet: #FAE7D9;
+
+  /* ---- Speaker identity ------------------------------------------------
+     Slot order is separation priority, not aesthetic sequence: two speakers
+     get slots 1 and 2, which are the furthest apart under every form of
+     colour blindness. Speaker colour fills the monogram chip and nothing
+     else — never transcript text, never a row background. */
+  --ch-speaker-self: #1D395B;
+  --ch-speaker-1: #B74441;
+  --ch-speaker-2: #0068B0;
+  --ch-speaker-3: #007967;
+  --ch-speaker-4: #844398;
+  --ch-speaker-5: #007D96;
+  --ch-speaker-6: #46773B;
+  --ch-speaker-7: #533D92;
+  --ch-speaker-8: #655C13;
+  --ch-speaker-unresolved: #7D8185;
+  --ch-speaker-on-chip: #FFFFFF;
+
+  /* ---- Type: WEBSITE AND WORDMARK ONLY. The app uses SF. --------------- */
+  /* Two sans weights are committed: 400 and 600. Do not call for anything else.
+     700 gets synthesised into mush; 500 fails more quietly — CSS resolves it
+     down to 400, so the page renders lighter than the spec says and nobody
+     notices. Labels and eyebrows are 600. */
+  --ch-font-display: Literata, Georgia, "Times New Roman", serif;
+  --ch-font-sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --ch-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --ch-size-display: 3.5rem;   /* 56 — the hero claim. Serif. */
+  --ch-size-h1: 2.5rem;        /* 40 — page title. Serif. */
+  --ch-size-h2: 1.5rem;        /* 24 — section. Sans 600. */
+  --ch-size-h3: 1.1875rem;     /* 19 — subsection. Sans 600. */
+  --ch-size-body: 1.0625rem;   /* 17 */
+  --ch-size-small: 0.9375rem;  /* 15 */
+  --ch-size-caption: 0.8125rem;/* 13 */
+  --ch-size-label: 0.75rem;    /* 12 — uppercase, tracked, weight 600 */
+  --ch-size-code: 0.875rem;    /* 14 */
+
+  --ch-leading-tight: 1.12;
+  --ch-leading-snug: 1.3;
+  --ch-leading-body: 1.6;
+  --ch-tracking-display: -0.018em;
+  --ch-tracking-heading: -0.01em;
+  --ch-tracking-label: 0.08em;
+
+  /* ---- Spacing: 4px grid ----------------------------------------------- */
+  --ch-space-1: 4px;   --ch-space-2: 8px;   --ch-space-3: 12px;
+  --ch-space-4: 16px;  --ch-space-5: 20px;  --ch-space-6: 24px;
+  --ch-space-8: 32px;  --ch-space-10: 40px; --ch-space-12: 48px;
+  --ch-space-16: 64px; --ch-space-20: 80px; --ch-space-24: 96px;
+
+  /* ---- Radii ----------------------------------------------------------- */
+  --ch-radius-sm: 4px; --ch-radius-md: 8px; --ch-radius-lg: 12px;
+  --ch-radius-xl: 16px; --ch-radius-full: 999px;
+
+  /* ---- Motion: quiet, no bounce ---------------------------------------- */
+  --ch-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --ch-dur-fast: 120ms; --ch-dur-base: 200ms; --ch-dur-slow: 360ms;
+
+  /* ---- Elevation: navy-tinted, never black ----------------------------- */
+  --ch-shadow-subtle: 0 1px 2px rgba(30, 43, 63, 0.06), 0 1px 1px rgba(30, 43, 63, 0.04);
+  --ch-shadow-medium: 0 2px 8px rgba(30, 43, 63, 0.08), 0 1px 2px rgba(30, 43, 63, 0.06);
+}
+[data-ch-theme="dark"] {
+  color-scheme: dark;
+
+  --ch-surface-page: #14181F;
+  --ch-surface-raised: #1C222C;
+  --ch-surface-sunken: #090E13;
+
+  --ch-text-primary: #EBEFF2;
+  --ch-text-secondary: #A6ABB1;
+  --ch-text-tertiary: #7B8187;
+  --ch-text-on-accent: #0E1218;
+
+  --ch-border-subtle: #25292F;
+  --ch-border-default: #353B42;
+  --ch-border-strong: #515961;
+
+  --ch-accent: #E2B487;
+  --ch-accent-hover: #F1C9A1;
+  --ch-accent-quiet: #2A1C10;
+
+  --ch-success: #69D4BE;
+  --ch-attention: #E9B364;
+  --ch-error: #FAA493;
+  --ch-info: #8FC1FF;
+
+  --ch-recording: #DBA26F;
+  --ch-recording-quiet: #312012;
+
+  --ch-speaker-self: #85A7D3;
+  --ch-speaker-1: #F78D85;
+  --ch-speaker-2: #72B2EF;
+  --ch-speaker-3: #61C6B1;
+  --ch-speaker-4: #CC91DE;
+  --ch-speaker-5: #83D6EA;
+  --ch-speaker-6: #98CF8B;
+  --ch-speaker-7: #9E8AE7;
+  --ch-speaker-8: #B0A75E;
+  --ch-speaker-unresolved: #70757A;
+  --ch-speaker-on-chip: #0E1218;
+
+  --ch-shadow-subtle: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --ch-shadow-medium: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+@media (prefers-reduced-motion: reduce) {
+  :root { --ch-dur-fast: 1ms; --ch-dur-base: 1ms; --ch-dur-slow: 1ms; }
+}

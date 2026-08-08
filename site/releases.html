@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cheerio release notes</title>
+<meta name="description" content="What changed in each version of Cheerio.">
+<link rel="icon" href="logo/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="wordmark" href="./">Cheeri<svg class="wordmark-ring" viewBox="0 0 100 100" width="16" height="16" aria-hidden="true" focusable="false"><circle cx="50" cy="50" r="37" fill="none" stroke="currentColor" stroke-width="26"/></svg><span class="visually-hidden">o</span></a>
+    <nav class="site-nav" aria-label="Main">
+      <ul>
+        <li><a href="./">Overview</a></li>
+        <li><a href="download.html">Download</a></li>
+        <li><a href="releases.html" aria-current="page">Release notes</a></li>
+        <li><a href="https://github.com/ObviosCo/cheerio">Source</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+  <section class="section">
+    <div class="wrap wrap--narrow stack stack--4">
+      <h1 class="page-title">Release notes</h1>
+      <p class="lede">Every version, newest first. Each one has a permanent link — right-click the version number to copy it.</p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap wrap--narrow">
+
+<!-- ==========================================================================
+     ENTRY TEMPLATE — copy this block, do not improvise a new shape.
+
+     This page runs for years and is written by an agent, so the structure is
+     the contract. Copy the block below, fill it in, and put it directly under
+     this comment so the newest release is always first.
+
+     <article class="release" id="vX-Y-Z">
+       <div class="stack stack--4">
+         <header class="stack stack--2">
+           <h2 class="release-version"><a href="#vX-Y-Z">X.Y.Z</a></h2>
+           <p class="release-meta">
+             <time datetime="YYYY-MM-DD">D Month YYYY</time>
+             <span aria-hidden="true">·</span>
+             <a href="https://github.com/ObviosCo/cheerio/releases/tag/vX.Y.Z">Download</a>
+             <span aria-hidden="true">·</span>
+             <a href="https://github.com/ObviosCo/cheerio/compare/vPREV...vX.Y.Z">Changes since PREV</a>
+           </p>
+         </header>
+         <p class="release-summary">ONE sentence on what this release is for.</p>
+         <section class="stack stack--2">
+           <h3>Added</h3>
+           <ul><li>...</li></ul>
+         </section>
+         <section class="stack stack--2">
+           <h3>Fixed</h3>
+           <ul><li>...</li></ul>
+         </section>
+         <section class="stack stack--2">
+           <h3>Known issues</h3>
+           <ul><li>...</li></ul>
+         </section>
+       </div>
+     </article>
+
+     RULES
+     - The id is the version with dots as hyphens, prefixed v: 0.2.1 -> v0-2-1.
+       It is a permalink. Never change one after it ships.
+     - Headings, in this order, and only the ones that apply:
+       Added / Changed / Fixed / Known issues / Breaking.
+       Breaking goes FIRST when present, not last.
+     - The summary is one sentence and says what the release is FOR. Not
+       "various improvements and bug fixes" — say the thing.
+     - Name what broke, in the words a user would use. "The mic heard your
+       speakers and the transcript said everything twice", not "resolved an
+       audio routing issue".
+     - Sentence case. No exclamation marks. Never "we're excited to announce".
+     - Known issues is not optional when there are any. The README lists what
+       doesn't work; this page matches that register.
+     - No release with nothing user-visible in it. If it's only refactoring,
+       it doesn't get an entry.
+     ========================================================================== -->
+
+      <article class="release" id="v0-1-0">
+        <div class="stack stack--4">
+          <header class="stack stack--2">
+            <h2 class="release-version"><a href="#v0-1-0">0.1.0</a></h2>
+            <p class="release-meta">
+              <time datetime="2026-08-07">7 August 2026</time>
+              <span aria-hidden="true">·</span>
+              <span>Not yet published</span>
+              <span aria-hidden="true">·</span>
+              <a href="https://github.com/ObviosCo/cheerio">Source</a>
+            </p>
+          </header>
+
+          <p class="release-summary">The first build that records a real meeting end to end and gives you notes worth reading afterwards.</p>
+
+          <section class="stack stack--2">
+            <h3>Added</h3>
+            <ul>
+              <li>Records your microphone and system audio as two separate streams, so any meeting app works and nothing joins your call.</li>
+              <li>Transcribes both streams on-device, live, labelled <em>Me</em> and <em>Them</em>.</li>
+              <li>Identifies speakers by name after the recording stops. Enroll a voice once in Settings&nbsp;→ Participants and it comes back named instead of <em>Speaker&nbsp;2</em>.</li>
+              <li>Corrects a speaker on one line or across a whole meeting. Your correction outranks the model and survives re-running identification.</li>
+              <li>A rough-notes scratchpad beside the live transcript, which becomes the first input to the summary rather than an afterthought.</li>
+              <li>Generates enhanced notes locally after the meeting — summary, key points, decisions, action items.</li>
+              <li>Titles recordings from your calendar, if you let it. Refusing calendar access costs you only the convenience.</li>
+              <li>A searchable library across titles, notes, transcripts and speaker names, and Markdown export for any meeting.</li>
+              <li>Audio retention you set: discard immediately, 24&nbsp;hours, 7&nbsp;days, 30&nbsp;days, or keep forever. Seven days is the default.</li>
+              <li>A menu-bar item that starts and stops a recording without opening the window.</li>
+            </ul>
+          </section>
+
+          <section class="stack stack--2">
+            <h3>Known issues</h3>
+            <ul>
+              <li>Your microphone hears your speakers. With meeting audio playing out loud it lands in both channels and the transcript duplicates itself, which skews the summary. Use headphones until echo cancellation is in.</li>
+              <li>The live transcript shows <em>Me</em> and <em>Them</em>, not names — identification runs over the recording once it stops. In an in-person meeting everyone is on the microphone, so every live line reads <em>Me</em>. It looks like a failure and isn't.</li>
+              <li>At most four speakers per channel. That's a hard limit of the speaker model; beyond four, voices get merged into existing slots and the app tells you who it left out rather than dropping them quietly.</li>
+              <li>Nothing records which side of a call someone was on, so each enrolled participant is checked against both channels and can use up a slot on the wrong one.</li>
+              <li>Calendar is read-only. Recordings take their title from the current event, but suggesting a recording when a meeting starts, and attaching notes back to the event, aren't built.</li>
+              <li>Retained audio can't be played back yet. It's written and purged on schedule, but there's no way to listen to it.</li>
+              <li>Never tested against a live video call. In-person recording is verified; a Zoom or Meet call is not.</li>
+            </ul>
+          </section>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap stack stack--4">
+    <nav aria-label="Footer">
+      <ul>
+        <li><a href="./">Overview</a></li>
+        <li><a href="download.html">Download</a></li>
+        <li><a href="https://github.com/ObviosCo/cheerio">Source</a></li>
+        <li><a href="https://github.com/ObviosCo/cheerio/issues">Issues</a></li>
+      </ul>
+    </nav>
+    <p class="caption">Cheerio is MIT-licensed. It bundles a diarization model under the NVIDIA Open Model License — check that before redistributing a build.</p>
+  </div>
+</footer>
+
+</body>
+</html>

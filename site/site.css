@@ -1,0 +1,440 @@
+/* Cheerio website
+ *
+ * Everything visual comes from tokens.css. This file is layout and components
+ * only — if you find yourself writing a hex value here, it belongs there.
+ *
+ * No JavaScript on this site, so no state lives here either. Light and dark
+ * come from prefers-color-scheme in tokens.css.
+ */
+
+@import url("tokens.css");
+
+/* ---- Reset, lightly ---------------------------------------------------- */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  -webkit-text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+}
+
+body {
+  margin: 0;
+  background: var(--ch-surface-page);
+  color: var(--ch-text-primary);
+  font-family: var(--ch-font-sans);
+  font-size: var(--ch-size-body);
+  line-height: var(--ch-leading-body);
+  text-wrap: pretty;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 { text-wrap: balance; margin: 0; }
+p, ul, ol { margin: 0; }
+img, svg { max-width: 100%; }
+
+a {
+  color: var(--ch-accent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+a:hover { color: var(--ch-accent-hover); }
+
+/* One focus treatment, everywhere, and it is never removed. */
+:focus-visible {
+  outline: 2px solid var(--ch-accent);
+  outline-offset: 2px;
+  border-radius: var(--ch-radius-sm);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.skip-link {
+  position: absolute;
+  left: var(--ch-space-4);
+  top: calc(-1 * var(--ch-space-16));
+  z-index: 10;
+  padding: var(--ch-space-2) var(--ch-space-4);
+  background: var(--ch-surface-raised);
+  border: 1px solid var(--ch-border-strong);
+  border-radius: var(--ch-radius-md);
+  text-decoration: none;
+  transition: top var(--ch-dur-fast) var(--ch-ease);
+}
+.skip-link:focus { top: var(--ch-space-4); }
+
+/* ---- Shell -------------------------------------------------------------- */
+
+.wrap {
+  width: 100%;
+  max-width: 60rem;
+  margin-inline: auto;
+  padding-inline: var(--ch-space-6);
+}
+.wrap--narrow { max-width: 44rem; }
+
+.site-header {
+  border-bottom: 1px solid var(--ch-border-subtle);
+  padding-block: var(--ch-space-5);
+}
+.site-header > .wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ch-space-4);
+}
+
+.site-nav ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ch-space-6);
+  list-style: none;
+  padding: 0;
+}
+.site-nav a {
+  color: var(--ch-text-secondary);
+  text-decoration: none;
+  font-size: var(--ch-size-small);
+}
+.site-nav a:hover { color: var(--ch-text-primary); }
+.site-nav a[aria-current="page"] {
+  color: var(--ch-text-primary);
+  text-decoration: underline;
+  text-underline-offset: 5px;
+}
+
+/* ---- Wordmark -----------------------------------------------------------
+ * Live text plus the inline ring, so it inherits the type scale and stays
+ * selectable. The trailing "o" is real text hidden from sight but present for
+ * screen readers and for anyone reading this with CSS off. */
+
+.wordmark {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.02em;
+  font-family: var(--ch-font-display);
+  font-size: 1.5rem;
+  line-height: 1;
+  letter-spacing: -0.014em;
+  color: var(--ch-text-primary);
+  text-decoration: none;
+}
+.wordmark-ring {
+  width: 0.52em;
+  height: 0.52em;
+  color: var(--ch-accent);
+  flex: none;
+  align-self: baseline;
+}
+.wordmark .visually-hidden { position: static; width: 0; height: 0; overflow: hidden; }
+
+/* ---- Type roles ---------------------------------------------------------
+ * The serif appears exactly twice on this site: the wordmark, and the one
+ * claim in the home hero. A page title is doing a job, not making a claim, so
+ * it is set in the sans even though it is still an <h1>. */
+
+.claim {
+  font-family: var(--ch-font-display);
+  font-weight: 400;
+  font-size: clamp(2.25rem, 6vw, var(--ch-size-display));
+  line-height: var(--ch-leading-tight);
+  letter-spacing: var(--ch-tracking-display);
+}
+
+.page-title {
+  font-weight: 600;
+  font-size: clamp(1.75rem, 4vw, 2rem);
+  line-height: var(--ch-leading-snug);
+  letter-spacing: var(--ch-tracking-heading);
+}
+
+.section-title {
+  font-weight: 600;
+  font-size: var(--ch-size-h2);
+  line-height: var(--ch-leading-snug);
+  letter-spacing: var(--ch-tracking-heading);
+}
+
+.sub-title {
+  font-weight: 600;
+  font-size: var(--ch-size-h3);
+  line-height: var(--ch-leading-snug);
+  letter-spacing: var(--ch-tracking-heading);
+}
+
+.label {
+  font-size: var(--ch-size-label);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--ch-tracking-label);
+  color: var(--ch-accent);
+}
+
+.lede {
+  font-size: 1.1875rem;
+  color: var(--ch-text-secondary);
+  max-width: 46ch;
+}
+
+.muted { color: var(--ch-text-secondary); }
+.small { font-size: var(--ch-size-small); }
+.caption { font-size: var(--ch-size-caption); color: var(--ch-text-secondary); }
+
+code, kbd, samp, pre {
+  font-family: var(--ch-font-mono);
+  font-size: var(--ch-size-code);
+  font-feature-settings: "tnum" 1, "zero" 1;
+}
+:not(pre) > code {
+  background: var(--ch-surface-sunken);
+  border: 1px solid var(--ch-border-subtle);
+  border-radius: var(--ch-radius-sm);
+  padding: 0.1em 0.35em;
+}
+
+pre {
+  background: var(--ch-surface-sunken);
+  border: 1px solid var(--ch-border-subtle);
+  border-radius: var(--ch-radius-md);
+  padding: var(--ch-space-4) var(--ch-space-5);
+  overflow-x: auto;
+  line-height: 1.7;
+  margin: 0;
+}
+
+/* ---- Rhythm -------------------------------------------------------------- */
+
+.section { padding-block: var(--ch-space-16); }
+.section + .section { padding-top: 0; }
+.stack { display: flex; flex-direction: column; }
+.stack--2 { gap: var(--ch-space-2); }
+.stack--3 { gap: var(--ch-space-3); }
+.stack--4 { gap: var(--ch-space-4); }
+.stack--6 { gap: var(--ch-space-6); }
+.stack--8 { gap: var(--ch-space-8); }
+
+/* ---- Buttons -------------------------------------------------------------- */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  padding: var(--ch-space-3) var(--ch-space-5);
+  border-radius: var(--ch-radius-md);
+  border: 1px solid transparent;
+  font-size: var(--ch-size-body);
+  font-weight: 600;
+  text-decoration: none;
+  transition: background var(--ch-dur-fast) var(--ch-ease),
+              border-color var(--ch-dur-fast) var(--ch-ease);
+}
+.button--primary {
+  background: var(--ch-accent);
+  color: var(--ch-text-on-accent);
+}
+.button--primary:hover {
+  background: var(--ch-accent-hover);
+  color: var(--ch-text-on-accent);
+}
+.button--secondary {
+  border-color: var(--ch-border-strong);
+  color: var(--ch-text-primary);
+}
+.button--secondary:hover {
+  border-color: var(--ch-text-secondary);
+  background: var(--ch-surface-sunken);
+  color: var(--ch-text-primary);
+}
+.button[aria-disabled="true"] {
+  background: var(--ch-surface-sunken);
+  border-color: var(--ch-border-default);
+  color: var(--ch-text-secondary);
+  cursor: not-allowed;
+}
+
+/* ---- Cards and notices ----------------------------------------------------- */
+
+.card {
+  background: var(--ch-surface-raised);
+  border: 1px solid var(--ch-border-subtle);
+  border-radius: var(--ch-radius-lg);
+  padding: var(--ch-space-6);
+  box-shadow: var(--ch-shadow-subtle);
+}
+
+/* Semantic state, never colour alone: each notice carries a word as well. */
+.notice {
+  border: 1px solid var(--ch-border-default);
+  border-radius: var(--ch-radius-md);
+  padding: var(--ch-space-4) var(--ch-space-5);
+  background: var(--ch-surface-sunken);
+}
+.notice > :first-child { margin-top: 0; }
+.notice-label {
+  display: block;
+  font-size: var(--ch-size-label);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--ch-tracking-label);
+  margin-bottom: var(--ch-space-2);
+}
+.notice--attention { border-color: var(--ch-attention); }
+.notice--attention .notice-label { color: var(--ch-attention); }
+.notice--info { border-color: var(--ch-info); }
+.notice--info .notice-label { color: var(--ch-info); }
+
+/* ---- Feature list ---------------------------------------------------------- */
+
+.features {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  gap: var(--ch-space-8) var(--ch-space-10);
+  list-style: none;
+  padding: 0;
+}
+.features h3 { margin-bottom: var(--ch-space-2); }
+.features p { color: var(--ch-text-secondary); font-size: var(--ch-size-small); }
+
+/* ---- Tables ---------------------------------------------------------------- */
+
+.table-scroll { overflow-x: auto; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--ch-size-small);
+}
+caption {
+  text-align: left;
+  color: var(--ch-text-secondary);
+  font-size: var(--ch-size-caption);
+  padding-bottom: var(--ch-space-3);
+}
+th, td {
+  text-align: left;
+  padding: var(--ch-space-3) var(--ch-space-4) var(--ch-space-3) 0;
+  border-bottom: 1px solid var(--ch-border-subtle);
+  vertical-align: top;
+}
+th { font-weight: 600; }
+thead th { border-bottom-color: var(--ch-border-default); }
+
+/* ---- Screenshot ------------------------------------------------------------
+ * Sized so the page holds its shape whether or not the image is present —
+ * the app is early and this file may land before a screenshot worth shipping
+ * does. See img/README.md for what to capture. */
+
+.shot {
+  margin: 0;
+  border: 1px solid var(--ch-border-default);
+  border-radius: var(--ch-radius-lg);
+  overflow: hidden;
+  background: var(--ch-surface-sunken);
+  box-shadow: var(--ch-shadow-medium);
+}
+.shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+}
+.shot figcaption {
+  padding: var(--ch-space-3) var(--ch-space-5);
+  border-top: 1px solid var(--ch-border-subtle);
+  background: var(--ch-surface-raised);
+  font-size: var(--ch-size-caption);
+  color: var(--ch-text-secondary);
+}
+
+/* ---- Releases ---------------------------------------------------------------
+ * One entry per version, permalinked. The structure here is the contract the
+ * release-notes skill writes against — see the template comment in
+ * releases.html before changing any of it. */
+
+.release {
+  padding-block: var(--ch-space-10);
+  border-top: 1px solid var(--ch-border-subtle);
+  scroll-margin-top: var(--ch-space-6);
+}
+.release:first-of-type { border-top: none; padding-top: var(--ch-space-6); }
+
+.release-version {
+  font-family: var(--ch-font-mono);
+  font-size: 1.5rem;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+.release-version a {
+  color: var(--ch-text-primary);
+  text-decoration: none;
+}
+.release-version a:hover { color: var(--ch-accent); }
+
+.release-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ch-space-2) var(--ch-space-3);
+  align-items: baseline;
+  font-size: var(--ch-size-caption);
+  color: var(--ch-text-secondary);
+}
+.release-meta time { font-variant-numeric: tabular-nums; }
+
+.release-summary {
+  font-size: 1.0625rem;
+  max-width: 60ch;
+}
+
+.release h3 {
+  font-size: var(--ch-size-label);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--ch-tracking-label);
+  color: var(--ch-text-secondary);
+  margin-bottom: var(--ch-space-2);
+}
+.release ul {
+  padding-left: var(--ch-space-5);
+  max-width: 68ch;
+}
+.release li { margin-bottom: var(--ch-space-2); }
+.release li::marker { color: var(--ch-text-tertiary); }
+
+/* ---- Footer ------------------------------------------------------------------ */
+
+.site-footer {
+  border-top: 1px solid var(--ch-border-subtle);
+  margin-top: var(--ch-space-20);
+  padding-block: var(--ch-space-10);
+  font-size: var(--ch-size-small);
+  color: var(--ch-text-secondary);
+}
+.site-footer ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ch-space-5);
+  list-style: none;
+  padding: 0;
+}
+
+/* ---- Narrow ------------------------------------------------------------------ */
+
+@media (max-width: 34rem) {
+  .wrap { padding-inline: var(--ch-space-5); }
+  .section { padding-block: var(--ch-space-12); }
+  .site-header > .wrap { gap: var(--ch-space-3); }
+  .site-nav ul { gap: var(--ch-space-4); }
+  .card { padding: var(--ch-space-5); }
+  pre { padding: var(--ch-space-4); font-size: 0.8125rem; }
+}
