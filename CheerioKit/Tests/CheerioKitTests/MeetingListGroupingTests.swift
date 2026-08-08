@@ -103,6 +103,32 @@ import Testing
         #expect(MeetingListGrouping.sections(for: [], now: now, calendar: calendar).isEmpty)
     }
 
+    /// `sections(for:)` never looks at `kind` — the directives-only toggle in
+    /// `MeetingListView` filters `visibleMeetings` *before* handing the result here,
+    /// same as search. Grouping a pre-filtered directives-only list should bucket
+    /// exactly like any other list of the same size and dates: no `.directive`-shaped
+    /// branch to add, no meeting the filter dropped leaking into a section.
+    @Test func groupsADirectivesOnlyFilteredListLikeAnyOtherList() {
+        let calendar = Self.calendar()
+        let now = Self.date(2026, 8, 12, hour: 10, in: calendar)
+        let directiveToday = Meeting(title: "Direction — today", startedAt: Self.date(2026, 8, 12, hour: 9, in: calendar))
+        directiveToday.kind = .directive
+        let meetingToday = Meeting(title: "Standup", startedAt: Self.date(2026, 8, 12, hour: 8, in: calendar))
+        let directiveYesterday = Meeting(
+            title: "Direction — yesterday",
+            startedAt: Self.date(2026, 8, 11, hour: 17, in: calendar)
+        )
+        directiveYesterday.kind = .directive
+
+        // What `visibleMeetings` computes when `directivesOnly` is on: filter first,
+        // then hand the (smaller) result to grouping.
+        let directivesOnly = [directiveToday, meetingToday, directiveYesterday].filter { $0.kind == .directive }
+        let sections = MeetingListGrouping.sections(for: directivesOnly, now: now, calendar: calendar)
+
+        #expect(sections.map(\.title) == ["Today", "Yesterday"])
+        #expect(sections.map(\.meetings) == [[directiveToday], [directiveYesterday]])
+    }
+
     @Test func defaultStrategyMatchesExplicitDateStrategy() {
         let calendar = Self.calendar()
         let now = Self.date(2026, 8, 12, in: calendar)
