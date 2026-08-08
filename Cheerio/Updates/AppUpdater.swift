@@ -157,8 +157,10 @@ final class UpdatePolicy: NSObject, SPUUpdaterDelegate {
     }
 }
 
-/// Why a scheduled update check was turned away. Surfaced only in Sparkle's log —
-/// a background check has no UI, which is the point.
+/// Why an update check was turned away. For a scheduled check this surfaces only
+/// in Sparkle's log — a background check has no UI, which is the point. For a
+/// user-initiated check Sparkle shows it as the reason the check didn't run, so
+/// the text below is written to be read by a person.
 enum UpdateDeferral: LocalizedError {
     case recordingInProgress
 

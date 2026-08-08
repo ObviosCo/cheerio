@@ -82,10 +82,11 @@ on and nothing to pay for month to month — you run it, and you control it.
   [`Cheerio/Updates/AppUpdater.swift`](Cheerio/Updates/AppUpdater.swift)); an update already
   downloading when you hit record is left to finish rather than aborted mid-transfer. You can
   switch the checks off entirely in **Settings → Updates**; nothing else changes if you do.
-- **Nothing about you or your Mac is ever sent.** Sparkle's optional system profile — OS
+- **No profile, no analytics — the requests carry nothing optional.** Sparkle's system profile — OS
   version, CPU, model, language appended to the feed request — is off, and the updater
-  delegate refuses to add any feed parameters at all. No accounts, no telemetry, no analytics,
-  no crash reporting.
+  delegate refuses to add any feed parameters at all. What GitHub sees is what any HTTPS
+  download shows a server: connection metadata and a User-Agent naming the app and Sparkle
+  versions. No accounts, no telemetry, no analytics, no crash reporting.
 - **Both models run on-device.** Speech and summarization use Apple's local models; diarization
   runs the bundled Sortformer model on the Neural Engine. The diarization model is downloaded
   at *build* time by a script, never at runtime.
