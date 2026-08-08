@@ -18,15 +18,43 @@ enum TranscriptReadyRunner {
     /// hang.
     private static let timeout: Duration = .seconds(300)
 
+    /// How long a timed-out command gets to honour SIGTERM before it's killed
+    /// outright. Long enough for a shell script to run a trap and clean up, short
+    /// enough that the status line doesn't sit at "Running…" while nothing happens.
+    private static let terminationGracePeriod: Duration = .seconds(10)
+
     /// Last few lines of stderr kept for the log — enough to see why a command
     /// failed without holding onto everything it printed.
     private static let stderrTailLineLimit = 20
+
+    /// Appended to the child's inherited `PATH`.
+    ///
+    /// A GUI app launched from Finder inherits launchd's minimal `PATH`
+    /// (`/usr/bin:/bin:/usr/sbin:/sbin`), and `/bin/zsh -c` — deliberately not
+    /// `-l`, see `run` — never sources the user's profile. So `claude -p …`, or
+    /// anything else installed by Homebrew, npm, pipx, or uv, wouldn't resolve at
+    /// all: the command would fail with "command not found" for reasons that have
+    /// nothing to do with what the user typed.
+    ///
+    /// Augmenting a known list beats sourcing a login shell to find out. A profile
+    /// is arbitrary user code — slow, order-dependent, and free to fail or block —
+    /// and running it would make the callback's environment differ from run to run
+    /// for reasons this file can't see. These four directories are the same every
+    /// time and visible right here. Anything installed somewhere else still works;
+    /// give the command an absolute path.
+    private static let additionalPathDirectories: [String] = [
+        "/opt/homebrew/bin",  // Homebrew on Apple silicon
+        "/opt/homebrew/sbin",
+        "/usr/local/bin",  // Homebrew on Intel, plus most standalone installers
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin").path,
+    ]
 
     /// Fires the callback for `export` if the current settings say to. Called from
     /// `CaptureSession` at the one point a meeting counts as "ready" — see the
     /// comment there for why that point and not earlier. Returns immediately: the
     /// subprocess runs on its own detached task, and nothing in the capture
     /// pipeline waits on it.
+    @MainActor
     static func fireIfNeeded(export: MeetingExport) {
         guard TranscriptCallbackSettings.shouldFire(for: export.kind),
             let command = TranscriptCallbackSettings.command
@@ -37,18 +65,31 @@ enum TranscriptReadyRunner {
     /// Runs unconditionally, ignoring the scope setting. Backs Settings' "Run now
     /// on last meeting" button, whose entire point is to test a command regardless
     /// of what scope it's currently set to.
+    @MainActor
     static func fireForTest(command: String, export: MeetingExport) {
         fire(command: command, export: export)
     }
 
+    /// `@MainActor` so the status claim below can happen synchronously; both callers
+    /// are already on the main actor (`CaptureSession` is `@MainActor`, and Settings
+    /// calls this from a button action).
+    @MainActor
     private static func fire(command: String, export: MeetingExport) {
         // Identifies this invocation to the shared status object. Runs are detached
         // and can overlap, so a result has to say which run it came from — see
         // `TranscriptCallbackStatus.currentRunID` for the last-started-wins rule
         // that stops a slow earlier run from reporting over a newer one.
+        //
+        // Minted *and claimed* here, before `Task.detached`, and that ordering is
+        // the whole point: claiming from inside the detached task left it up to the
+        // scheduler, so two invocations started in one order could reach
+        // `markRunning` in the other. The older run would then own the status line
+        // and the newer one's result would be dropped as stale — precisely
+        // backwards. Doing it synchronously makes "last started" mean what it says,
+        // because the claim happens in the same main-actor turn as the call.
         let runID = UUID()
+        TranscriptCallbackStatus.shared.markRunning(runID: runID, title: export.title)
         Task.detached(priority: .utility) {
-            await MainActor.run { TranscriptCallbackStatus.shared.markRunning(runID: runID, title: export.title) }
             do {
                 let payload = try CallbackPayload.prepare(export: export)
                 switch await run(command: command, payload: payload) {
@@ -85,13 +126,16 @@ enum TranscriptReadyRunner {
         // stdin, or the file at `CHEERIO_EXPORT_PATH`, never appended to
         // `arguments`. A transcript containing something that looks like shell
         // syntax can't reach the parser this way; it can only ever show up as
-        // inert bytes in an env value or a file a script chooses to read.
+        // inert bytes in an env value or a file a script chooses to read. The cost of
+        // skipping the profile is that tool locations have to come from somewhere
+        // else — see ``additionalPathDirectories``.
         process.arguments = ["-c", command]
         // A sensible default working directory for a command that has no shell
         // session to inherit one from.
         process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
 
         var environment = ProcessInfo.processInfo.environment
+        environment["PATH"] = augmentedPath(inheriting: environment["PATH"])
         for (key, value) in payload.environment { environment[key] = value }
         process.environment = environment
 
@@ -148,15 +192,15 @@ enum TranscriptReadyRunner {
             try? stdinPipe.fileHandleForWriting.close()
         }
 
+        // Returns only once the process is actually gone — see `raceAgainstTimeout`
+        // for how the SIGTERM-then-SIGKILL escalation guarantees that — so
+        // `terminationStatus` below is safe to read either way.
         let timedOut = await raceAgainstTimeout(waiter: waiter, process: process, timeout: timeout)
-        if timedOut {
-            log.error("Transcript-ready callback exceeded its timeout; terminating")
-            process.terminate()
-        }
 
-        // Bounded even in the worst case: if the command ignores SIGTERM outright,
-        // this gives up on the tail after a few more seconds rather than leaving
-        // an orphaned task waiting on a pipe that may never close.
+        // Bounded even in the worst case: the process is gone by now, but a
+        // grandchild it left behind can still hold the write end of this pipe open,
+        // so give up on the tail after a few seconds rather than leaving an orphaned
+        // task waiting on a pipe that may never close.
         let tail = await withTimeout(.seconds(5), cancelling: stderrTailTask)
 
         let status = process.terminationStatus
@@ -174,11 +218,39 @@ enum TranscriptReadyRunner {
         return .failure(tailText.isEmpty ? "Exited with status \(status)" : tailText)
     }
 
-    /// Races `process`'s own completion against `timeout` and reports which one
-    /// won. `process.terminate()` is called from *inside* the race, not after it
-    /// returns: `withTaskGroup` waits for every child task to finish before
-    /// returning, including the one awaiting `waiter`, so sending SIGTERM only
-    /// after the group returns would be too late for the signal to unblock it.
+    /// The child's `PATH`: whatever this app inherited, plus
+    /// ``additionalPathDirectories`` for the ones that aren't already on it. Appended
+    /// rather than prepended, so nothing here can shadow a directory the inherited
+    /// path already prefers. Falls back to the standard system directories if the app
+    /// somehow inherited no `PATH` at all, which would otherwise leave the command
+    /// unable to find even `ls`.
+    private static func augmentedPath(inheriting inherited: String?) -> String {
+        var components = (inherited ?? "").split(separator: ":").map(String.init)
+        if components.isEmpty {
+            components = ["/usr/bin", "/bin", "/usr/sbin", "/sbin"]
+        }
+        var seen = Set(components)
+        for directory in additionalPathDirectories where seen.insert(directory).inserted {
+            components.append(directory)
+        }
+        return components.joined(separator: ":")
+    }
+
+    /// Races `process`'s own completion against `timeout` and reports which one won,
+    /// returning only once the process has actually exited.
+    ///
+    /// Signals are sent from *inside* the race, not after it returns: `withTaskGroup`
+    /// waits for every child task to finish before returning, including the one
+    /// awaiting `waiter`, and `waiter.wait()` can't be cancelled out of — it's
+    /// waiting on `terminationHandler`. Anything that unblocks it therefore has to
+    /// happen before the closure returns.
+    ///
+    /// Which is also why SIGTERM alone isn't enough. A command that installs a
+    /// handler for it, or ignores it outright, keeps running; `terminationHandler`
+    /// never fires, the continuation never resumes, and the group — and with it the
+    /// runner and the status line — sits at "Running…" forever. So SIGTERM gets a
+    /// grace period and then SIGKILL, which cannot be caught, blocked, or ignored.
+    /// That makes the process's death, and so the waiter's resumption, guaranteed.
     private static func raceAgainstTimeout(waiter: ProcessWaiter, process: Process, timeout: Duration) async -> Bool {
         await withTaskGroup(of: Bool.self) { group in
             group.addTask {
@@ -189,12 +261,38 @@ enum TranscriptReadyRunner {
                 try? await Task.sleep(for: timeout)
                 return true
             }
-            let timedOut = await group.next() ?? true
-            if timedOut {
-                process.terminate()
+            guard await group.next() == true else {
+                // Exited on its own; only the sleep is left to cancel.
+                group.cancelAll()
+                return false
             }
-            group.cancelAll()
-            return timedOut
+
+            log.error("Transcript-ready callback exceeded its timeout; terminating")
+            process.terminate()
+
+            // The grace period is awaited here in the group's own body rather than in
+            // another child task, because `Process` isn't `Sendable` and so can't
+            // cross into one — and it's polled rather than slept through in one go, so
+            // a command that *does* honour SIGTERM doesn't hold this open for the full
+            // ten seconds after it's already gone.
+            //
+            // Cancellation ends the grace early and goes straight to the kill below:
+            // a cancelled sleep returns immediately, so waiting it out would just
+            // spin, and if we're being torn down the one thing that matters is that
+            // the process definitely dies.
+            let deadline = ContinuousClock.now.advanced(by: terminationGracePeriod)
+            while process.isRunning, ContinuousClock.now < deadline, !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            if process.isRunning {
+                log.error("Transcript-ready callback ignored SIGTERM; sending SIGKILL")
+                kill(process.processIdentifier, SIGKILL)
+            }
+
+            // No `cancelAll()`: the only child left is the waiter, and cancelling
+            // can't unblock it anyway. It resumes when `terminationHandler` fires,
+            // which the signals above have now made certain.
+            return true
         }
     }
 
