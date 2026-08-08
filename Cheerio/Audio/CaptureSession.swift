@@ -57,11 +57,17 @@ final class CaptureSession {
     /// When the current recording began, for the elapsed-time readout.
     private(set) var startedAt: Date?
 
-    func start(title: String, calendarEventID: String?, context: ModelContext) async throws {
+    func start(
+        title: String,
+        calendarEventID: String?,
+        kind: MeetingKind = .meeting,
+        context: ModelContext
+    ) async throws {
         guard state == .idle else { return }
         state = .preparingModel
         do {
-            try await startCapturing(title: title, calendarEventID: calendarEventID, context: context)
+            try await startCapturing(
+                title: title, calendarEventID: calendarEventID, kind: kind, context: context)
         } catch {
             // Half-started is the worst state to leave: engines running, the recorder
             // holding open files, possibly a live microphone, an empty meeting in the
@@ -75,11 +81,13 @@ final class CaptureSession {
     private func startCapturing(
         title: String,
         calendarEventID: String?,
+        kind: MeetingKind,
         context: ModelContext
     ) async throws {
         try await TranscriptionEngine.ensureModel()
 
         let meeting = Meeting(title: title, calendarEventID: calendarEventID)
+        meeting.kind = kind
         // Start the roster at just your own voice: you're the one person guaranteed to
         // be here, and priming anyone else by default spends slots on people who may
         // not be. Left nil when no voice is marked "me", which keeps the old

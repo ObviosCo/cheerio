@@ -20,6 +20,16 @@ struct RecordingView: View {
                         .textFieldStyle(.plain)
                         .font(.title2.weight(.semibold))
                         .onSubmit { try? context.save() }
+                    // Same badge style as the library row (MeetingListView) — small
+                    // affordance only, not a forked layout. It's the one visual cue
+                    // that the scratchpad matters less for this recording.
+                    if meeting.kind == .directive {
+                        Text("Directive")
+                            .font(.caption2.weight(.medium))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(.tint.opacity(0.15), in: .capsule)
+                    }
                     // Set the roster while you can see who's in the room — the automatic
                     // pass at the end of the recording uses it, so getting it right now
                     // saves a re-identify later.
