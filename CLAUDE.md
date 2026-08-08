@@ -39,6 +39,19 @@ open Cheerio.xcodeproj    # scheme: Cheerio
 
 Requires macOS 26+, Xcode 26+. Package tests: `cd CheerioKit && swift test`.
 
+The full verification loop any change must pass before pushing — this list is the
+canonical one; the agent definitions in `.claude/agents/` reference it rather than
+redefining it:
+
+```sh
+./Scripts/bootstrap.sh    # only needed if Cheerio/Resources/Models or the .xcodeproj is missing
+swift format --in-place --recursive Cheerio CheerioMCP CheerioKit/Sources CheerioKit/Tests   # drop CheerioMCP if absent
+swift format lint --recursive --strict Cheerio CheerioMCP CheerioKit/Sources CheerioKit/Tests
+swift test --package-path CheerioKit
+xcodegen generate         # mandatory after adding/removing files
+xcodebuild build -project Cheerio.xcodeproj -scheme Cheerio -configuration Debug -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -quiet
+```
+
 `bootstrap.sh` wraps `fetch-models.sh` + `xcodegen generate` because the order is
 load-bearing: `project.yml` references the `.mlmodelc` as a folder reference, so
 generating before the model exists fails with a spec-validation error that names a
@@ -64,9 +77,9 @@ bug and isn't).
 `.claude/agents/` has four checked-in subagent definitions for this repo's recurring work:
 `swift-implementer` (scoped feature/fix on a branch), `review-responder` (Copilot review
 triage), `release-editor` (`.github/workflows/release.yml` and `Scripts/`), and
-`issue-groomer` (closing issues addressed by merged PRs). Their verification loops are
-authoritative duplicates of the Build section above, not paraphrases — update both together
-when the build commands change.
+`issue-groomer` (closing issues addressed by merged PRs). The Build section's verification
+loop is the single canonical copy; the agent definitions restate it for self-containment, so
+update them alongside Build whenever the commands change.
 
 ## Conventions & constraints
 

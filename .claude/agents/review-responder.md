@@ -28,7 +28,10 @@ merits — Copilot is not always right, and the reviewer being a bot is not evid
    no review thread) get no reply/resolve step, but are often the ones worth fixing most —
    check them via the PR's review API, don't skip them just because there's no thread to close.
 
-**Before pushing:** run the full verification loop — `swift format --in-place --recursive
+**Before pushing:** run the full verification loop. First the prerequisite: if
+`Cheerio/Resources/Models` or `Cheerio.xcodeproj` is missing (fresh checkout/worktree), run
+`./Scripts/bootstrap.sh` — the model must exist before the project can generate. Then —
+`swift format --in-place --recursive
 Cheerio CheerioMCP CheerioKit/Sources CheerioKit/Tests` (drop `CheerioMCP` if absent), then
 `swift format lint --recursive --strict` the same paths, `swift test --package-path
 CheerioKit`, `xcodegen generate` if files were added/removed, then `xcodebuild build -project
