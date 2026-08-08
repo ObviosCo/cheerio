@@ -348,6 +348,14 @@ final class CaptureSession {
                 recentTitles: recentTitles(excluding: meeting, context: context)
             )
             guard !title.isEmpty else { return }
+            // Re-check right before applying, not just at the top of this function:
+            // `generateTitle` suspends for the length of a model call, and the main
+            // actor is free to run a user rename on `meeting` while we're waiting on
+            // it. If that happened, `shouldAutoTitle` is now false and applying this
+            // result would silently overwrite the title the user just typed — the
+            // manual-title-wins invariant (``Meeting/rename(to:)``) has to hold across
+            // the suspension, not just before it.
+            guard meeting.shouldAutoTitle else { return }
             meeting.applyGeneratedTitle(title)
         } catch {
             log.error("Auto-title failed: \(error)")

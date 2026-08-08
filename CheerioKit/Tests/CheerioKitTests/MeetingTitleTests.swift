@@ -154,4 +154,51 @@ import Testing
         // period-strip step then removes too.
         #expect(TitleGenerator.clean("\"Q3 roadmap review.\"") == "Q3 roadmap review")
     }
+
+    // MARK: - TitleGenerator.normalize / collides (distinguishability)
+
+    @Test func normalizeLowercases() {
+        #expect(TitleGenerator.normalize("Weekly Sync") == "weekly sync")
+    }
+
+    @Test func normalizeCollapsesPunctuation() {
+        // A trailing period and a reshuffled hyphen are both things the model
+        // varies between attempts while meaning the same title.
+        #expect(TitleGenerator.normalize("Weekly Sync.") == "weekly sync")
+        #expect(TitleGenerator.normalize("Weekly-Sync") == "weekly sync")
+    }
+
+    @Test func normalizeCollapsesWhitespace() {
+        #expect(TitleGenerator.normalize("Weekly   Sync") == "weekly sync")
+    }
+
+    @Test func collidesIsTrueForExactMatchIgnoringCase() {
+        #expect(TitleGenerator.collides("weekly sync", withAnyOf: ["Weekly Sync"]))
+    }
+
+    @Test func collidesIsTrueForPunctuationVariant() {
+        // The scenario the fix exists for: the model reproduces a recent title
+        // with only cosmetic differences, which must still count as a collision.
+        #expect(TitleGenerator.collides("Weekly Sync!", withAnyOf: ["weekly sync"]))
+    }
+
+    @Test func collidesIsFalseForADistinctTitle() {
+        #expect(TitleGenerator.collides("Q3 roadmap review", withAnyOf: ["Weekly Sync", "1:1 with Carter"]) == false)
+    }
+
+    @Test func collidesIsFalseAgainstAnEmptyRecentTitlesList() {
+        #expect(TitleGenerator.collides("Weekly Sync", withAnyOf: []) == false)
+    }
+
+    @Test func collidesIsFalseForAnEmptyTitle() {
+        // An empty title is a different failure (the model returned nothing
+        // usable) than a duplicate — this check isn't meant to catch it.
+        #expect(TitleGenerator.collides("", withAnyOf: ["Weekly Sync"]) == false)
+    }
+
+    @Test func collidesIsSubstringSafe() {
+        // "Weekly sync" is not the same title as "Weekly sync planning" — the
+        // normalized strings must match exactly, not merely overlap.
+        #expect(TitleGenerator.collides("Weekly Sync", withAnyOf: ["Weekly Sync Planning"]) == false)
+    }
 }
