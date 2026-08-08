@@ -318,9 +318,15 @@ extension Meeting {
     /// A manual or enrolled label naming someone who isn't the owner is never
     /// owner-attributed, even on the mic channel: a label is a person saying "this is
     /// who spoke," and that testimony outranks which physical channel picked it up.
+    /// That includes a *manually assigned* "Speaker 1" — `isSpeakerLabelManual` is
+    /// checked before the label's spelling, so hand-naming a guest with a
+    /// diarizer-looking name can't quietly promote their lines to owner-attributed.
     public static func isOwnerAttributed(_ segment: TranscriptSegment, ownerNames: Set<String>) -> Bool {
         if let label = segment.speakerLabel {
             if ownerNames.contains(label) { return true }
+            // A human named this line: whoever they named, it isn't the owner (that
+            // case returned above), no matter what the label looks like.
+            guard !segment.isSpeakerLabelManual else { return false }
             guard TranscriptSegment.isDiarizerGeneratedLabel(label) else { return false }
             return segment.channel == .me
         }

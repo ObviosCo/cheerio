@@ -64,7 +64,14 @@ public struct MeetingExport: Codable, Sendable, Equatable {
         self.enhancedNotes = meeting.enhancedNotes
         self.segments =
             meeting.segments
-            .sorted { $0.startTime < $1.startTime }
+            // startTime alone can't order this deterministically: the two engines run
+            // independently and both start at 0, and SwiftData relationship order is
+            // not stable across processes. Tie-break on everything that reaches the
+            // payload, so identical meetings serialize to identical bytes.
+            .sorted {
+                ($0.startTime, $0.endTime, $0.channelRaw, $0.displayLabel, $0.text)
+                    < ($1.startTime, $1.endTime, $1.channelRaw, $1.displayLabel, $1.text)
+            }
             .map { segment in
                 Segment(
                     displayLabel: segment.displayLabel,

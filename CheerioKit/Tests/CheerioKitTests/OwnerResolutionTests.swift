@@ -64,7 +64,18 @@ import Testing
         #expect(!Meeting.isOwnerAttributed(segment, ownerNames: ownerNames))
     }
 
-    @Test func noEnrolledOwnerMeansNoLabelOrChannelCanQualify() {
+    @Test func manuallyAssignedDiarizerLookingLabelIsNotTheOwners() {
+        // "Speaker 1" typed by a person is testimony about a guest, not a diarizer
+        // placeholder — the manual flag, not the label's spelling, decides. Without the
+        // `isSpeakerLabelManual` check, hand-naming a guest this way on the mic channel
+        // would promote their lines into owner-attributed (executable) instructions.
+        let segment = TranscriptSegment(channel: .me, text: "hi", startTime: 0, endTime: 1)
+        segment.assignSpeaker("Speaker 1")
+        #expect(TranscriptSegment.isDiarizerGeneratedLabel(segment.speakerLabel))
+        #expect(!Meeting.isOwnerAttributed(segment, ownerNames: ownerNames))
+    }
+
+    @Test func micChannelFallbackAppliesEvenWithNoEnrolledOwner() {
         // Degenerate but real: nobody has enrolled as "me" yet.
         let mic = TranscriptSegment(channel: .me, text: "hi", startTime: 0, endTime: 1)
         let named = TranscriptSegment(channel: .me, text: "hi", startTime: 0, endTime: 1)

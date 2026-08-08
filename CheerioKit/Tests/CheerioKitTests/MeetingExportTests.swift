@@ -63,6 +63,28 @@ import Testing
         #expect(json == expected)
     }
 
+    @Test func jsonShapeOmitsNilOptionalsRatherThanEmittingNull() throws {
+        // The other fixture populates every optional, so it can't catch the
+        // key-presence decision changing. This one pins it: a meeting that's still
+        // running (no end), never enhanced, and with no roster *omits* those keys —
+        // synthesized Codable's behavior, but now a choice consumers can rely on
+        // instead of an accident.
+        let meeting = Meeting(title: "Standup")
+        meeting.uuid = Self.fixedUUID
+        meeting.startedAt = ISO8601DateFormatter().date(from: "2026-08-08T09:00:00Z")!
+
+        let data = try MeetingExport.makeJSONEncoder().encode(meeting.export(ownerNames: []))
+        let json = String(decoding: data, as: UTF8.self)
+
+        let expected = """
+            {"kind":"meeting","roughNotes":"","segments":[],\
+            "startedAt":"2026-08-08T09:00:00Z","title":"Standup",\
+            "uuid":"00000000-0000-0000-0000-000000000001"}
+            """
+
+        #expect(json == expected)
+    }
+
     @Test func directiveKindSurvivesExport() {
         let meeting = Self.makeMeeting()
         meeting.kind = .directive
