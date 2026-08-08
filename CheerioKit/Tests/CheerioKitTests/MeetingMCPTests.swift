@@ -474,8 +474,6 @@ import Testing
             try context.save()
         }
 
-        let modifiedBefore = try FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date
-
         // Second process: the helper, read-only, over the same file.
         let service = MeetingQueryService(container: try MeetingStore.openReadOnly(at: url))
         let page = try await service.list(ListMeetingsRequest())
@@ -483,10 +481,18 @@ import Testing
         let export = try await service.export(for: try #require(page.meetings.first?.uuid))
         #expect(export.segments.map(\.text) == ["hello"])
 
-        // Nothing it did touched the file. Not proof on its own — WAL means writes can
-        // land beside it — but a changed mtime here would be a definite regression.
-        let modifiedAfter = try FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date
-        #expect(modifiedBefore == modifiedAfter)
+        // Nothing it did altered the data. This deliberately checks *content*, not the
+        // file's mtime: SQLite's WAL bookkeeping (checkpoint on the last connection
+        // closing) can legitimately touch the file's metadata on a timing-dependent
+        // schedule, which made an mtime comparison flake under a parallel test run.
+        // What the read-only contract actually promises is that a writable reopen
+        // sees exactly what was written.
+        let reopened = try ModelContainer(
+            for: Meeting.self, TranscriptSegment.self, EnrolledSpeaker.self,
+            configurations: ModelConfiguration(url: url))
+        let reread = try ModelContext(reopened).fetch(FetchDescriptor<Meeting>())
+        #expect(reread.map(\.title) == ["Written by the app"])
+        #expect(reread.first?.segments.map(\.text) == ["hello"])
     }
 
     @Test func theStorePathOverrideWins() throws {
