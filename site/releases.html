@@ -74,7 +74,10 @@
      </article>
 
      RULES
-     - The id is the version with dots as hyphens, prefixed v: 0.2.1 -> v0-2-1.
+     - Versions are date-based: YYYY.M.D, no leading zeros, tagged vYYYY.M.D.
+       A second release on the same day is distinguished by the build number,
+       not the version — wait for tomorrow or overwrite the release.
+     - The id is the version with dots as hyphens, prefixed v: 2026.8.8 -> v2026-8-8.
        It is a permalink. Never change one after it ships.
      - Headings, in this order, and only the ones that apply:
        Added / Changed / Fixed / Known issues / Breaking.
@@ -91,14 +94,14 @@
        it doesn't get an entry.
      ========================================================================== -->
 
-      <article class="release" id="v0-1-0">
+      <article class="release" id="v2026-8-8">
         <div class="stack stack--4">
           <header class="stack stack--2">
-            <h2 class="release-version"><a href="#v0-1-0">0.1.0</a></h2>
+            <h2 class="release-version"><a href="#v2026-8-8">2026.8.8</a></h2>
             <p class="release-meta">
-              <time datetime="2026-08-07">7 August 2026</time>
+              <time datetime="2026-08-08">8 August 2026</time>
               <span aria-hidden="true">·</span>
-              <span>Not yet published</span>
+              <a href="https://github.com/ObviosCo/cheerio/releases/tag/v2026.8.8">Download</a>
               <span aria-hidden="true">·</span>
               <a href="https://github.com/ObviosCo/cheerio">Source</a>
             </p>
@@ -152,7 +155,7 @@
         <li><a href="https://github.com/ObviosCo/cheerio/issues">Issues</a></li>
       </ul>
     </nav>
-    <p class="caption">Cheerio is MIT-licensed. It bundles a diarization model under the NVIDIA Open Model License — check that before redistributing a build.</p>
+    <p class="caption">Cheerio is MIT-licensed. It bundles the Sortformer diarization model (© NVIDIA, CC BY 4.0) — attribution travels in THIRD-PARTY-NOTICES.md with any build.</p>
   </div>
 </footer>
 

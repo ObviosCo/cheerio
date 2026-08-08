@@ -36,42 +36,21 @@
       <!-- ============================================================
            PUBLISHED BUILD
 
-           No build is published yet, so the button below is disabled and
-           the honest state is shown. When the first release ships, replace
-           this whole block with the commented-out version underneath it and
-           fill in the version, date, and size.
+           Versions are date-based: tag v2026.8.8 → version 2026.8.8. The
+           release workflow (.github/workflows/release.yml) publishes a
+           versioned zip made with ditto — `Cheerio-<version>.zip` — not a
+           DMG and not a stable filename, so the href must name the exact
+           version. On each release, update the version, date, size, and
+           both hrefs here, and add an entry to releases.html.
            ============================================================ -->
       <div class="card stack stack--4">
         <div class="stack stack--2">
-          <h2 class="sub-title">No build published yet</h2>
-          <p class="muted">Cheerio runs and records real meetings, but nothing has been cut as a downloadable release. Until it is, building from source is the way in — it's one command, and the instructions are below.</p>
+          <h2 class="sub-title">Cheerio 2026.8.8</h2>
+          <p class="muted">Released <time datetime="2026-08-08">8 August 2026</time> · Apple Silicon only · 95&nbsp;MB</p>
         </div>
-        <p><a class="button button--primary" href="#build">Build from source</a></p>
-        <p class="caption">Watch <a href="https://github.com/ObviosCo/cheerio/releases">the releases page</a> to be told when a build lands.</p>
+        <p><a class="button button--primary" href="https://github.com/ObviosCo/cheerio/releases/download/v2026.8.8/Cheerio-2026.8.8.zip">Download Cheerio 2026.8.8 (zip)</a></p>
+        <p class="caption">Signed and notarized by Apple. <a href="releases.html#v2026-8-8">What's in this release</a></p>
       </div>
-
-      <!-- Replace the card above with this when a release exists.
-
-           The release workflow (.github/workflows/release.yml) publishes a
-           versioned zip made with ditto — `Cheerio-<version>.zip` — not a DMG
-           and not a stable filename, so the href must name the exact version.
-
-           Keep whichever caption matches how that build is actually signed.
-           Today the workflow ad-hoc signs without notarization, so the second
-           one; switch to the first only once notarized releases ship (PR #18
-           sets that up).
-
-      <div class="card stack stack--4">
-        <div class="stack stack--2">
-          <h2 class="sub-title">Cheerio 0.1.0</h2>
-          <p class="muted">Released <time datetime="2026-00-00">DATE</time> · Universal? no — Apple Silicon only · 00&nbsp;MB</p>
-        </div>
-        <p><a class="button button--primary" href="https://github.com/ObviosCo/cheerio/releases/download/v0.1.0/Cheerio-0.1.0.zip">Download Cheerio 0.1.0 (zip)</a></p>
-        <p class="caption">Signed and notarized by Apple. <a href="releases.html#v0-1-0">What's in this release</a></p>
-        <p class="caption">Ad-hoc signed — macOS will warn once on first launch; the steps are under First launch below. <a href="releases.html#v0-1-0">What's in this release</a></p>
-      </div>
-
-      -->
 
       <div class="table-scroll">
         <table>
@@ -97,7 +76,7 @@
       <ol class="stack stack--6" style="padding-left:var(--ch-space-5);max-width:60ch">
         <li>
           <h3 class="sub-title">Open it</h3>
-          <p class="muted">Drag Cheerio to your Applications folder and open it. A notarized build opens the way any app does. Today's builds are ad-hoc signed, so macOS will warn about an unidentified developer once: right-click the app and choose <strong>Open</strong>, or approve it under System&nbsp;Settings → Privacy&nbsp;&amp;&nbsp;Security. Each release's notes say how that build is signed.</p>
+          <p class="muted">Drag Cheerio to your Applications folder and open it. The build is signed and notarized, so it opens the way any app does — no warnings, no extra steps.</p>
         </li>
         <li>
           <h3 class="sub-title">Grant the microphone</h3>
@@ -116,18 +95,6 @@
           <p class="muted">Until echo cancellation lands, meeting audio playing out loud gets picked up by your microphone and the transcript says everything twice.</p>
         </li>
       </ol>
-
-      <!-- ============================================================
-           GATEKEEPER
-
-           The signing question has a current answer: release.yml ad-hoc
-           signs (no notarization), and its release notes carry the
-           right-click → Open steps — so "Open it" above mirrors them.
-           That's Apple's supported flow, not a bypass; deeper workarounds
-           (xattr etc.) stay out of this page on purpose. When notarized
-           releases ship (PR #18), trim "Open it" back to a single
-           sentence and delete this note.
-           ============================================================ -->
     </div>
   </section>
 
@@ -158,7 +125,7 @@ open Cheerio.xcodeproj</code></pre>
     <div class="wrap wrap--narrow">
       <div class="card stack stack--3">
         <h2 class="sub-title">Licensing, in one paragraph</h2>
-        <p class="muted">Cheerio's source is MIT. It depends on <a href="https://github.com/FluidInference/FluidAudio">FluidAudio</a> (Apache&nbsp;2.0) and bundles NVIDIA's Sortformer model under the <a href="https://huggingface.co/FluidInference/diar-streaming-sortformer-coreml">NVIDIA Open Model License</a>. The model is fetched by a script rather than committed, which keeps the source tree MIT while an app built from it bundles an NVIDIA-licensed model. Check that licence before redistributing a build.</p>
+        <p class="muted">Cheerio's source is MIT. It depends on <a href="https://github.com/FluidInference/FluidAudio">FluidAudio</a> (Apache&nbsp;2.0) and bundles NVIDIA's <a href="https://huggingface.co/FluidInference/diar-streaming-sortformer-coreml">Sortformer model</a> (©&nbsp;NVIDIA, <a href="https://creativecommons.org/licenses/by/4.0/">CC&nbsp;BY&nbsp;4.0</a>, Core&nbsp;ML conversion by FluidInference). The model is fetched by a script rather than committed, which keeps the source tree MIT while a built app bundles the CC-licensed model. Full attribution ships in <code>THIRD-PARTY-NOTICES.md</code> inside the app bundle — keep it with any build you redistribute.</p>
       </div>
     </div>
   </section>
@@ -175,7 +142,7 @@ open Cheerio.xcodeproj</code></pre>
         <li><a href="https://github.com/ObviosCo/cheerio/issues">Issues</a></li>
       </ul>
     </nav>
-    <p class="caption">Cheerio is MIT-licensed. It bundles a diarization model under the NVIDIA Open Model License — check that before redistributing a build.</p>
+    <p class="caption">Cheerio is MIT-licensed. It bundles the Sortformer diarization model (© NVIDIA, CC BY 4.0) — attribution travels in THIRD-PARTY-NOTICES.md with any build.</p>
   </div>
 </footer>
 
