@@ -273,6 +273,20 @@ final class CaptureSession {
             // speaker attribution than the app itself ends up showing, and labels
             // are exactly what the owner-attributed action items depend on.
             fireTranscriptReadyCallback(for: meeting, context: context)
+
+            // Same definition of "ready" as the callback above, and deliberately
+            // *after* it: this only enqueues a banner, and nothing about a
+            // notification may delay, gate, or fail the callback that external
+            // tooling waits on. It returns immediately — see `notifyNotesReady`,
+            // which does the posting on its own task — and suppresses itself when the
+            // app is already on screen, since by the time this returns the window has
+            // selected the finished meeting anyway.
+            //
+            // `stableID` is safe to read here: the callback above persisted it, and
+            // on the path where that save failed the id still exists in memory, so
+            // the notification is at worst pointing at a meeting whose id a crash
+            // before the next autosave would change.
+            NotificationService.shared.notifyNotesReady(title: meeting.title, meetingID: meeting.stableID)
         }
 
         // Applies "Don't keep audio" immediately, and sweeps anything that aged out
