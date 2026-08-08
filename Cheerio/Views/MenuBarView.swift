@@ -5,6 +5,7 @@ import SwiftUI
 /// The menu-bar item's contents: start or stop without bringing the window forward.
 struct MenuBarView: View {
     @Environment(CaptureSession.self) private var session
+    @Environment(AppUpdater.self) private var updater
     @Environment(\.modelContext) private var context
     @Environment(\.openWindow) private var openWindow
 
@@ -43,6 +44,12 @@ struct MenuBarView: View {
             Divider()
             Button("Open Cheerio") {
                 openWindow(id: MenuBarView.mainWindowID)
+            }
+            // The app menu has this too, but for someone who lives in the menu bar
+            // that menu is behind an "Open Cheerio" first. Sparkle's own window
+            // handles the rest, so it needs no state of its own here.
+            Button("Check for Updates…") {
+                updater.checkForUpdates()
             }
         }
         .task {
