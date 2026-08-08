@@ -73,6 +73,10 @@ struct CheerioApp: App {
 
         Settings {
             SettingsView()
+                // Settings needs the session too: the callback tab's "run now"
+                // button has to stay disabled while a recording is still being
+                // finished — see `TranscriptCallbackSettingsView`.
+                .environment(captureSession)
                 .environment(updater)
         }
         .modelContainer(container)
