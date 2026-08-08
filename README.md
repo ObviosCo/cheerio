@@ -75,8 +75,9 @@ on and nothing to pay for month to month — you run it, and you control it.
   invariant, and it holds with the machine in airplane mode: capture, transcription, speaker
   attribution and note generation all run on-device, start to finish.
 - **The app's only network access is checking for its own updates.** Sparkle fetches the
-  update feed at `https://obviosco.github.io/cheerio/appcast.xml` on a daily schedule, and the
-  zip from GitHub Releases if you accept an update — two requests, not one. Neither a
+  update feed at `https://github.com/ObviosCo/cheerio/releases/latest/download/appcast.xml` on a
+  daily schedule, and the zip if you accept an update — two requests, not one, both to GitHub
+  Releases. Neither a
   scheduled nor a manual check will *start* while a recording is running (see
   [`Cheerio/Updates/AppUpdater.swift`](Cheerio/Updates/AppUpdater.swift)); an update already
   downloading when you hit record is left to finish rather than aborted mid-transfer. You can

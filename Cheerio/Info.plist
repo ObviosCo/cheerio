@@ -29,15 +29,19 @@
     <string>Cheerio reads your calendar to suggest recording when a meeting starts and to attach notes to events.</string>
 
     <!-- Sparkle (automatic updates). This is the app's only network access, and the
-         only reason it has any: the appcast below and the zip it points at, both on
-         Cheerio's own distribution endpoints. No check here starts while a recording
+         only reason it has any: the appcast below and the zip it points at, both
+         attached to Cheerio's own GitHub Releases. No check here starts while a recording
          is in progress — see AppUpdater.swift. (A check or download already admitted
          while idle is not aborted if a recording starts mid-cycle; that's a
          documented edge, not machinery.) -->
 
-    <!-- Published from site/appcast.xml by .github/workflows/release.yml. -->
+    <!-- Attached as a release asset by .github/workflows/release.yml, not served by the
+         website. `releases/latest/download/<asset>` is a stable URL: GitHub 302-redirects
+         it to whichever release is currently latest, and Sparkle follows redirects. That
+         means publishing a release publishes the feed in the same operation — no branch
+         write, no second deploy, nothing to leave half-done. -->
     <key>SUFeedURL</key>
-    <string>https://obviosco.github.io/cheerio/appcast.xml</string>
+    <string>https://github.com/ObviosCo/cheerio/releases/latest/download/appcast.xml</string>
 
     <!-- TODO: paste the EdDSA public key here, once. Run Sparkle's `generate_keys`
          (it lives in the resolved package at

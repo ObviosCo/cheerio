@@ -1,20 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Cheerio's Sparkle update feed, served at https://obviosco.github.io/cheerio/appcast.xml
-  (the SUFeedURL in Cheerio/Info.plist).
+  The seed for Cheerio's Sparkle update feed, and nothing else. This file is *not*
+  served: the published feed is an asset on each GitHub Release, read by the app from
+  https://github.com/ObviosCo/cheerio/releases/latest/download/appcast.xml (the
+  SUFeedURL in Cheerio/Info.plist). It sits under site/ only because that is where it
+  has always lived; the Pages deploy copies it and no installed app ever asks for it.
 
-  Generated, not hand-written: .github/workflows/release.yml runs Sparkle's
-  generate_appcast on every v* tag, commits the result back here, and redeploys the
-  Pages site. Edit it by hand and the next release overwrites you.
+  Its one remaining job: .github/workflows/release.yml seeds each release's feed by
+  downloading the previous one from that stable URL, and falls back to this empty
+  template when there is nothing to download — the first release ever. Editing it by
+  hand changes nothing after that first release.
 
-  It is committed with no items on purpose. An empty feed answers "you are up to
-  date"; a 404 is an error every installed copy would report until the first release
-  lands. Both are quiet, but only one of them is honest.
+  It has no items on purpose. An empty feed is a valid feed that answers "you are up
+  to date", which is the honest answer before any version has shipped.
 -->
 <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
     <channel>
         <title>Cheerio</title>
-        <link>https://obviosco.github.io/cheerio/appcast.xml</link>
+        <link>https://github.com/ObviosCo/cheerio/releases/latest/download/appcast.xml</link>
         <description>Updates for Cheerio, open-source AI meeting notes for macOS.</description>
         <language>en</language>
     </channel>

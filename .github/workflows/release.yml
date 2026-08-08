@@ -15,20 +15,32 @@
 #
 #   1. the notarized, stapled zip is built and packaged as it always was;
 #   2. Sparkle's generate_appcast EdDSA-signs that exact zip and folds an entry
-#      for it into a copy of site/appcast.xml — the minimum system version comes
-#      from the app's own LSMinimumSystemVersion (macOS 26), and the release notes
-#      are a short embedded fragment linking to the GitHub release;
+#      for it into the previous release's feed, downloaded from the stable
+#      releases/latest/download URL — the minimum system version comes from the
+#      app's own LSMinimumSystemVersion (macOS 26), and the release notes are a
+#      short embedded fragment linking to the GitHub release;
 #   3. a guard step re-verifies the signature in that entry against the zip's
 #      bytes with sign_update --verify, and refuses to publish if it doesn't
 #      match — a bad appcast must not be able to ship quietly;
-#   4. the GitHub Release is created *first*, so the enclosure URL resolves;
-#   5. site/appcast.xml is committed back to main and the Pages deploy is kicked
-#      off, which publishes https://obviosco.github.io/cheerio/appcast.xml — the
-#      SUFeedURL baked into the app.
+#   4. the GitHub Release is created with *both* assets at once — the zip and
+#      appcast.xml. The enclosure URL in that feed points at this release's own
+#      zip, so it resolves the moment the release exists: one operation, no
+#      window in which the feed advertises a download that isn't there yet;
+#   5. that is the whole publish. The app's SUFeedURL is
+#      https://github.com/ObviosCo/cheerio/releases/latest/download/appcast.xml,
+#      which GitHub 302-redirects to the newest release's asset (Sparkle follows
+#      redirects), so attaching the asset *is* publishing the feed.
+#
+# Why not commit the feed to main and serve it from Pages, as this workflow used
+# to: main has branch protection, so the GITHUB_TOKEN write fails — and it fails
+# *after* the release already exists, leaving the feed unpublished and the run
+# unresumable, because `gh release create` won't run twice. More generally a
+# release run has no business writing to a branch at all; it should only ever
+# add artifacts to the thing it is publishing.
 #
 # Manual (workflow_dispatch) runs do steps 2 and 3 as a dry run and attach the
-# appcast to the workflow artifacts. Nothing is published and nothing is
-# committed, so the appcast pipeline can be exercised without cutting a version.
+# appcast to the workflow artifacts. No release is created and nothing is
+# published, so the appcast pipeline can be exercised without cutting a version.
 #
 # Required repository secrets:
 #   DEVELOPER_ID_P12_BASE64    — base64 of the Developer ID Application .p12
@@ -67,18 +79,17 @@ on:
   workflow_dispatch:
 
 permissions:
-  # contents: to create the release and commit the appcast to main.
-  # actions:  to trigger the Pages deploy, which a GITHUB_TOKEN commit won't.
+  # contents: to create the release and attach the zip and appcast to it. Nothing
+  # else is needed — no branch writes, and no workflow dispatching.
   contents: write
-  actions: write
 
-# One fixed group across every ref, not one per tag: the appcast at site/appcast.xml
-# is a single shared mutable file, published by reading its current blob SHA and then
-# writing a new one (see "Publish appcast to the Pages site" below). Two tags released
-# concurrently would each read the same stale SHA and race to write it back, with the
-# second writer silently dropping the first release's appcast entry. Serializing all
-# release runs — regardless of tag — through one group is what makes that read-modify-
-# write safe.
+# One fixed group across every ref, not one per tag. Nothing is committed any more,
+# but the feed is still shared mutable state: every run reads the *current* latest
+# release's appcast and writes a superset of it to a new latest. Two tags released
+# concurrently would both seed from the same older feed, and whichever finished
+# second would become "latest" while missing the other's entry. Serializing all
+# release runs — regardless of tag — through one group is what keeps that
+# read-modify-write safe.
 concurrency:
   group: release
   cancel-in-progress: false
@@ -359,10 +370,12 @@ jobs:
       #
       # - The tools come from the resolved Sparkle package, so they are always the
       #   same version as the framework inside the app.
-      # - The starting feed is read from origin/main, not from this checkout: the
-      #   previous release's entry was committed to main *after* its tag, so the tag
-      #   being built may not have it, and starting from a stale feed would drop
-      #   older versions out of it.
+      # - The starting feed is downloaded from the live SUFeedURL, not read out of this
+      #   checkout: the published feed is the only place the previous releases' entries
+      #   exist, and starting from anything staler would drop older versions out of it.
+      #   The fallback covers exactly two cases — the first release ever, and a repo
+      #   whose latest release predates this mechanism and so has no appcast asset —
+      #   where that URL 404s and site/appcast.xml's empty template is the right seed.
       # - The zip's neighbouring .html file becomes the entry's release notes.
       #   Without DOCTYPE or body tags, generate_appcast embeds it as CDATA, so
       #   Sparkle needs no second request to show it.
@@ -378,9 +391,13 @@ jobs:
           tool="$(find SourcePackages/artifacts -type f -name generate_appcast | head -1)"
           [ -x "$tool" ] || { echo "::error::generate_appcast not found in the resolved Sparkle package"; exit 1; }
           mkdir -p appcast
-          git fetch --depth=1 origin main:refs/remotes/origin/main
-          git show refs/remotes/origin/main:site/appcast.xml > appcast/appcast.xml \
-            || cp site/appcast.xml appcast/appcast.xml
+          # -f so a 404 is a failure rather than an HTML error page written into the
+          # feed; -L to follow the redirect to the current latest release's asset.
+          if ! curl -fLsS -o appcast/appcast.xml \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/appcast.xml"; then
+            echo "No published appcast yet; seeding from the empty template in site/."
+            cp site/appcast.xml appcast/appcast.xml
+          fi
           cp "Cheerio-${{ steps.version.outputs.suffix }}.zip" appcast/
           cat > "appcast/Cheerio-${{ steps.version.outputs.suffix }}.html" <<EOF
           <h2>Cheerio ${{ steps.version.outputs.short_version }}</h2>
@@ -421,8 +438,10 @@ jobs:
               --verify --ed-key-file - "$zip" "$signature"
           echo "Appcast entry verifies against ${zip}."
 
-      # Before the appcast is published, so the enclosure URL it points at exists by
-      # the time anyone's updater reads it.
+      # This *is* the publish, for both the app and its update feed: the zip and
+      # appcast.xml go on as assets of the same release, in one call. The feed's
+      # enclosure URL points at this release's own zip, so there is no moment where
+      # a published feed advertises a download that doesn't exist yet.
       - name: Create GitHub Release
         if: github.ref_type == 'tag'
         env:
@@ -449,36 +468,26 @@ jobs:
           [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)) — full
           attribution in `THIRD-PARTY-NOTICES.md` inside the app bundle.
           EOF
-          gh release create "${GITHUB_REF_NAME}" \
+          # If the release already exists, this is a re-run after something failed
+          # later on, and `create` refuses. Upload the assets to the existing release
+          # instead (--clobber to replace the previous attempt's copies): a re-run
+          # after a partial failure has to be able to finish the job, rather than
+          # leaving a release whose feed was never attached.
+          if ! gh release create "${GITHUB_REF_NAME}" \
             "Cheerio-${{ steps.version.outputs.suffix }}.zip" \
+            appcast/appcast.xml \
             --title "Cheerio ${GITHUB_REF_NAME}" \
             --notes-file release-notes.md \
             --generate-notes \
-            --verify-tag
-
-      # Commit the feed back to site/ and redeploy the Pages site, which is what
-      # actually serves https://obviosco.github.io/cheerio/appcast.xml. Two details:
-      #
-      # - The commit goes through the API rather than a push, because this checkout
-      #   is a detached tag with a modified Info.plist and a generated .xcodeproj in
-      #   it — switching it to main to commit one file is asking for trouble.
-      # - pages.yml has to be triggered by hand: commits made with GITHUB_TOKEN
-      #   deliberately do not fire other workflows, so its push trigger won't see
-      #   this one. Without the second call the feed sits in git, unpublished.
-      - name: Publish appcast to the Pages site
-        if: github.ref_type == 'tag'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          sha="$(gh api "repos/${GITHUB_REPOSITORY}/contents/site/appcast.xml?ref=main" --jq .sha)"
-          gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/site/appcast.xml" \
-            -f message="Publish appcast for ${GITHUB_REF_NAME}" \
-            -f branch=main \
-            -f sha="$sha" \
-            -f content="$(base64 -i appcast/appcast.xml | tr -d '\n')" \
-            > /dev/null
-          gh workflow run pages.yml --ref main
-          echo "Appcast committed to main; Pages deploy started."
+            --verify-tag; then
+            echo "gh release create failed; assuming the release exists and uploading assets."
+            gh release view "${GITHUB_REF_NAME}" > /dev/null
+            gh release upload "${GITHUB_REF_NAME}" \
+              "Cheerio-${{ steps.version.outputs.suffix }}.zip" \
+              appcast/appcast.xml \
+              --clobber
+          fi
+          echo "Released ${GITHUB_REF_NAME} with the zip and appcast.xml attached."
 
       # Manual runs publish nothing, so the appcast rides along with the zip. It is
       # the dry run's output: read it, or feed it to a local Sparkle test app.
