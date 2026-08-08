@@ -21,3 +21,6 @@ Cheerio/Resources/Models/
 # Local xcodebuild output (release.yml builds into build/ via -derivedDataPath;
 # a stray local build once nearly swept ~400MB of derived data into a commit).
 build/
+
+# Screenshot harness output (regenerate with Scripts/screenshots/capture.sh)
+Scripts/screenshots/out/

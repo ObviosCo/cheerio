@@ -98,6 +98,7 @@ private struct OpenOnboardingCommand: View {
 struct ContentView: View {
     @Environment(CaptureSession.self) private var session
     @Environment(\.modelContext) private var context
+    @Environment(\.openWindow) private var openWindow
 
     /// The past meeting on show. Nil means "the live recording if there is one,
     /// otherwise the placeholder" — the split view's detail column owns this, because
@@ -129,6 +130,10 @@ struct ContentView: View {
             }
         }
         .task {
+            // No-op unless the screenshot harness passed its launch arguments; see
+            // `ScreenshotMode`. Here because it's the first point at which this
+            // window exists to be resized.
+            await ScreenshotMode.applyAtLaunch(openWindow: openWindow)
             // Only moves directories listed on a Meeting, never anything else in the
             // shared folder we used to write into.
             StorageMigration.migrateAudioIfNeeded(context: context)
