@@ -263,6 +263,16 @@ final class CaptureSession {
                 // Transcript-only fallback: meeting remains useful without notes.
             }
             try? context.save()
+
+            // The transcript is "ready" — issue #26's callback contract — right
+            // here, and nowhere else: capture has stopped, diarization has run
+            // (`catch` above notwithstanding — a failed pass still leaves the
+            // channel-only labels, which is what a callback fired any earlier
+            // would have shipped anyway), and enhancement has run or conclusively
+            // failed. Firing before this point would hand the callback worse
+            // speaker attribution than the app itself ends up showing, and labels
+            // are exactly what the owner-attributed action items depend on.
+            fireTranscriptReadyCallback(for: meeting, context: context)
         }
 
         // Applies "Don't keep audio" immediately, and sweeps anything that aged out
@@ -281,5 +291,13 @@ final class CaptureSession {
         lastFinishedMeeting = meeting
         meeting = nil
         state = .idle
+    }
+
+    /// See the call site in ``stop(context:)`` for exactly which point in the
+    /// pipeline this is — this function only builds the export and hands it to
+    /// the runner, it doesn't decide when "ready" is.
+    private func fireTranscriptReadyCallback(for meeting: Meeting, context: ModelContext) {
+        let ownerNames = SpeakerLabeling.ownerNames(context: context)
+        TranscriptReadyRunner.fireIfNeeded(export: meeting.export(ownerNames: ownerNames))
     }
 }
