@@ -32,7 +32,9 @@ The app **builds, runs, and records real meetings**. This is no longer a paper p
 
 The README's [Current status](../README.md#current-status) table is the authority. The short version: an in-person two-person recording labelled 9 of 9 segments to the right speaker, including 1–2 second alternating turns. A live video call has never been tested. And there's a known bug where the mic hears your speakers, so remote participants land in *both* channels and the transcript duplicates itself — use headphones.
 
-The UI is developer-built and functional rather than designed. Some of it has already been through a round of usability fixes and is reasonable; none of it has had a designer's eye. There is still no logo, no icon, no color system, no type choice, and no name treatment — those don't exist at all.
+The UI is developer-built and functional rather than designed. Some of it has already been through a round of usability fixes and is reasonable; none of it has had a designer's eye.
+
+**The app icon shipped in [#15](https://github.com/ObviosCo/cheerio/pull/15)** — a copper ring on a deep navy gradient, rendered by `Scripts/render-appicon.swift` into a flat `AppIcon.appiconset`. That settles the palette's starting point (see §3) and part of Track A. There is still no wordmark, no type choice, no color system beyond the icon's four values, and no website.
 
 ### Constraints that shape everything
 
@@ -47,36 +49,26 @@ The UI is developer-built and functional rather than designed. Some of it has al
 
 ## 2. Track A — App icon
 
-The highest-value single deliverable. It's the Dock presence, the menu-bar presence, the About box, the GitHub README hero, and the anchor of the website in Track D. Since there's no App Store listing, it does a lot of the work a store icon would.
+**Mostly shipped.** [#15](https://github.com/ObviosCo/cheerio/pull/15) landed a copper ring on a deep navy gradient: the name is already a shape (the cereal, the final *o*, quietly a record ring), it's one geometry at every size, and it holds together at 16 px where illustrative concepts fall apart. That satisfies the "lean into the name, subtly" direction in §10.
 
-### Concept direction
+Two things about how it's built, because they change how you'd revise it:
 
-We do **not** have a fixed concept, but we do have a direction: **the name gets leaned into, subtly** (see §10). Some starting threads, none binding:
+- **It's generated, not drawn.** `Scripts/render-appicon.swift` is a CoreGraphics script that writes all ten `AppIcon.appiconset` slots. The PNGs are build artifacts — never hand-edit them; change the script and re-run `swift Scripts/render-appicon.swift`.
+- **Per-size optical corrections, not proportional scaling.** Below 128 px the ring thickens (17 → 21 units of 100) and the faint navy ink-edge hairlines drop out, so small slots read crisp rather than spindly. The masters are deliberately not the same drawing at different sizes.
 
-- "Cheerio" is a friendly British goodbye — the moment a call ends and the notes appear. That warmth should be present in the mark. The failure mode to avoid is campiness: the ring/cereal reading is a legible circular form and a bad joke at the same time, so if you go near it, it has to earn its place geometrically rather than as a pun.
-- The functional metaphors available: two audio channels, a waveform, a speech bubble, a note/page, a listening ear, a ring/loop, and now **several distinct voices** being told apart.
-- What the app actually does that's distinctive is *tell people apart and write down what they said*. That's a richer well than the microphone glyph every competitor uses. Don't reach for privacy or security iconography — it isn't what this app is about, and it would set the wrong expectation on sight.
+### What's left
 
-Please explore at least three distinct directions before converging, and show them at 32pt and 16pt early — most meeting-app icons collapse into mush at Dock-adjacent sizes.
+| Asset | Format | Use | Status |
+| --- | --- | --- | --- |
+| App icon, flat set | `.appiconset` PNGs | The app itself | **Done** (#15) |
+| Icon Composer bundle | `.icon` (layered) | Light / dark / clear / **tinted** variants | Not done — see below |
+| Monochrome mark | SVG | Menu-bar item, favicon, docs | Not done |
+| Social preview | PNG 1280×640 | GitHub repository card | Not done |
+| DMG / download presentation | See §8 | Direct distribution | Not done |
 
-### Format and technical spec
+The **`.icon` bundle** is the notable gap. macOS 26 masks every icon into its own squircle and offers four appearance variants; the flat set is fully valid and renders correctly, but it doesn't participate in the layered treatment. Tinted mode is the one that would test the mark hardest, since it strips colour and the copper-on-navy contrast is doing real work. Treat this as a polish pass, not a rebuild — the geometry is settled.
 
-macOS 26 uses **Icon Composer** (`.icon` bundles) rather than flat PNG sets. Deliver:
-
-- A layered `.icon` document authored in Icon Composer (Xcode 26 ships it), with the layer stack organized and named.
-- All four appearance variants working: **light, dark, clear, and tinted**. Tinted mode punishes icons that rely on color to carry meaning — the form has to survive as a monochrome silhouette.
-- Source vector artwork (`.svg` or Illustrator/Figma file) alongside the `.icon`, so it can be re-cut later.
-- Respect Apple's current macOS icon grid and rounded-rect masking — don't design a full-bleed square or a free-floating shape.
-
-Also deliver, derived from the same artwork:
-
-| Asset | Format | Use |
-| --- | --- | --- |
-| App icon | `.icon` (layered) | The app itself |
-| Icon preview renders | PNG, 1024/512/256/128/64/32/16 @1x and @2x | README, release notes |
-| Monochrome mark | SVG | Menu-bar item, favicon, docs |
-| Social preview | PNG 1280×640 | GitHub repository preview card |
-| DMG / download presentation | See §8 | Direct distribution |
+The **monochrome mark** matters more than its row suggests: it's the menu-bar item, and §10 makes the menu bar the app's front door.
 
 ### Menu-bar icon — now a first-class surface
 
@@ -101,8 +93,9 @@ Deliberately lightweight. This is an open-source utility, not a company. What we
 
 1. **Wordmark / name treatment.** "Cheerio" set in something with character but not costume. SVG, with a lockup (mark + wordmark, horizontal and stacked) and clearance rules.
 
-2. **Color palette.** Small, but it has more work to do than a typical app palette. It needs:
-   - A primary accent.
+2. **Color palette.** Small, but it has more work to do than a typical app palette. The starting point is no longer open: the shipped icon anchors it at **navy** `#1E2B3F`→`#35496B` and **copper** `#A87040`→`#D49E6C`. Build outward from those rather than proposing a new accent — the icon is in the Dock now and the rest of the system should agree with it. It needs:
+   - A primary accent, derived from the icon's copper.
+   - Neutrals, surfaces, and borders that sit with the navy without turning the app into a dark-blue product. Most of the app is a text-heavy light-or-dark reading surface; the brand colours are punctuation.
    - **A speaker identity system.** This is the interesting one. The transcript labels speakers, and depending on the meeting a label can be `Me`, `Them`, `Speaker 2`, or a real enrolled name — up to four resolved per channel. Right now everything is hardcoded blue for the mic channel and gray for the system channel ([MeetingDetailView.swift:172](../Cheerio/Views/MeetingDetailView.swift#L172)), which means two different named people on the same channel look identical. Design a categorical, colorblind-safe way to distinguish speakers that degrades gracefully when there's only one, and that doesn't turn a transcript into a highlighter accident.
    - **A "model said" vs. "you said" distinction.** Hand-corrected speaker labels are currently marked with a 7-point `hand.raised.fill` glyph. Provenance matters here — this app asks the user to correct a model and promises the corrections survive — and it deserves a real treatment rather than a tiny icon.
    - Warning/attention states. Several already exist in orange (sample too short, duplicate name, over the speaker cap) and need to be part of the system rather than ad hoc.
@@ -278,7 +271,7 @@ This is a public MIT-licensed repository, and it ships outside the App Store.
 
 ## 9. Suggested sequencing
 
-1. **App icon + the four menu-bar states.** The app builds and runs without one — what this unblocks is everything the project shows to anyone else: the Dock and menu-bar presence, the README, the GitHub social card, and the download. Self-contained, and doesn't depend on the UI work.
+1. ~~**App icon**~~ — shipped in #15. What remains from Track A is the monochrome menu-bar mark and its four states, the `.icon` bundle, and the social card. The menu-bar mark is the one worth doing next; the rest can wait.
 2. **Color, type, and the token inventory** — including the speaker identity system, which is the part with actual design content in it.
 3. **The speaker seam and the live recording screen** (questions 1, 4, 7, 8). The hardest and most valuable problem.
 4. **Enrollment and correction flows** (questions 2, 3, 5). Newest surfaces, least designed, and where the app currently over-explains itself.
@@ -290,6 +283,8 @@ This is a public MIT-licensed repository, and it ships outside the App Store.
 ## 10. Decisions already made
 
 These were open when this brief was drafted. They've since been settled, and they're binding — design against them rather than reopening them.
+
+- **The palette is anchored by the shipped icon.** Navy `#1E2B3F`→`#35496B`, copper `#A87040`→`#D49E6C`. These come from the studio palette Cheerio shares with its sibling projects, so the family is settled even though the system built on top of it isn't. Don't propose a replacement accent; propose the neutrals, surfaces, states, and speaker colours that live with it.
 
 - **Lean into the name, subtly.** "Cheerio" is a warm, slightly British goodbye and the identity should carry some of that. The constraint is register: **subtle, not campy.** No cereal jokes, no Union Jacks, no winking. The warmth should be something you notice on the second look, not the first. This is the single hardest line to walk in this brief and it's worth showing a range so we can calibrate together.
 
