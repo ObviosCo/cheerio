@@ -283,6 +283,7 @@ unsandboxed. Hardened runtime stays on.
 cheerio/
 ├── project.yml       # XcodeGen config → generates Cheerio.xcodeproj
 ├── Scripts/          # bootstrap.sh — fresh checkout → buildable, in one command
+│   └── screenshots/  # Seeds demo meetings and photographs the app; makes site/img
 ├── CheerioKit/       # SwiftPM package: portable core (macOS + future iOS)
 │   └── Sources/CheerioKit/
 │       ├── Models/           # SwiftData: Meeting, TranscriptSegment, EnrolledSpeaker

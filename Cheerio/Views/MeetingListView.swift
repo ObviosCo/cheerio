@@ -100,6 +100,14 @@ struct MeetingListView: View {
             }
         }
         .task {
+            // No-op unless the screenshot harness passed its launch arguments; see
+            // `ScreenshotMode`. Here rather than in `ContentView` because this is
+            // where the sidebar's order is already resolved.
+            if let index = ScreenshotMode.selectedMeetingIndex, meetings.indices.contains(index) {
+                selection = meetings[index]
+            }
+        }
+        .task {
             // Keep the calendar offer fresh as events start and end.
             while !Task.isCancelled {
                 currentEvent = await CalendarService.shared.currentMeeting()

@@ -362,6 +362,28 @@ thead th { border-bottom-color: var(--ch-border-default); }
   color: var(--ch-text-secondary);
 }
 
+/* A window that isn't 16:10. The walkthrough and Settings are small fixed-size
+ * windows — cropping them to the hero's ratio cuts them in half — so they're shown
+ * at their own shape, centred on the same sunken surface. Both are captured at 2×
+ * and never scaled up past 1×, so they stay sharp. */
+.shot--panel img {
+  aspect-ratio: auto;
+  object-fit: contain;
+  width: auto;
+  max-width: 100%;
+  margin-inline: auto;
+  padding: var(--ch-space-6) var(--ch-space-4);
+}
+
+/* The row of them. Falls to one column early: below about 40rem two of these are
+ * narrower than the windows they contain. */
+.shot-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: var(--ch-space-6);
+  align-items: start;
+}
+
 /* ---- Releases ---------------------------------------------------------------
  * One entry per version, permalinked. The structure here is the contract the
  * release-notes skill writes against — see the template comment in

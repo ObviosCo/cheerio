@@ -23,6 +23,9 @@ Cheerio/Resources/Models/
 # a stray local build once nearly swept ~400MB of derived data into a commit).
 build/
 
+# Screenshot harness output (regenerate with Scripts/screenshots/capture.sh)
+Scripts/screenshots/out/
+
 # Disk images and the venv Scripts/make-dmg.sh needs. Both are build output:
 # the DMG is ~96 MB, and its background art is generated, never committed.
 *.dmg
