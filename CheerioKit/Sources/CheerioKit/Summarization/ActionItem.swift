@@ -157,7 +157,20 @@ extension ActionItem {
     func merging(_ other: ActionItem) -> ActionItem {
         let bothOwner = isOwner && other.isOwner
         let bothActionable = disposition == .actionable && other.disposition == .actionable
-        let nonOwnerName = (isOwner ? nil : owner) ?? (other.isOwner ? nil : other.owner)
+
+        // The name follows the merged verdict. A demoted item's name is who to
+        // chase, so a guest's name wins over the owner's — but when the sightings
+        // name two *different* guests, the attribution is disputed (or these are two
+        // people's takes on one commitment), and exporting an arbitrary one of them
+        // would send the user to chase the wrong person. Disputed means unnamed.
+        let mine = isOwner ? nil : owner
+        let theirs = other.isOwner ? nil : other.owner
+        let nonOwnerName: String?
+        switch (mine, theirs) {
+        case (let a?, let b?) where a.lowercased() != b.lowercased(): nonOwnerName = nil
+        case (let a, let b): nonOwnerName = a ?? b
+        }
+
         return ActionItem(
             text: text,
             owner: bothOwner ? (owner ?? other.owner) : nonOwnerName,
