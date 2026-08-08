@@ -1,6 +1,6 @@
 # Cheerio — Design Handoff
 
-A brief for a designer joining the Cheerio project. Covers three tracks: **app icon**, **brand identity**, and **UI review + improvement**.
+A brief for a designer joining the Cheerio project. Four tracks: **app icon**, **brand identity and voice**, **UI review + improvement**, and a **website**.
 
 Read the [README](../README.md) first — it describes what the app does today, what's verified, and what's broken. Then [SPEC.md](SPEC.md) for scope and [ARCHITECTURE.md](ARCHITECTURE.md) for how it works. This document is the design-side counterpart to those, and the only one written for someone who isn't going to read the Swift.
 
@@ -37,23 +37,23 @@ The UI is developer-built and functional rather than designed. Some of it has al
 ### Constraints that shape everything
 
 - macOS 26 (Tahoe)+ only, Apple Silicon. We can use the newest platform APIs and design language without back-compat compromises.
-- **App Sandbox is off, permanently.** A sandboxed process tap returns success at every step and then reads pure digital silence — no error, no prompt. This is documented in ARCHITECTURE.md as a do-not-revisit. The consequence for you: **Cheerio cannot ship on the Mac App Store.** Distribution is direct download, which changes what presentation assets matter (see §7).
+- **App Sandbox is off, permanently.** A sandboxed process tap returns success at every step and then reads pure digital silence — no error, no prompt. This is documented in ARCHITECTURE.md as a do-not-revisit. The consequence for you: **Cheerio cannot ship on the Mac App Store.** Distribution is direct download, which changes what presentation assets matter (see §8).
 - **At most four speakers** can be resolved per audio channel. That's a hard model limit and it leaks into the UI in several places — see §4.
 - **If you do state the offline property, state it precisely.** There is no networking code in the app — no `URLSession`, no sockets — and that, rather than any entitlement, is what makes it true. The one asterisk: macOS itself fetches the speech model for your locale on first run. The README's [Local-only by construction](../README.md#local-only-by-construction) section has the exact wording. Say it once, plainly, where it's useful; don't round it up into a promise the app can't make.
-- MIT licensed, public repo. Every asset delivered must be redistributable — see [Licensing](#7-licensing-and-asset-hygiene).
+- MIT licensed, public repo. Every asset delivered must be redistributable — see [Licensing](#8-licensing-and-asset-hygiene).
 - Solo/small maintenance. Prefer a system a developer can extend without the designer in the loop over a set of hand-tuned one-off screens.
 
 ---
 
 ## 2. Track A — App icon
 
-The highest-value single deliverable. It's the Dock presence, the menu-bar presence, the About box, the GitHub README hero, and — since there's no App Store listing and no marketing site — very nearly the whole first impression.
+The highest-value single deliverable. It's the Dock presence, the menu-bar presence, the About box, the GitHub README hero, and the anchor of the website in Track D. Since there's no App Store listing, it does a lot of the work a store icon would.
 
 ### Concept direction
 
-We do **not** have a fixed concept. Some starting threads, none binding:
+We do **not** have a fixed concept, but we do have a direction: **the name gets leaned into, subtly** (see §10). Some starting threads, none binding:
 
-- The name "Cheerio" is a friendly British goodbye — the moment a call ends and the notes appear. There's also the cereal/ring reading, which is a legible circular form.
+- "Cheerio" is a friendly British goodbye — the moment a call ends and the notes appear. That warmth should be present in the mark. The failure mode to avoid is campiness: the ring/cereal reading is a legible circular form and a bad joke at the same time, so if you go near it, it has to earn its place geometrically rather than as a pun.
 - The functional metaphors available: two audio channels, a waveform, a speech bubble, a note/page, a listening ear, a ring/loop, and now **several distinct voices** being told apart.
 - What the app actually does that's distinctive is *tell people apart and write down what they said*. That's a richer well than the microphone glyph every competitor uses. Don't reach for privacy or security iconography — it isn't what this app is about, and it would set the wrong expectation on sight.
 
@@ -76,7 +76,7 @@ Also deliver, derived from the same artwork:
 | Icon preview renders | PNG, 1024/512/256/128/64/32/16 @1x and @2x | README, release notes |
 | Monochrome mark | SVG | Menu-bar item, favicon, docs |
 | Social preview | PNG 1280×640 | GitHub repository preview card |
-| DMG / download presentation | See §7 | Direct distribution |
+| DMG / download presentation | See §8 | Direct distribution |
 
 ### Menu-bar icon — now a first-class surface
 
@@ -93,9 +93,9 @@ Design **all four** as template images: single-color, transparent, on an 18×18p
 
 ---
 
-## 3. Track B — Brand and identity
+## 3. Track B — Brand, identity, and voice
 
-Deliberately lightweight. This is an open-source utility, not a company. What we need is enough of a system that the app, the README, and the download page look like one thing.
+Deliberately lightweight. This is an open-source utility, not a company. What we need is enough of a system that the app, the README, and the website look like one thing.
 
 **Deliverables:**
 
@@ -116,9 +116,15 @@ Deliberately lightweight. This is an open-source utility, not a company. What we
 
    Two jobs. First, the ordinary one: set the register for the app itself and give us five or six rewritten examples. Second, the harder one: **the UI currently explains itself constantly**, because the model underneath is complicated — a four-voice cap, per-meeting rosters, samples that can be too short, corrections that outrank the model. Nearly every control carries a caption defending it. Some of that explanation should become structure, progressive disclosure, or better defaults instead of more text. Deciding which is a design problem, not a copywriting one.
 
-5. **README / repo presentation.** The README was rewritten recently and reads well; it has no visual identity at all. A hero image or icon banner and a light styling pass. For an open-source project this is the entire top of the funnel.
+5. **The voice, written as a skill we can run.** Not just a style page — a `SKILL.md` that lives in the repo (`.claude/skills/cheerio-voice/`) and lets an agent write in Cheerio's voice without you in the room. Release notes are the first and most frequent job: this is a solo-maintained open-source project that will ship versions for years, and every release needs notes that sound like the same product. The same skill should cover README edits, website copy, commit-adjacent prose, and UI microcopy.
 
-**Out of scope for now:** landing page design, App Store screenshots (ruled out entirely — see §1), merchandise, motion/brand animation.
+   What makes a voice skill work is specificity that survives paraphrase: not "be clear and friendly," but the actual rules — sentence case, no exclamation marks, name the thing that broke, don't say "we're excited to announce," how to write a release note for a bug fix versus a feature versus a breaking change, with real before/after examples drawn from this repo. Include the anti-patterns; they carry more signal than the positives. Ship it with three or four worked examples an agent can pattern-match against.
+
+   If a second skill earns its place, it's a UI-microcopy one — the constraints there are different enough (length limits, no room to explain, the caption-density problem above) that folding it into the release-notes voice would blunt both.
+
+6. **README / repo presentation.** The README was rewritten recently and reads well; it has no visual identity at all. A hero image or icon banner and a light styling pass. Along with the website, this is the top of the funnel.
+
+**Out of scope for now:** App Store screenshots (ruled out entirely — see §1), merchandise, motion/brand animation.
 
 ---
 
@@ -130,7 +136,7 @@ The most open-ended track, and after the icon the most valuable. Everything belo
 
 | Surface | File | What it is |
 | --- | --- | --- |
-| App shell | [CheerioApp.swift](../Cheerio/CheerioApp.swift) | Three scenes: main `Window`, `MenuBarExtra`, `Settings`. Split view; selection lives in the detail column |
+| App shell | [CheerioApp.swift](../Cheerio/CheerioApp.swift) | Three scenes: main `Window`, `MenuBarExtra`, `Settings`. Split view; selection lives in the detail column. **Window-first today — §10 says this should invert** |
 | Library sidebar | [MeetingListView.swift](../Cheerio/Views/MeetingListView.swift) | Start/stop controls, a live calendar-event offer, elapsed timer, `.searchable` search, flat reverse-chronological list |
 | Live recording | [RecordingView.swift](../Cheerio/Views/RecordingView.swift) | Editable title + roster menu + timer header; `VSplitView` with notes on top (ideal 460pt) and transcript below (ideal 180pt) |
 | Meeting detail | [MeetingDetailView.swift](../Cheerio/Views/MeetingDetailView.swift) | Header, rendered Markdown notes, rough notes, "Re-identify speakers", speakers panel, expanded transcript with a per-line speaker menu, Export |
@@ -148,7 +154,7 @@ The README's [Known issues](../README.md#current-status) and [Roadmap](../README
 - **First-run model download UI.** The transcription model downloads on first use; the UI for it is the words "Preparing model…" with no progress and no size estimate.
 - **System-audio and calendar permission handling.** Microphone has a real recovery path (an alert that deep-links into System Settings). The other two have nothing — and system audio is the one users won't understand.
 - **Audio playback.** Audio is recorded and retained but there's no way to hear it.
-- **Recording modes** (solo / in-person / video call), designed but unbuilt. The system tap is pointless for solo and in-person recording, and echo cancellation should differ per mode.
+- **Recording modes** (solo / in-person / video call), designed but unbuilt. Both channels always run today, and that's the right default — see §10, which corrects an earlier assumption about this. What modes would actually change is echo cancellation.
 - **In-room vs. remote per participant** — see design question 3.
 
 ### The design questions that matter
@@ -165,19 +171,25 @@ Roughly in priority order.
 
 3. **Voice enrollment.** Getting names instead of "Speaker 2" requires enrolling voices: roughly 30 seconds of someone talking. There are two entry points today — a form in a Settings tab, and "Use as voice sample" on a speaker in a finished meeting, which lifts their audio out of that recording. The second is the better idea and is currently the less prominent one. Neither is a flow; both are forms. There's also a "This is me" designation that pins one voice as the user. Design the path from "I just recorded a meeting with three strangers" to "future meetings name them."
 
-4. **The recording indicator, across three surfaces.** The user must never be uncertain whether Cheerio is recording — this is a trust product and ambiguity is a serious failure. There are currently three places that say so: the menu-bar symbol, the sidebar's red destructive Stop button with an elapsed timer, and the recording view itself. They don't share a visual language. Design the system, and make sure it works when the app is hidden.
+4. **The menu bar becomes the front door, and the recording indicator lives there.** §10 settles the direction: menu-bar-first, with the window as the library. So this question is really two.
+
+   The **IA**: what a menu that has to open fast and stay small can hold — starting a recording, the calendar offer, stopping, and what else? What forces the window open, and what deliberately doesn't? The keyboard path matters here; a global shortcut that starts a meeting without touching the mouse is the logical end of "fastest way to start."
+
+   The **state**: the user must never be uncertain whether Cheerio is recording — this is a trust product and ambiguity is a serious failure. Three places say so today (the menu-bar symbol, the sidebar's red Stop button with an elapsed timer, and the recording view) and they share no visual language. The menu-bar symbol now carries the most weight, because it's the one that's always visible.
 
 5. **The correction model, and making "your edit stuck" legible.** There are two levels of correction: rename a whole speaker across a meeting, or fix a single misattributed line via a menu on the label. Hand corrections outrank the model and survive re-identification. The current signal that a line was hand-corrected is a 7-point icon next to the label. Users need to trust that their edits persist — that's the promise the feature makes — and right now that promise is nearly invisible.
 
 6. **The meeting detail view is a long vertical stack.** Header, notes, rough notes, a re-identify button with an explanatory caption, a speakers panel, a divider, and a transcript that's expanded by default and can run to hundreds of lines each carrying its own menu. Everything is at the same altitude. This needs information architecture: what's the primary read, what's reference, what's a tool.
 
-7. **The live recording layout.** Already been through one revision — it started as a 50/50 horizontal split and is now vertical with the scratchpad dominant, on the reasoning that typing is the job and the transcript is glanceable reference. Worth a second look: whether 180pt of transcript is useful or vestigial, whether it should be collapsible, and how the whole thing behaves in a narrow window parked beside a Zoom call, which is the common case.
+7. **The live recording layout, and the Markdown scratchpad.** The layout has been through one revision — it started as a 50/50 horizontal split and is now vertical with the scratchpad dominant, on the reasoning that typing is the job and the transcript is glanceable reference. Worth a second look: whether 180pt of transcript is useful or vestigial, whether it should be collapsible, and how the whole thing behaves in a narrow window parked beside a Zoom call, which is the common case.
+
+   §10 also settles that the scratchpad accepts and renders **Markdown**. That's a design problem in its own right and it lands squarely in the middle of this view: the person typing is half-attending and writing fragments, so neither raw syntax nor full WYSIWYG is right. What does a heading, a bullet, or a checkbox look like the instant after it's typed?
 
 8. **Volatile text.** Live transcription emits provisional text that gets revised as the model hears more, currently rendered at 50% opacity and replaced in place. It's the most visually unsettled thing in the app. It needs a treatment that reads as "still listening" without twitching.
 
 9. **Four different kinds of waiting.** Model download on first run, note generation after stopping, speaker re-identification on demand, and the 30-second enrollment recorder (the only one with real progress feedback — it has a `ProgressView` and a live countdown, and it's the best-handled wait in the app). The other three are text labels. Note that these can also *fail*: summarization can fail and fall back to transcript-only, and identification can fail if the audio has been purged by the retention policy.
 
-10. **Permissions.** Three prompts, and they don't matter equally. **Microphone** is required for everything and is the only one with a recovery path today. **System audio** is the unfamiliar one: it's what captures the far end of a remote call, so denying it costs you every remote participant — while a solo or in-person recording, which is all microphone, is unaffected. **Calendar** is genuinely optional; without it recordings just get timestamp titles instead of event names. Design the pre-prompt explanation and the recovery state for each, and let the stakes differ — asking for all three with equal urgency at launch would be the wrong answer.
+10. **Permissions.** Three prompts, and they don't matter equally. **Microphone** is required for everything and is the only one with a recovery path today. **System audio** is the unfamiliar one, and it's what captures anything coming out of the machine — the far end of a remote call, but also whatever's playing while you record alone. Denying it costs you every remote participant and quietly narrows what a solo recording captures. **Calendar** is genuinely optional; without it recordings just get timestamp titles instead of event names. Design the pre-prompt explanation and the recovery state for each, and let the stakes differ — asking for all three with equal urgency at launch would be the wrong answer.
 
 11. **Audio retention, which is a real control and currently a bare picker.** How long recorded audio sticks around — immediately, 24 hours, 7 days, 30 days, forever — plus a "Delete audio now" button, sitting in a Settings tab with an explanatory caption. It's worth designing properly because deleting the audio has a consequence the UI doesn't yet connect: once it's gone, speakers can't be re-identified and "Use as voice sample" stops working. That relationship should be visible at the moment of choosing, not discovered later.
 
@@ -196,7 +208,31 @@ Roughly in priority order.
 
 ---
 
-## 5. What we'll give you
+## 5. Track D — The website
+
+Because there's no App Store listing, the website *is* the product page: where someone lands from a link, decides whether this is for them, and downloads a build. It also has a second job the App Store would normally do — telling people what changed in each release.
+
+**It lives in this repo and ships on GitHub Pages.** That's a constraint with teeth: **the site must be static.** No server, no build step that can't run in CI, no analytics, no embedded third-party scripts or fonts — the same "nothing phones home" property the app has should hold for the site, and for the same reason it's easy to lose by accident.
+
+Where it lives is a decision for us, not you, but it affects your file layout so it's worth naming: Pages can serve from `/docs` on `main` (which already holds the Markdown docs, so Jekyll would pick those up too), or from a `site/` directory published by an Action. Propose what suits the design; we'll wire it up.
+
+### Pages
+
+Start small. A site this project can maintain beats a site it can't.
+
+1. **Home.** What it is, who it's for, what it looks like, and a download button. The screenshot carries most of the weight here — which means the UI work in Track C and this page are the same problem seen twice. Be honest in the copy: the app is early, and the README's status table sets a tone worth matching.
+2. **Download / install.** Direct-download apps have a rough first-launch story — Gatekeeper, an unidentified developer, right-click-open. Design the page that gets someone past that without making the app look sketchy. This subsumes the DMG presentation described in §8.
+3. **Release notes.** One page, one entry per version, permalinked. This is the page that runs on rails for years, so its template matters more than its first instance — and it's exactly what the voice skill in Track B exists to write.
+
+Anything beyond those three (docs, a changelog feed, a page about how the on-device pipeline works) is welcome as a proposal, not an assumption.
+
+### What we need
+
+Real HTML and CSS, not a mockup handed over for someone else to build. Semantic markup, system font stack or a self-hosted OFL face (**no Google Fonts CDN** — that's a network call to someone else's server on every page load), light and dark via `prefers-color-scheme`, responsive down to a phone, and it should be legible with CSS disabled. Same accessibility bar as the app: AA contrast, real focus states, alt text, keyboard-navigable.
+
+---
+
+## 6. What we'll give you
 
 - The repo. You'll need macOS 26 and Xcode 26. A fresh clone is three commands, and the middle one does the fiddly parts (it fetches a ~93 MB model that isn't committed):
 
@@ -208,17 +244,21 @@ Roughly in priority order.
 - A walkthrough of the session state machine (`idle` → `preparingModel` → `recording` → `finishing` → `idle`) and how the three scenes relate.
 - **Please design the transcript views against real output.** Record something and look at it. It has no punctuation in places, mis-hears names, revises itself mid-sentence, and — in an in-person meeting — currently labels everything "Me" until you stop. Clean lorem-ipsum dialogue will lead you to the wrong design.
 
-## 6. What we need back
+## 7. What we need back
 
 - **Figma file** (or equivalent), organized by flow, light and dark artboards.
 - **A component/token inventory** — colors, type styles, spacing scale, repeated components, named so they map onto `Assets.xcassets` color sets and SwiftUI modifiers.
 - **Redlines only where we'd otherwise guess.** Don't spec what SwiftUI already decides.
 - **Icon deliverables** per §2, including all four menu-bar states.
+- **The website as working HTML/CSS**, per §5 — a pull request against this repo, not a mockup.
+- **The voice skill** as a `SKILL.md` with worked examples, per §3 — also a pull request.
 - **A short written rationale** for how you resolve the live-vs-post-hoc speaker seam (question 1). We'll be living with that one, and it's the decision most likely to be wrong in an interesting way.
 
 Prototypes are welcome but not required. A clear static spec plus a paragraph of intent beats a clickable prototype with ambiguous states.
 
-## 7. Licensing and asset hygiene
+Two of these deliverables are code that lands in the repo (the site, the skill) and the rest are specs someone implements in Swift. Worth being explicit about which is which as you go, so nothing sits in a Figma file waiting for a developer who thought you were shipping it.
+
+## 8. Licensing and asset hygiene
 
 This is a public MIT-licensed repository, and it ships outside the App Store.
 
@@ -228,21 +268,39 @@ This is a public MIT-licensed repository, and it ships outside the App Store.
 - For context on how carefully this is handled, read the README's [License](../README.md#license) section: the speaker model is under the NVIDIA Open Model License and is fetched by script rather than committed, specifically so the source tree stays MIT while a built app bundles an NVIDIA-licensed model. The one third-party dependency (FluidAudio) is Apache-2.0 and pinned exactly. Please hold your assets to the same standard.
 - Confirm in writing that the work can be committed to a public repo under MIT, and tell us up front if you want an attribution line — we're happy to give one, we just need it declared rather than discovered.
 
-**Distribution presentation.** Because the App Store is ruled out, the download experience is ours to build: a DMG (background art, window layout, drag-to-Applications affordance), the GitHub release page, and whatever first-launch reassurance an unsigned-or-notarized-but-not-App-Store app needs. This is a small but real deliverable that a normal Mac app would get for free from the store listing.
+- **The website inherits all of this**, and adds one rule of its own: no third-party CDNs, for fonts or anything else. Self-host or use the system stack. See §5.
 
-## 8. Suggested sequencing
+**Distribution presentation.** Because the App Store is ruled out, the download experience is ours to build: a DMG (background art, window layout, drag-to-Applications affordance), the GitHub release page, and whatever first-launch reassurance a notarized-but-not-App-Store app needs. The website's download page (§5) is the front of this; the DMG is the last step of it. Both are things a normal Mac app would get for free from a store listing.
+
+## 9. Suggested sequencing
 
 1. **App icon + the four menu-bar states.** The app builds and runs without one — what this unblocks is everything the project shows to anyone else: the Dock and menu-bar presence, the README, the GitHub social card, and the download. Self-contained, and doesn't depend on the UI work.
 2. **Color, type, and the token inventory** — including the speaker identity system, which is the part with actual design content in it.
 3. **The speaker seam and the live recording screen** (questions 1, 4, 7, 8). The hardest and most valuable problem.
 4. **Enrollment and correction flows** (questions 2, 3, 5). Newest surfaces, least designed, and where the app currently over-explains itself.
 5. **Onboarding, permissions, and waiting states** (questions 9, 10). Entirely absent, and what makes the app feel finished.
-6. **Meeting detail IA and the library** (questions 6, 12, 13). Functional today; improvable without a redesign.
-7. **Wordmark, README, DMG.** Nice, not blocking.
+6. **The website and the voice skill** (§5, §3). These can run in parallel with the app work and don't block it — but they need the icon and tokens from steps 1–2, so they can't come first. The release-notes template and the skill that writes into it are worth doing together.
+7. **Meeting detail IA and the library** (questions 6, 12, 13). Functional today; improvable without a redesign.
+8. **Wordmark, README, DMG.** Nice, not blocking.
 
-## 9. Open questions for the designer
+## 10. Decisions already made
 
-- Does the name "Cheerio" get leaned into (warm, British, a little playful) or treated neutrally (a utility that happens to be named that)? This propagates through the icon, the palette, and the copy voice — worth settling early.
-- Should the app become **menu-bar-first**? The `MenuBarExtra` exists and is genuinely the right surface mid-call, but the app is still window-first. Committing further is an architectural question as much as a design one.
-- Should **recording mode** (solo / in-person / video call) be surfaced to the user? It's designed but unbuilt, and it would fix real problems — the system tap is useless for in-person meetings, and echo cancellation should differ by mode. But it's a modal choice at the least convenient moment: right as a meeting starts. Is there a way to infer it, or to ask for it without a speed bump?
-- Is the rough-notes scratchpad plain text forever, or does it want lightweight structure (checkboxes, bullets)? Plain text is what's built; structure changes both the data model and the summarization prompt, so it needs to be a deliberate product decision rather than a visual one.
+These were open when this brief was drafted. They've since been settled, and they're binding — design against them rather than reopening them.
+
+- **Lean into the name, subtly.** "Cheerio" is a warm, slightly British goodbye and the identity should carry some of that. The constraint is register: **subtle, not campy.** No cereal jokes, no Union Jacks, no winking. The warmth should be something you notice on the second look, not the first. This is the single hardest line to walk in this brief and it's worth showing a range so we can calibrate together.
+
+- **The app should be menu-bar-first.** The `MenuBarExtra` becomes the primary surface, not a convenience mirror of the sidebar. The reasoning is speed: the fastest path to starting a meeting shouldn't require finding a window first. The window becomes the library — where you read, search, and correct — rather than the place you go to begin.
+
+  This is a real IA change and it lands on you. What belongs in a menu that has to stay small and fast, versus what needs the window? Where does the calendar offer live? Does starting a recording open the window, or stay out of your way until you want it? What's the keyboard path? See design question 4, which this now outranks.
+
+- **Recording mode is *not* about disabling the system tap.** An earlier version of this brief said the tap was pointless for solo recording. That's wrong, and it's worth understanding why: input and output can be different devices. Someone recording alone through AirPods still has system audio worth capturing, and the mic isn't picking it up out of the room. Running both channels is the right default, and it stays.
+
+  What that leaves is the narrower question — whether echo cancellation should differ by situation, and whether that's worth asking the user about at the worst possible moment (right as a meeting starts). Prefer inference or a quiet default over a modal choice.
+
+- **The scratchpad should accept and render Markdown.** Plain text is what's built. Markdown is what people expect from a text box now, and rough notes want structure — bullets, headings, the occasional checkbox — precisely because they're written fast.
+
+  Two things make this cheaper than it sounds: `MarkdownBlock` in CheerioKit already parses block Markdown, and `MarkdownNotesView` already renders it for the enhanced notes. The design problem isn't rendering, it's **editing**: what a live-editing Markdown surface looks like during a meeting, when the user is half-attending and typing fragments. Full rich-text WYSIWYG is almost certainly wrong here; so is raw syntax with no feedback. Find the quiet middle.
+
+## 11. Still open
+
+- Whether the enhanced-notes output should be rendered as real structure (summary / key points / decisions / action items as distinct sections) rather than one Markdown blob. Action items are the highest-value thing the app produces and are currently buried in prose. Raised as design question 6; not yet decided.
