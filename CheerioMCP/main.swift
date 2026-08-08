@@ -32,7 +32,9 @@ func hostAppVersion() -> String {
     // `FileManager.contents(atPath:)` rather than `Data(contentsOf:)`: the latter
     // accepts any URL scheme, so referencing it links CFNetwork into this binary —
     // which is exactly the kind of thing this target is supposed to be able to prove it
-    // doesn't do. Verified with `otool -L`, which lists no networking framework at all.
+    // doesn't do. (`otool -L` shows no Network.framework; CFNetwork is inherited via
+    // CheerioKit/FluidAudio's dormant downloader — linked, never invoked. See
+    // docs/ARCHITECTURE.md.)
     guard let data = FileManager.default.contents(atPath: plist.path(percentEncoded: false)),
         let parsed = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
         let version = parsed["CFBundleShortVersionString"] as? String

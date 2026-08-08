@@ -104,8 +104,14 @@ public final class Meeting {
     /// ``TranscriptSegment/assignSpeaker(_:)`` retiring the diarizer's claim on a
     /// line once a human names it, this retires ``isTitleAutomatic`` for good, so no
     /// later auto-title pass can overwrite it.
+    ///
+    /// A blank rename is a non-event, not a rename: the live bindings call this on
+    /// every keystroke, so clearing the field mid-edit (or abandoning it empty) must
+    /// neither blank the title permanently nor burn auto-title eligibility.
     public func rename(to newTitle: String) {
-        title = newTitle
+        let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        title = trimmed
         isTitleAutomatic = false
     }
 

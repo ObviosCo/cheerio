@@ -84,6 +84,23 @@ import Testing
         #expect(meeting.shouldAutoTitle == false)
     }
 
+    @Test func blankRenameIsANonEvent() {
+        // The live bindings call rename on every keystroke — clearing the field
+        // mid-edit must neither blank the title nor burn auto-title eligibility.
+        let meeting = Meeting(title: "Meeting Aug 8, 2026 at 9:36 AM")
+        meeting.isTitleAutomatic = true
+
+        meeting.rename(to: "   \n")
+
+        #expect(meeting.title == "Meeting Aug 8, 2026 at 9:36 AM")
+        #expect(meeting.isTitleAutomatic == true)
+
+        // And a real rename arriving after a blank one still lands trimmed.
+        meeting.rename(to: "  Pilot kickoff  ")
+        #expect(meeting.title == "Pilot kickoff")
+        #expect(meeting.isTitleAutomatic == false)
+    }
+
     @Test func renamedTitleIsUntouchedByASubsequentGeneratedTitleAttempt() {
         // The scenario the "never overwrite" rule exists for: a user renames, then
         // something calls the auto-title path again later (a retry, a second

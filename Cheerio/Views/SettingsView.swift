@@ -38,7 +38,7 @@ struct MCPSettingsView: View {
         Form {
             Section {
                 Text(
-                    "Cheerio ships a small MCP server, so agents already running on this Mac can look up what was said in a meeting. It reads your meetings and can't change them, start a recording, or run anything. It talks over a pipe to whichever client launched it — nothing is listening, and nothing leaves this Mac."
+                    "Cheerio ships a small MCP server, so agents already running on this Mac can look up what was said in a meeting. It reads your meetings and can't change them, start a recording, or run anything. It talks over a pipe to whichever client launched it — nothing is listening, and Cheerio itself sends nothing off this Mac. What the client you connect does with the results is that client\u{2019}s policy: an agent backed by a cloud model will send what it reads to that model."
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)

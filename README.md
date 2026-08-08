@@ -133,7 +133,7 @@ on and nothing to pay for month to month — you run it, and you control it.
 - **Nothing needs the network while a meeting is recorded or processed.** That is the
   invariant, and it holds with the machine in airplane mode: capture, transcription, speaker
   attribution and note generation all run on-device, start to finish. The bundled MCP server
-  is no exception — it talks over a pipe and links no networking framework at all. (The one
+  is no exception — it talks over a pipe and never invokes a networking path. (The one
   code-level asterisk: FluidAudio, the diarization dependency, ships model-download code
   Cheerio never calls, because the model is bundled and its URL passed in.)
 - **The app's only network access is checking for its own updates.** Sparkle fetches the
