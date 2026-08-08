@@ -29,6 +29,17 @@ import Testing
         #expect(reconciled == item)
     }
 
+    @Test func namedOwnerItemDemotesWhenNoOwnerLinesRemain() {
+        // Jackson is still the enrolled owner, but the meeting's only owner line was
+        // corrected to a guest: with no owner line left anywhere, nothing in this
+        // meeting is the owner's to act on — the name alone isn't evidence.
+        let item = ActionItem(
+            text: "Draft the proposal", owner: "Jackson", isOwner: true, disposition: .actionable)
+        let reconciled = item.reconciled(ownerNames: ["Jackson"], meetingHasOwnerLines: false)
+        #expect(!reconciled.isOwner)
+        #expect(reconciled.disposition == .followUp)
+    }
+
     @Test func unnamedItemDemotesWhenNoOwnerLinesRemain() {
         // A first-person commitment whose mic lines were all corrected to a guest:
         // "I'll do it" wasn't the owner talking after all.

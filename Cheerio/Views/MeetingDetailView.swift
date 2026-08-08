@@ -213,6 +213,11 @@ struct MeetingDetailView: View {
         defer { isRelabeling = false }
         do {
             try await SpeakerLabeling.label(meeting: meeting, context: context)
+            // A fresh diarization pass rewrites non-manual labels wholesale — the
+            // same trust-state invalidation as a hand correction, so the persisted
+            // items must be re-checked the same way (see Meeting.reconcileActionItems).
+            meeting.reconcileActionItems(ownerNames: SpeakerLabeling.ownerNames(context: context))
+            try? context.save()
         } catch {
             relabelError = error.localizedDescription
         }
