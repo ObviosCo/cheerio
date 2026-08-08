@@ -194,6 +194,11 @@ struct MeetingDetailView: View {
     }
 
     private func save() {
+        // Correcting who said a line can change who owns an action item; the stored
+        // items must agree with what an export would now say (see
+        // Meeting.reconcileActionItems). Idempotent, so harmless for saves that
+        // didn't touch a label.
+        meeting.reconcileActionItems(ownerNames: SpeakerLabeling.ownerNames(context: context))
         do {
             try context.save()
         } catch {

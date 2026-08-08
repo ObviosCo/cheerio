@@ -25,24 +25,45 @@ public struct ActionItem: Codable, Sendable, Equatable {
         case followUp
     }
 
-    public var text: String
+    public let text: String
     /// Who committed, when the transcript named someone. A display name, *not* a trust
     /// signal: nil here means nobody was named, not that the owner owns it.
-    public var owner: String?
-    /// Whether ``owner`` resolved to the meeting's owner. This, never ``owner``, is
-    /// what decides whether an agent may act.
-    public var isOwner: Bool
-    public var disposition: Disposition
+    public let owner: String?
+    /// Whether ``owner`` resolved to the meeting's owner — attribution metadata, not
+    /// the execution decision. ``disposition`` alone says whether an agent may act:
+    /// an owner-attributed item can still be `followUp` when the model saw a
+    /// dependency the mechanical check can't. What `isOwner == false` *guarantees*
+    /// is the other direction — a non-owner item is never `actionable`.
+    public let isOwner: Bool
+    public let disposition: Disposition
 
-    /// Module-internal on purpose: production callers go through
-    /// ``resolved(from:ownerNames:)``, so no client can mint an impossible trust
-    /// state like `isOwner: false, disposition: .actionable`. Tests reach it via
-    /// `@testable`.
+    /// Module-internal on purpose, and `let` throughout: production callers go
+    /// through ``resolved(from:ownerNames:)``, so no client can mint or mutate its
+    /// way into an impossible trust state like `isOwner: false, disposition:
+    /// .actionable`. Tests reach it via `@testable`; decoding enforces the same
+    /// invariant in `init(from:)`.
     init(text: String, owner: String? = nil, isOwner: Bool, disposition: Disposition) {
         self.text = text
         self.owner = owner
         self.isOwner = isOwner
         self.disposition = disposition
+    }
+
+    /// Decoding is a construction path like any other, so it carries the same
+    /// invariant: JSON claiming `isOwner: false` with `actionable` — hand-edited,
+    /// or from a future buggy writer — comes back demoted rather than trusted.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let text = try container.decode(String.self, forKey: .text)
+        let owner = try container.decodeIfPresent(String.self, forKey: .owner)
+        let isOwner = try container.decode(Bool.self, forKey: .isOwner)
+        let disposition = try container.decode(Disposition.self, forKey: .disposition)
+        self.init(
+            text: text,
+            owner: owner,
+            isOwner: isOwner,
+            disposition: isOwner ? disposition : .followUp
+        )
     }
 }
 
@@ -126,15 +147,20 @@ extension ActionItem {
     }
 
     /// Folds a second sighting of the same commitment — the map step reading it in two
-    /// chunks, or the model restating it — into one item, conservatively: a name if
-    /// either sighting had one, and `actionable` only where both agreed the owner
-    /// committed.
+    /// chunks, or the model restating it — into one item, conservatively: `actionable`
+    /// only where both agreed the owner committed.
+    ///
+    /// The kept name follows the merged trust verdict. When the sightings disagree
+    /// about who committed, the merge demotes to a follow-up — and a follow-up's name
+    /// is who to *chase*, so a guest's name wins over the owner's: keeping "Jackson"
+    /// on an item Jackson doesn't own would tell the user to chase themselves.
     func merging(_ other: ActionItem) -> ActionItem {
         let bothOwner = isOwner && other.isOwner
         let bothActionable = disposition == .actionable && other.disposition == .actionable
+        let nonOwnerName = (isOwner ? nil : owner) ?? (other.isOwner ? nil : other.owner)
         return ActionItem(
             text: text,
-            owner: owner ?? other.owner,
+            owner: bothOwner ? (owner ?? other.owner) : nonOwnerName,
             isOwner: bothOwner,
             disposition: bothOwner && bothActionable ? .actionable : .followUp
         )
@@ -174,8 +200,38 @@ extension ActionItem {
             .joined(separator: " ")
     }
 
+    /// Re-checks this item's trust state against who the owner is *now* — the
+    /// answer changes when a line gets relabelled or an enrollment's `isMe` flips,
+    /// and an `actionable` item authorized by stale identity is exactly what the
+    /// trust rule exists to prevent.
+    ///
+    /// Demote-only, like everything else here: an item whose named committer no
+    /// longer resolves to the owner drops to `followUp`, but a correction in the
+    /// other direction never *promotes* — the model's original judgement about a
+    /// dependency is gone by now, so `actionable` can't be safely reconstructed.
+    /// Unnamed items (first-person commitments) carry no name to re-check;
+    /// `meetingHasOwnerLines` — whether any transcript line still resolves to the
+    /// owner — is the evidence that decides them: if the correction removed every
+    /// owner line, "I'll do it" wasn't the owner talking after all.
+    func reconciled(ownerNames: Set<String>, meetingHasOwnerLines: Bool) -> ActionItem {
+        let stillOwner: Bool
+        if let owner {
+            stillOwner = isOwner && ownerNames.contains { $0.lowercased() == owner.lowercased() }
+        } else {
+            stillOwner = isOwner && meetingHasOwnerLines
+        }
+        guard stillOwner != isOwner else { return self }
+        return ActionItem(text: text, owner: owner, isOwner: false, disposition: .followUp)
+    }
+
     private static let decoration = CharacterSet(charactersIn: " \t\n[](){}<>:;,.!?*\"'-")
     private static let ownerFirstPerson: Set<String> = ["me", "i", "my", "myself", "self", "user", "the user", "owner"]
+
+    fileprivate static func reconcile(
+        _ items: [ActionItem], ownerNames: Set<String>, meetingHasOwnerLines: Bool
+    ) -> [ActionItem] {
+        items.map { $0.reconciled(ownerNames: ownerNames, meetingHasOwnerLines: meetingHasOwnerLines) }
+    }
     private static let nobody: Set<String> = [
         "unassigned", "unattributed", "unknown", "unspecified", "none", "no one", "noone", "nobody",
         "n/a", "na", "tbd", "them", "someone", "anyone",
@@ -183,4 +239,39 @@ extension ActionItem {
         // everyone else in the room, and an agent can't tell which part was theirs.
         "we", "us", "our", "all", "everyone", "both", "team", "the team", "group", "the group", "the room",
     ]
+}
+
+extension Meeting {
+    /// Whether any transcript line still resolves to the owner — the evidence
+    /// ``ActionItem/reconciled(ownerNames:meetingHasOwnerLines:)`` uses for items
+    /// that carry no name.
+    private func hasOwnerLines(ownerNames: Set<String>) -> Bool {
+        segments.contains { Meeting.isOwnerAttributed($0, ownerNames: ownerNames) }
+    }
+
+    /// The persisted action items, re-checked against current speaker identity —
+    /// what ``MeetingExport`` serializes, so the machine-consumable path never
+    /// authorizes an action off a label that has since been corrected.
+    public func reconciledActionItems(ownerNames: Set<String>) -> [ActionItem] {
+        ActionItem.reconcile(
+            actionItems, ownerNames: ownerNames,
+            meetingHasOwnerLines: hasOwnerLines(ownerNames: ownerNames))
+    }
+
+    /// Persists the reconciliation. Call after anything that changes who a line
+    /// belongs to — relabelling a speaker, correcting a single line, or flipping an
+    /// enrollment's `isMe` — so the stored items agree with what an export would
+    /// say. Returns whether anything changed.
+    ///
+    /// The rendered Markdown in `enhancedNotes` is deliberately left alone: it's a
+    /// human-readable record frozen at generation time, like the summary prose
+    /// around it. The structured items are what agents are told to route on, and
+    /// they're reconciled both here and at export.
+    @discardableResult
+    public func reconcileActionItems(ownerNames: Set<String>) -> Bool {
+        let reconciled = reconciledActionItems(ownerNames: ownerNames)
+        guard reconciled != actionItems else { return false }
+        actionItems = reconciled
+        return true
+    }
 }
