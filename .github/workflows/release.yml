@@ -7,10 +7,17 @@
 #     a workflow artifact instead of a release. Useful for trying a build of
 #     main without cutting a version.
 #
-# The app is ad-hoc signed: there is no Developer ID in this repo's secrets, so
-# Gatekeeper will warn on first launch. The release notes tell users what to do.
-# Hardened runtime stays on; the sandbox stays off (see CLAUDE.md — a sandboxed
-# build records silence).
+# The app is signed with a Developer ID certificate and notarized by Apple, so
+# Gatekeeper opens it without ceremony. Hardened runtime stays on; the sandbox
+# stays off (see CLAUDE.md — a sandboxed build records silence).
+#
+# Required repository secrets:
+#   DEVELOPER_ID_P12_BASE64    — base64 of the Developer ID Application .p12
+#   DEVELOPER_ID_P12_PASSWORD  — password protecting that .p12
+#   NOTARY_KEY_P8              — App Store Connect API private key (.p8 contents)
+#   NOTARY_KEY_ID              — that key's Key ID
+#   NOTARY_ISSUER_ID           — the team's Issuer ID (App Store Connect →
+#                                Users and Access → Integrations)
 name: Release
 
 on:
@@ -78,8 +85,34 @@ jobs:
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${GITHUB_RUN_NUMBER}" Cheerio/Info.plist
           echo "suffix=${suffix}" >> "$GITHUB_OUTPUT"
 
-      # CODE_SIGN_IDENTITY=- is ad-hoc signing: a real signature (so hardened
-      # runtime and the entitlements apply) but no Developer ID behind it.
+      # The signing keychain is temporary and throwaway: a random password,
+      # deleted in the always() cleanup step. The G2 intermediate ships inside
+      # Xcode and is imported alongside the identity because a Keychain
+      # Access-exported .p12 carries only the leaf — without the intermediate,
+      # codesign can't build the chain and reports "no identity found".
+      - name: Import signing certificate
+        env:
+          DEVELOPER_ID_P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 32)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          printf '%s' "$DEVELOPER_ID_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" \
+            -P "$DEVELOPER_ID_P12_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/cert.p12"
+          security import "$(dirname "$(xcode-select -p)")/SharedFrameworks/DVTFoundation.framework/Versions/A/Resources/DeveloperIDCA-G2.cer" \
+            -k "$KEYCHAIN" || true
+          security set-key-partition-list -S apple-tool:,apple: -s \
+            -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain
+          security find-identity -v -p codesigning "$KEYCHAIN"
+
+      # --timestamp gets a secure timestamp from Apple so the signature
+      # outlives the certificate; notarization requires it.
       - name: Build Release
         run: |
           set -o pipefail
@@ -90,14 +123,18 @@ jobs:
             -destination 'platform=macOS' \
             -derivedDataPath build \
             -clonedSourcePackagesDirPath SourcePackages \
-            CODE_SIGN_IDENTITY=- \
+            CODE_SIGN_IDENTITY="Developer ID Application: Jackson Miller (HXGV36NV7T)" \
             CODE_SIGN_STYLE=Manual \
+            OTHER_CODE_SIGN_FLAGS=--timestamp \
             | xcbeautify --renderer github-actions
 
       - name: Verify app bundle
         run: |
           app="build/Build/Products/Release/Cheerio.app"
           codesign --verify --strict --verbose=2 "$app"
+          # Catch a silent fallback to ad-hoc or development signing.
+          codesign -dv "$app" 2>&1 | grep -q "Authority=Developer ID Application" \
+            || { echo "::error::App is not signed with Developer ID"; exit 1; }
           # The diarization model must ship inside the app — Cheerio has no
           # network entitlement and cannot download it at runtime.
           test -d "$app/Contents/Resources/Sortformer_v2.1.mlmodelc" \
@@ -106,6 +143,27 @@ jobs:
           archs="$(lipo -archs "$app/Contents/MacOS/Cheerio")"
           [ "$archs" = "arm64" ] \
             || { echo "::error::Expected arm64 only, got: $archs"; exit 1; }
+
+      # Submit for notarization, then staple the ticket to the app so
+      # Gatekeeper can verify it offline — fitting for an app with no
+      # network access. The final zip is made *after* stapling.
+      - name: Notarize
+        env:
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          app="build/Build/Products/Release/Cheerio.app"
+          printf '%s' "$NOTARY_KEY_P8" > "$RUNNER_TEMP/AuthKey.p8"
+          ditto -c -k --sequesterRsrc --keepParent "$app" "$RUNNER_TEMP/notarize.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
+            --key "$RUNNER_TEMP/AuthKey.p8" \
+            --key-id "$NOTARY_KEY_ID" \
+            --issuer "$NOTARY_ISSUER_ID" \
+            --wait --timeout 30m
+          xcrun stapler staple "$app"
+          # The end-to-end proof: Gatekeeper itself accepts the app.
+          spctl --assess --type execute --verbose=2 "$app"
 
       # ditto (not zip) preserves symlinks, resource forks, and extended
       # attributes — a plain zip can produce a bundle codesign rejects.
@@ -124,13 +182,10 @@ jobs:
           ## Install
 
           1. Download `Cheerio-*.zip` below and unzip it.
-          2. Move `Cheerio.app` to `/Applications`.
-          3. First launch: macOS will warn that the app is from an unidentified
-             developer (it is ad-hoc signed, not notarized). Either right-click
-             the app and choose **Open**, or approve it under
-             **System Settings → Privacy & Security → Open Anyway**.
-             If it still won't open, clear quarantine from Terminal:
-             `xattr -dr com.apple.quarantine /Applications/Cheerio.app`
+          2. Move `Cheerio.app` to `/Applications` and open it.
+
+          The app is signed with a Developer ID certificate and notarized by
+          Apple — no security warnings, no extra steps.
 
           Requires **macOS 26 (Tahoe) or later on Apple Silicon** — there is
           no Intel build. Everything runs on-device: no network access, no
@@ -150,3 +205,9 @@ jobs:
           name: Cheerio-${{ steps.version.outputs.suffix }}
           path: Cheerio-${{ steps.version.outputs.suffix }}.zip
           if-no-files-found: error
+
+      - name: Clean up signing keychain
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
+          rm -f "$RUNNER_TEMP/AuthKey.p8" "$RUNNER_TEMP/notarize.zip"
