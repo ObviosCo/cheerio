@@ -166,7 +166,9 @@ jobs:
       - name: Determine version
         id: version
         run: |
-          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+          # Both conditions: a workflow_dispatch can be pointed at a tag ref, and
+          # a dispatch run must always be the dry run — only a tag *push* publishes.
+          if [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF_TYPE}" == "tag" ]]; then
             tag="${GITHUB_REF_NAME}"
 
             # CalVer (calver.org): YY.MM.MICRO. The month group deliberately
@@ -620,7 +622,9 @@ jobs:
       # enclosure URL points at this release's own zip, so there is no moment where
       # a published feed advertises a download that doesn't exist yet.
       - name: Create GitHub Release
-        if: github.ref_type == 'tag'
+        # event_name too: a workflow_dispatch aimed at a tag ref must stay a dry
+        # run rather than publishing a release.
+        if: github.event_name == 'push' && github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -708,7 +712,7 @@ jobs:
       # Manual runs publish nothing, so the appcast rides along with the zip. It is
       # the dry run's output: read it, or feed it to a local Sparkle test app.
       - name: Upload build artifact
-        if: github.ref_type != 'tag'
+        if: github.event_name != 'push' || github.ref_type != 'tag'
         uses: actions/upload-artifact@v7
         with:
           name: Cheerio-${{ steps.version.outputs.suffix }}
