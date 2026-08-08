@@ -72,6 +72,12 @@ struct ParticipantsView: View {
 
     /// Only one voice can be you, so claiming it clears whoever held it before.
     private func setMe(_ speaker: EnrolledSpeaker, isMe: Bool) {
+        // Snapshot exactly what this call is about to flip, so a failed save can
+        // restore precisely that — not everything in the context.
+        let previousIsMe = speaker.isMe
+        let previouslyOtherMe = speakers.filter {
+            $0.persistentModelID != speaker.persistentModelID && $0.isMe
+        }
         for other in speakers where other.persistentModelID != speaker.persistentModelID {
             other.isMe = false
         }
@@ -79,7 +85,15 @@ struct ParticipantsView: View {
         do {
             try context.save()
         } catch {
-            context.rollback()
+            // This context is shared with the rest of the scene, and Settings can be
+            // open while a meeting is recording: CaptureSession leaves the live
+            // meeting's transcript segments unsaved in this same context until stop.
+            // `context.rollback()` discards every pending change in the context, not
+            // just this method's — it would throw away part of the meeting in progress
+            // along with this failed toggle. Undo only what this method touched
+            // instead: restore `isMe` on exactly the speakers it flipped.
+            speaker.isMe = previousIsMe
+            for other in previouslyOtherMe { other.isMe = true }
             errorMessage = error.localizedDescription
         }
     }

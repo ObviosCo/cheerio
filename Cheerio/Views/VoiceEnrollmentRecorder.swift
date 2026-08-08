@@ -38,6 +38,26 @@ struct VoiceEnrollmentRecorder: View {
     /// mutually exclusive: either the in-flight save completes, or (if
     /// `onDisappear` won the race) it's cancelled and cleaned up — never both.
     @State private var isFinalizing = false
+    /// Guards the `startRecording()` transition, the mirror image of
+    /// `isFinalizing` above. `startRecording()` suspends at the permission
+    /// prompt and again while the recorder/capture spin up, and while it's
+    /// suspended `recorder` is still nil — so `isRecording` still reads false,
+    /// the "Record voice sample" button is still enabled, and the view can
+    /// still disappear. Without this flag: a double-click could run
+    /// `startRecording()` twice concurrently, each writing its own
+    /// `pendingPath`/`capture`/`recorder` and clobbering the other's; and
+    /// leaving the view during the permission request would let `onDisappear`
+    /// run its cleanup while `isRecording == false` (nothing to stop yet), then
+    /// let `startRecording` resume afterward and start a capture with no
+    /// cleanup path left pointed at it.
+    ///
+    /// Set synchronously, before the first `await` in `startRecording()`, so a
+    /// second click sees it already set and no-ops. Tracked as a `Task` handle
+    /// so `onDisappear` can cancel it outright; `startRecording` checks
+    /// `Task.isCancelled` after each `await` and tears down anything it had
+    /// already created before returning.
+    @State private var isStarting = false
+    @State private var startTask: Task<Void, Never>?
 
     private var isRecording: Bool { recorder != nil }
     private var isSampleLongEnough: Bool { elapsed >= EnrolledSpeaker.recommendedDuration }
@@ -82,8 +102,20 @@ struct VoiceEnrollmentRecorder: View {
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                Button("Record voice sample") { Task { await startRecording() } }
-                    .disabled(pendingName.trimmingCharacters(in: .whitespaces).isEmpty)
+                Button("Record voice sample") {
+                    // Check-and-set `isStarting` synchronously, before the `Task`
+                    // (or anything else) runs, so a second click sees it already
+                    // set and no-ops instead of racing this one — see the comment
+                    // on `isStarting`.
+                    guard !isStarting else { return }
+                    isStarting = true
+                    startTask = Task {
+                        await startRecording()
+                        isStarting = false
+                        startTask = nil
+                    }
+                }
+                .disabled(isStarting || pendingName.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
         .alert("Couldn't record the sample", isPresented: $errorMessage.presented()) {
@@ -92,6 +124,16 @@ struct VoiceEnrollmentRecorder: View {
             Text(errorMessage ?? "")
         }
         .onDisappear {
+            // Cancel an in-flight start before it can land. `startRecording` suspends
+            // at the permission prompt and again while spinning up the recorder and
+            // capture, and during that whole window `isRecording` still reads false —
+            // so the guard below wouldn't catch it. Cancelling relies on
+            // `startRecording` noticing `Task.isCancelled` after each `await` and
+            // unwinding anything it had already created; see its cancellation checks.
+            if isStarting {
+                startTask?.cancel()
+            }
+
             // Closing the enclosing sheet/window/tab mid-recording left the
             // microphone running until the view was torn down, and a partial CAF
             // with nothing referencing it.
@@ -127,12 +169,35 @@ struct VoiceEnrollmentRecorder: View {
             errorMessage = "Microphone access is required. Turn it on in System Settings → Privacy & Security → Microphone."
             return
         }
+        // `onDisappear` may have cancelled us while we were suspended at the
+        // permission prompt above. Nothing has been created yet, so bailing out
+        // here is a plain no-op — but skip the alert, since the view is on its
+        // way out and there's no one left to read it.
+        guard !Task.isCancelled else { return }
+
         do {
             let (relativePath, url) = try AudioStorage.makeSpeakerSampleFile()
             let recorder = VoiceSampleRecorder(destination: url)
             await recorder.start()
+            guard !Task.isCancelled else {
+                // Cancelled while `recorder.start()` was suspended: the recorder
+                // exists and has a file on disk, but neither is published to
+                // `self` yet, so `onDisappear`'s own cleanup can't see them. Tear
+                // down what we made ourselves instead of leaking it.
+                await recorder.finish()
+                try? AudioStorage.removeFile(atRelativePath: relativePath)
+                return
+            }
+
             let capture = MicrophoneCapture { buffer in recorder.submit(buffer) }
             try capture.start()
+            guard !Task.isCancelled else {
+                // Same as above, but the microphone is now live too.
+                capture.stop()
+                await recorder.finish()
+                try? AudioStorage.removeFile(atRelativePath: relativePath)
+                return
+            }
 
             pendingPath = relativePath
             self.recorder = recorder
@@ -166,6 +231,10 @@ struct VoiceEnrollmentRecorder: View {
 
         let name = pendingName.trimmingCharacters(in: .whitespaces)
         let speaker = EnrolledSpeaker(name: name, audioPath: relativePath, duration: duration)
+        // Snapshot exactly who this is about to demote, so a failed save can put
+        // back exactly that — not everything in the context. See below for why
+        // `context.rollback()` isn't the tool for that.
+        let previouslyMe = markAsMe ? currentMe : []
         if markAsMe {
             for other in currentMe { other.isMe = false }
             speaker.isMe = true
@@ -175,16 +244,20 @@ struct VoiceEnrollmentRecorder: View {
             try context.save()
         } catch {
             // The CAF is written but nothing durable points at it, so leaving it would
-            // orphan a file nobody can find. Undo the whole enrollment and say so —
-            // resetting the form silently would look like it worked.
+            // orphan a file nobody can find. Undo the enrollment and say so — resetting
+            // the form silently would look like it worked.
             //
-            // `markAsMe` may have also flipped `isMe` false on whoever held it before
-            // this save was attempted (see above); deleting only the new speaker would
-            // leave that demotion sitting uncommitted, ready to be persisted by
-            // whatever save happens to come next. Roll back the whole context instead,
-            // same as `ParticipantsView.setMe` — it undoes the insert and the demotion
-            // together.
-            context.rollback()
+            // This context is shared with the rest of the scene, and this recorder can
+            // run *during* an active recording (RecordingView's enrollment nudge), while
+            // CaptureSession leaves the live meeting's transcript segments unsaved in
+            // this same context until stop. `context.rollback()` discards every pending
+            // change in the context, not just this method's — it would throw away part
+            // of the meeting in progress along with the failed enrollment. Undo only
+            // what this method touched instead: drop the speaker we just inserted (it
+            // was never persisted, so deleting it cancels the insert rather than
+            // recording a delete) and restore `isMe` on exactly the speakers we flipped.
+            context.delete(speaker)
+            for other in previouslyMe { other.isMe = true }
             try? AudioStorage.removeFile(atRelativePath: relativePath)
             errorMessage = error.localizedDescription
             pendingPath = nil
