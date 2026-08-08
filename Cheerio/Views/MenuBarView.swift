@@ -1,3 +1,4 @@
+import AppKit
 import CheerioKit
 import SwiftData
 import SwiftUI
@@ -83,13 +84,11 @@ struct MenuBarView: View {
 }
 
 extension CaptureSession.State {
-    /// Menu-bar symbol: filled while capturing so it reads at a glance.
-    var menuBarSymbol: String {
-        switch self {
-        case .idle: "waveform"
-        case .preparingModel: "arrow.down.circle"
-        case .recording: "record.circle.fill"
-        case .finishing: "ellipsis.circle"
-        }
+    /// Menu-bar icon: the copper-ring brand mark (see `MenuBarIcon.swift`),
+    /// not a stock SF Symbol — this is the one place the four session states
+    /// map to their glyph, so `CheerioApp` just reads this property rather
+    /// than switching on state itself.
+    var menuBarIcon: NSImage {
+        MenuBarIcon.image(for: self)
     }
 }

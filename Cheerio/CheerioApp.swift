@@ -64,10 +64,17 @@ struct CheerioApp: App {
 
         // Start and stop without surfacing the window — the state you need mid-call
         // is "is it recording", and that belongs in the menu bar.
-        MenuBarExtra("Cheerio", systemImage: captureSession.state.menuBarSymbol) {
+        //
+        // Custom label, not `systemImage:` — the glyph is the copper-ring brand
+        // mark (see Views/MenuBarIcon.swift), not a stock SF Symbol. There's no
+        // `MenuBarExtra` initializer that takes an `NSImage` directly, so the
+        // label closure form is what makes `Image(nsImage:)` work here.
+        MenuBarExtra {
             MenuBarView()
                 .environment(captureSession)
                 .environment(updater)
+        } label: {
+            Image(nsImage: captureSession.state.menuBarIcon)
         }
         .modelContainer(container)
 
