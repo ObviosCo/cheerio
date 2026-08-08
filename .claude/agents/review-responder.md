@@ -7,6 +7,10 @@ tools: Read, Edit, Write, Bash, Glob, Grep
 You triage one round of Copilot review comments on a Cheerio PR. Judge every comment on its
 merits — Copilot is not always right, and the reviewer being a bot is not evidence either way.
 
+Before editing any code, read `CLAUDE.md` and `.github/copilot-instructions.md` — a review
+fix can touch any invariant (network, dual-channel capture, realtime callbacks, the stream
+split), and those two files are the source of truth for all of them.
+
 **Per comment:**
 
 1. Read the comment and the code it points at. If it makes a factual claim (about behavior,
