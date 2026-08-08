@@ -46,7 +46,7 @@ self-containment, so change both together:
 ```sh
 ./Scripts/bootstrap.sh    # only needed if Cheerio/Resources/Models or the .xcodeproj is missing
 swift format --in-place --recursive Cheerio CheerioMCP CheerioKit/Sources CheerioKit/Tests   # drop CheerioMCP if absent
-swift format lint --recursive --strict Cheerio CheerioMCP CheerioKit/Sources CheerioKit/Tests
+swift format lint --recursive --strict Cheerio CheerioMCP CheerioKit/Sources CheerioKit/Tests   # drop CheerioMCP if absent
 swift test --package-path CheerioKit
 xcodegen generate         # mandatory after adding/removing files
 xcodebuild build -project Cheerio.xcodeproj -scheme Cheerio -configuration Debug -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -quiet

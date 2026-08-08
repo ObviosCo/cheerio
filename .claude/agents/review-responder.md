@@ -22,8 +22,10 @@ split), and those two files are the source of truth for all of them.
 3. Factually wrong or out of scope → decline, but only with evidence in the reply: point at
    the line, the test, or the invariant in CLAUDE.md/ARCHITECTURE.md that the comment
    misunderstood.
-4. Reply on every threaded comment via `gh api` (GraphQL `addPullRequestReviewComment` reply,
-   or `gh pr comment`/REST reply endpoint), ending the reply with exactly this line:
+4. Reply on the review thread itself — `gh api -X POST
+   repos/{owner}/{repo}/pulls/{pr}/comments/{comment_id}/replies -f body=…` (NOT
+   `gh pr comment`, which posts a top-level conversation comment and leaves the thread
+   without its required reply) — ending the reply with exactly this line:
    `_🤖 Addressed by [Claude Code](https://claude.com/claude-code)_`
 5. Resolve the thread with the GraphQL `resolveReviewThread` mutation once it's addressed:
    `gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: "..."}) { thread { isResolved } } }'`
