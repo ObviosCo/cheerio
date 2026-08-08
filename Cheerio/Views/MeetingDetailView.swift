@@ -194,6 +194,11 @@ struct MeetingDetailView: View {
     }
 
     private func save() {
+        // Correcting who said a line can change who owns an action item; the stored
+        // items must agree with what an export would now say (see
+        // Meeting.reconcileActionItems). Idempotent, so harmless for saves that
+        // didn't touch a label.
+        meeting.reconcileActionItems(ownerNames: SpeakerLabeling.ownerNames(context: context))
         do {
             try context.save()
         } catch {
@@ -208,6 +213,11 @@ struct MeetingDetailView: View {
         defer { isRelabeling = false }
         do {
             try await SpeakerLabeling.label(meeting: meeting, context: context)
+            // A fresh diarization pass rewrites non-manual labels wholesale — the
+            // same trust-state invalidation as a hand correction, so the persisted
+            // items must be re-checked the same way (see Meeting.reconcileActionItems).
+            meeting.reconcileActionItems(ownerNames: SpeakerLabeling.ownerNames(context: context))
+            try? context.save()
         } catch {
             relabelError = error.localizedDescription
         }

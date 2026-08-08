@@ -82,6 +82,7 @@ bug and isn't).
   that is the maintainer's to hold; the workflow refuses to release if the key it signs with
   doesn't match the `SUPublicEDKey` in the built app.
 - Bundle prefix `app.cheerio` is a placeholder (`project.yml` TODO).
+- New user-facing features decide whether the first-run walkthrough (`Cheerio/Views/Onboarding/`) needs to teach them — most won't, but a new permission or something as easy to miss as voice enrollment used to be, does.
 
 ## Reference
 

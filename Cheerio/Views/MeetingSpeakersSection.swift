@@ -125,6 +125,9 @@ struct MeetingSpeakersSection: View {
 
     private func relabel(_ summary: SpeakerSummary, to newLabel: String?) {
         meeting.relabelSpeaker(summary, to: newLabel)
+        // Renaming a speaker can change who owns an action item — keep the stored
+        // items in agreement with what an export would now say.
+        meeting.reconcileActionItems(ownerNames: SpeakerLabeling.ownerNames(context: context))
         do {
             try context.save()
         } catch {
@@ -141,6 +144,10 @@ struct MeetingSpeakersSection: View {
         let priorLabels = meeting.segments.map {
             ($0, $0.speakerLabel, $0.isSpeakerLabelManual)
         }
+        // The reconciliation below mutates trust state too; a failed save must put
+        // it back, or a later autosave commits part of an operation the user was
+        // told failed.
+        let priorActionItems = meeting.actionItems
         var insertedSpeaker: EnrolledSpeaker?
         var writtenSamplePath: String?
 
@@ -161,8 +168,10 @@ struct MeetingSpeakersSection: View {
             let speaker = EnrolledSpeaker(name: name, audioPath: samplePath, duration: duration)
             context.insert(speaker)
             insertedSpeaker = speaker
-            // Now that this speaker has a name, put it on their lines too.
+            // Now that this speaker has a name, put it on their lines too — and
+            // re-check the action items, since the lines just changed owners.
             meeting.relabelSpeaker(summary, to: name)
+            meeting.reconcileActionItems(ownerNames: SpeakerLabeling.ownerNames(context: context))
             try context.save()
         } catch {
             if let insertedSpeaker { context.delete(insertedSpeaker) }
@@ -170,6 +179,7 @@ struct MeetingSpeakersSection: View {
                 segment.speakerLabel = label
                 segment.isSpeakerLabelManual = wasManual
             }
+            meeting.actionItems = priorActionItems
             if let writtenSamplePath {
                 try? AudioStorage.removeFile(atRelativePath: writtenSamplePath)
             }

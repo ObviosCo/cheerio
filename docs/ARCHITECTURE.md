@@ -75,10 +75,21 @@ Each stream is converted (`AVAudioConverter`) to `SpeechAnalyzer.bestAvailableAu
 
 `SummarizationEngine` wraps `LanguageModelSession` (FoundationModels):
 
-- Output types are `@Generable` structs (`EnhancedNotes`, `ActionItem`) — type-checked, no JSON parsing
-- The on-device model's context window is small (~4k tokens). Long meetings use map-reduce: transcript → ~10-min chunks → chunk summaries → final merge pass that also folds in the user's rough notes
+- What the model produces are `@Generable` structs (`NotesDraft`, `ActionItemDraft`) — type-checked, no JSON parsing. What the app stores is `EnhancedNotes`, holding vetted `ActionItem`s. The "draft" half of that vocabulary means *unverified attribution*
+- The on-device model's context window is small (~4k tokens). Long meetings use map-reduce: transcript → chunks → one structured extraction per chunk → merge. The lists merge deterministically and only the prose summary takes a second model pass. Chunks are extracted rather than condensed to prose first, because condensing discards the speaker labels before anything has attributed a commitment
 - Check `SystemLanguageModel.default.availability` and degrade gracefully (transcript-only mode)
-- v2: swap models via the WWDC26 `LanguageModel` protocol — the engine takes the model as a dependency
+- v2: swap models via the WWDC26 `LanguageModel` protocol — the engine already takes the model as an injected dependency
+
+### Speaker identity as a trust signal
+
+An action item carries an `owner` and a `disposition`: `actionable` means the owner committed to it themselves and an agent may do it for them; `followUp` means someone else committed, so track it and never do it. Whose voice said it is what decides that.
+
+- The prompt is *told* which speaker labels are the owner's (the enrolled `isMe` names, threaded in from the caller — the engine never touches a `ModelContext`), so attribution starts from the transcript rather than from the model's guess at who "I" is.
+- The prompt is not trusted with it. `ActionItem.resolved(from:ownerNames:)` is the only way an `ActionItem` is constructed, and it **demotes anything not attributed to the owner** — a named guest, a "Speaker 2", a group ("we", "the team"), or nobody at all. It only ever demotes: an item the model called a follow-up stays one even for the owner, because the model may have seen a dependency the owner check can't.
+- Merging across chunks is conservative the same way: two chunks disagreeing about who committed resolves to `followUp`.
+- The failure it is designed around: an agent doing someone else's committed work is far worse than the owner re-reading a follow-up they could have delegated.
+
+`Meeting.actionItems` persists the vetted items next to the Markdown, and `MeetingExport` carries them, so downstream consumers route on structure rather than parsing prose.
 
 ## Storage
 
