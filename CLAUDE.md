@@ -40,8 +40,8 @@ open Cheerio.xcodeproj    # scheme: Cheerio
 Requires macOS 26+, Xcode 26+. Package tests: `cd CheerioKit && swift test`.
 
 The full verification loop any change must pass before pushing — this list is the
-canonical one; the agent definitions in `.claude/agents/` reference it rather than
-redefining it:
+canonical one; the agent definitions in `.claude/agents/` carry mirrors of it for
+self-containment, so change both together:
 
 ```sh
 ./Scripts/bootstrap.sh    # only needed if Cheerio/Resources/Models or the .xcodeproj is missing
