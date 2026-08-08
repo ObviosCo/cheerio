@@ -59,6 +59,15 @@ speakers, so calls transcribe twice — the one issue blocking real use on a vid
 call) and **#9** (the live transcript can only show Me/Them, which looks like a
 bug and isn't).
 
+## Agents
+
+`.claude/agents/` has four checked-in subagent definitions for this repo's recurring work:
+`swift-implementer` (scoped feature/fix on a branch), `review-responder` (Copilot review
+triage), `release-editor` (`.github/workflows/release.yml` and `Scripts/`), and
+`issue-groomer` (closing issues addressed by merged PRs). Their verification loops are
+authoritative duplicates of the Build section above, not paraphrases — update both together
+when the build commands change.
+
 ## Conventions & constraints
 
 - **App Sandbox must stay off.** A sandboxed build creates the tap with `noErr` at every step and then reads pure digital silence, with no TCC prompt — it looks like a transcription bug but it's a capture-permission failure. Measured: `peak=0.0` sandboxed vs `-1.8 dBFS` unsandboxed, same code. This rules out Mac App Store distribution. `SystemAudioTap`'s `SilenceWatch` logs the verdict at `.notice`/`.error` on stop (`.info` never reaches `log show`).
