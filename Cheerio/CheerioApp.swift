@@ -4,13 +4,20 @@ import SwiftUI
 
 @main
 struct CheerioApp: App {
-    @State private var captureSession = CaptureSession()
+    @State private var captureSession: CaptureSession
+
+    /// Sparkle. Created with the session because it asks the session whether a
+    /// recording is in progress before letting a scheduled check run.
+    @State private var updater: AppUpdater
 
     /// One container shared by both scenes — `.modelContainer(for:)` on each would
     /// open two containers against the same store file.
     private let container: ModelContainer
 
     init() {
+        let session = CaptureSession()
+        _captureSession = State(initialValue: session)
+        _updater = State(initialValue: AppUpdater(session: session))
         do {
             let configuration = try ModelConfiguration(url: AudioStorage.storeURL())
             container = try ModelContainer(
@@ -34,6 +41,10 @@ struct CheerioApp: App {
         // Evaluated once at process start, which is the only time it matters.
         .defaultLaunchBehavior(OnboardingState.hasCompleted ? .automatic : .suppressed)
         .commands {
+            // Where macOS apps put it: the app menu, right under "About Cheerio".
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") { updater.checkForUpdates() }
+            }
             CommandGroup(replacing: .help) {
                 OpenOnboardingCommand()
             }
@@ -56,11 +67,13 @@ struct CheerioApp: App {
         MenuBarExtra("Cheerio", systemImage: captureSession.state.menuBarSymbol) {
             MenuBarView()
                 .environment(captureSession)
+                .environment(updater)
         }
         .modelContainer(container)
 
         Settings {
             SettingsView()
+                .environment(updater)
         }
         .modelContainer(container)
     }
