@@ -164,7 +164,10 @@ enum UpdateDeferral: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .recordingInProgress:
-            "Cheerio is recording a meeting. The update check will happen after it finishes."
+            // No promise of an automatic retry: a vetoed scheduled check waits out
+            // Sparkle's next interval, and a manual one is the user's to repeat.
+            // "Busy with", not "recording" — the veto also covers `.finishing`.
+            "Cheerio is busy with a meeting. Check for updates again once it finishes."
         }
     }
 }
