@@ -1,20 +1,20 @@
 # Builds a downloadable Cheerio.app and publishes it.
 #
 # Two ways in:
-#   - Push a tag like v26.8.1 → tests run, a Release build is made, and a GitHub
+#   - Push a tag like v26.8.9 → tests run, a Release build is made, and a GitHub
 #     Release is created with the zipped app attached.
 #   - Run manually (workflow_dispatch) → same build, but the zip is uploaded as
 #     a workflow artifact instead of a release. Useful for trying a build of
 #     main without cutting a version.
 #
 # Tagging: versions are CalVer (calver.org), scheme YY.MM.MICRO — tag
-# v<YY>.<M>.<BUILD>, e.g. v26.8.1 for the first release cut in August 2026.
+# v<YY>.<M>.<BUILD>, e.g. v26.9.1 for the first release cut in September 2026.
 # YY and M come straight off the calendar and are never zero-padded (v26.8.1,
 # not v26.08.01 — the "Determine version" step below rejects a padded month
 # outright). BUILD is a per-month counter you pick by hand when cutting the
 # tag: check the previous release for the current YY.M and increment it, or
 # start at 1 if this is the first tag of the month; a new month always resets
-# BUILD back to 1 (v26.9.1 follows v26.8.1, whatever BUILD that reached).
+# BUILD back to 1 (v26.9.1 follows v26.8.x, whatever BUILD that reached).
 # CFBundleVersion is a separate number — see the comment on that step for why
 # it stays the run number regardless of what the tag says.
 #
@@ -180,7 +180,7 @@ jobs:
             # the first release of a month is .1, and "v26.8.01" is not an
             # alias for it. One canonical spelling per version, everywhere.
             if [[ ! "$tag" =~ ^v([0-9]{2})\.(1[0-2]|[1-9])\.([1-9][0-9]*)$ ]]; then
-              echo "::error::Tag '${tag}' isn't in this repo's version scheme: CalVer YY.MM.BUILD, tagged vYY.MM.BUILD (e.g. v26.8.1 for the first release cut in August 2026). YY and MM come from the calendar and are never zero-padded (v26.8.1, not v26.08.01); BUILD is a per-month counter you choose by hand — see this workflow's header comment. Fix: cut a tag matching that shape."
+              echo "::error::Tag '${tag}' isn't in this repo's version scheme: CalVer YY.MM.BUILD, tagged vYY.MM.BUILD (e.g. v26.9.1 for the first release cut in September 2026; August 2026 starts at v26.8.9 — see the header). YY and MM come from the calendar and are never zero-padded (v26.8.1, not v26.08.01); BUILD is a per-month counter you choose by hand — see this workflow's header comment. Fix: cut a tag matching that shape."
               exit 1
             fi
             tag_year="${BASH_REMATCH[1]}"
