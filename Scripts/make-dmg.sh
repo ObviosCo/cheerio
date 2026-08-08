@@ -86,7 +86,11 @@ script_dir="$(cd "$(dirname "$0")" && pwd)"
 settings="$script_dir/dmg-settings.py"
 renderer="$script_dir/render-dmg-background.swift"
 verifier="$script_dir/verify-dmg.py"
-for f in "$settings" "$renderer" "$verifier"; do
+# The icon-well/arrow geometry lives here once, not twice: the renderer and
+# dmg-settings.py both read it, so a missing file means neither would agree
+# on a layout — fail before either gets the chance to guess.
+geometry="$script_dir/dmg-geometry.json"
+for f in "$settings" "$renderer" "$verifier" "$geometry"; do
   [ -f "$f" ] || { echo "make-dmg.sh: missing $f" >&2; exit 1; }
 done
 
@@ -132,6 +136,7 @@ dmgbuild \
   -s "$settings" \
   -D app="$(cd "$(dirname "$app")" && pwd)/$(basename "$app")" \
   -D background="$work_dir/background.tiff" \
+  -D geometry="$geometry" \
   "$volume_name" \
   "$output"
 

@@ -45,16 +45,33 @@ def check(label: str, actual: object, expected: object) -> None:
         FAILURES.append(label)
 
 
+def mounted_volume_name(volume: str) -> str:
+    """The real name of the filesystem mounted at `volume`.
+
+    This is the same getattrlist(ATTR_VOL_NAME) call mac_alias.Alias.for_file
+    uses to populate VolumeInfo.name when an alias is created — reusing it
+    here means an alias's recorded volume is checked against what the OS
+    itself reports for this mount, not against a string we merely expected.
+    """
+    attrs = [mac_alias.osx.ATTR_CMN_CRTIME, mac_alias.osx.ATTR_VOL_NAME, 0, 0, 0]
+    info = mac_alias.osx.getattrlist(volume.encode("utf-8"), attrs, 0)
+    return info[1]
+
+
 def load_settings(path: str, app_name: str) -> dict:
     """Exec the dmgbuild settings file with a stand-in `defines`.
 
-    dmgbuild hands the file a `defines` dict; the only two keys ours reads are
-    paths, and the layout values we compare don't depend on them beyond the app's
-    basename. The background path is a placeholder — what the image should be
-    called is derived from the volume, not from this.
+    dmgbuild hands the file a `defines` dict; the paths ours reads don't affect
+    the layout values we compare, except for `geometry`, which the settings file
+    actually reads — its icon coordinates and window size come from there. That
+    file sits next to whichever settings file we were pointed at, same as
+    dmg-settings.py assumes at real build time. The background path is itself a
+    placeholder — what the image should be called is derived from the volume,
+    not from this.
     """
+    geometry_path = os.path.join(os.path.dirname(path) or ".", "dmg-geometry.json")
     namespace: dict = {
-        "defines": {"app": app_name, "background": "background.tiff"},
+        "defines": {"app": app_name, "background": "background.tiff", "geometry": geometry_path},
         "__file__": path,
     }
     with open(path, encoding="utf-8") as handle:
@@ -155,15 +172,35 @@ def main() -> int:
             print("  FAIL  backgroundImageAlias: missing")
             FAILURES.append("backgroundImageAlias")
         else:
-            # An alias records the volume name and path. Resolving it is the
-            # only check that proves Finder will find the image rather than
-            # fall back to white — a background file sitting on the volume that
-            # nothing points at looks identical on disk.
+            # An alias records the *volume* the target lives on, by name, not
+            # just a bare filename. A basename-only check passes a stale alias
+            # left over from another build (or another volume entirely) as
+            # long as some file with a matching name happens to sit at the
+            # volume's root — while Finder, which resolves an alias by volume
+            # identity first, falls back to a white background. So both parts
+            # of the alias are checked: the volume it names, and the path on
+            # that volume it names within it.
             alias = mac_alias.Alias.from_bytes(bytes(alias_bytes))
             filename = alias.target.filename
             print(f"  ok    background alias: {alias.volume.name}:{filename}")
-            resolved = os.path.join(volume, filename)
-            check(f"background file {filename} on volume", os.path.isfile(resolved), True)
+
+            try:
+                actual_volume = mounted_volume_name(volume)
+            except OSError as exc:
+                print(f"  FAIL  background alias volume: could not read {volume}'s name ({exc})")
+                FAILURES.append("background alias volume")
+            else:
+                check("background alias volume", alias.volume.name, actual_volume)
+
+            # target.posix_path is the path to the target *relative to the
+            # volume root* (per the mac_alias docs, with or without a leading
+            # '/'); resolving it — rather than joining the bare filename onto
+            # the mountpoint — is what proves the alias actually walks to this
+            # file on this volume, rather than merely sharing a name with a
+            # real file that happens to sit at the root.
+            target_path = (alias.target.posix_path or filename).lstrip("/")
+            resolved = os.path.join(volume, target_path)
+            check(f"background file resolves via alias ({target_path!r})", os.path.isfile(resolved), True)
             if os.path.isfile(resolved):
                 # A multi-representation TIFF: 1x and 2x in one file, which is
                 # how the window stays sharp on a Retina display.

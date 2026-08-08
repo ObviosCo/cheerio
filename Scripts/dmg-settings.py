@@ -7,16 +7,21 @@
 # See Scripts/make-dmg.sh for why that matters and how this file is invoked.
 #
 # Not run directly: `dmgbuild -s Scripts/dmg-settings.py` execs it with a
-# `defines` dict holding the two paths make-dmg.sh passes with -D.
+# `defines` dict holding the three paths make-dmg.sh passes with -D.
 #
-# The geometry here has to agree with Scripts/render-dmg-background.swift,
-# which draws the wells and the arrow at these same coordinates. make-dmg.sh
-# runs both, so they change together; if you move an icon, move the well.
+# The icon coordinates and window size below come from Scripts/dmg-geometry.json,
+# the same file Scripts/render-dmg-background.swift reads to draw the wells and
+# the arrow at those coordinates — one file, not two copies to keep matched.
 
+import json
 import os.path
 
 app = defines["app"]  # noqa: F821 — dmgbuild injects `defines`
 background_image = defines["background"]  # noqa: F821
+geometry_path = defines["geometry"]  # noqa: F821
+
+with open(geometry_path, encoding="utf-8") as _geometry_file:
+    geometry = json.load(_geometry_file)
 
 app_name = os.path.basename(app)
 
@@ -35,8 +40,10 @@ hide_extensions = [app_name]
 
 # ---- Window ------------------------------------------------------------
 # (w, h) must match the background PNG's 1x pixel size, or Finder scales the
-# image and the arrow stops lining up with the icons.
-window_rect = ((200, 180), (640, 400))
+# image and the arrow stops lining up with the icons. Both numbers come from
+# dmg-geometry.json. (x, y) is just the window's on-screen position and has no
+# counterpart in the art, so it stays a plain literal here.
+window_rect = ((200, 180), (geometry["width"], geometry["height"]))
 default_view = "icon-view"
 show_status_bar = False
 show_tab_view = False
@@ -46,15 +53,16 @@ show_sidebar = False
 background = background_image
 
 # ---- Icon view ---------------------------------------------------------
-icon_size = 128
+icon_size = geometry["icon_size"]
 text_size = 12
 label_pos = "bottom"
 include_icon_view_settings = True
 include_list_view_settings = False
 
 # Finder coordinates: origin top-left, y downward, and these are icon
-# *centres*. Kept in sync with render-dmg-background.swift's well centres.
+# *centres*. Read from dmg-geometry.json, the same file
+# render-dmg-background.swift reads for its well centres.
 icon_locations = {
-    app_name: (168, 172),
-    "Applications": (472, 172),
+    app_name: tuple(geometry["left_icon_center"]),
+    "Applications": tuple(geometry["right_icon_center"]),
 }

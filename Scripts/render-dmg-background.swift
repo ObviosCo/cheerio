@@ -4,9 +4,10 @@
 //
 // Generated, not drawn, for the same reason as the app icon: the geometry has
 // to agree with the icon coordinates Finder is told to use, and two numbers
-// kept in sync by hand drift. `Scripts/make-dmg.sh` owns both halves — it runs
-// this script and then passes matching coordinates to dmgbuild — so the arrow
-// lands between the icons rather than near them.
+// kept in sync by hand drift. Both halves now read Scripts/dmg-geometry.json
+// — this script for the wells and the arrow, Scripts/dmg-settings.py for the
+// icon coordinates it hands to dmgbuild — so there is one number to change,
+// not two to keep matched.
 //
 // Output is NOT committed. It is built in CI alongside the DMG; nothing else
 // in the repo consumes it.
@@ -14,18 +15,57 @@
 // Run from the repo root:  swift Scripts/render-dmg-background.swift <out-dir>
 
 import AppKit
+import CoreText
 import UniformTypeIdentifiers
 
-// The window's content size in points. make-dmg.sh uses the same numbers for
-// window_rect and derives its icon_locations from ICON_CENTER_Y / the well
-// centres below, so changing a value here changes the layout coherently.
-let width: CGFloat = 640
-let height: CGFloat = 400
+// MARK: - Shared geometry
+
+struct Geometry: Decodable {
+    let width: Double
+    let height: Double
+    let iconSize: Double
+    let leftIconCenter: [Double]
+    let rightIconCenter: [Double]
+
+    enum CodingKeys: String, CodingKey {
+        case width, height
+        case iconSize = "icon_size"
+        case leftIconCenter = "left_icon_center"
+        case rightIconCenter = "right_icon_center"
+    }
+}
+
+// Sits next to this script regardless of whether it was invoked with a
+// relative path (as the usage comment above shows) or an absolute one (as
+// make-dmg.sh calls it), so #filePath — not the process's current directory —
+// is what locates it.
+let geometryURL = URL(fileURLWithPath: #filePath)
+    .deletingLastPathComponent()
+    .appendingPathComponent("dmg-geometry.json")
+guard let geometryData = try? Data(contentsOf: geometryURL) else {
+    FileHandle.standardError.write(
+        Data(
+            "Can't find the shared layout at \(geometryURL.path). It ships with the repo — see Scripts/dmg-geometry.json.\n"
+                .utf8))
+    exit(1)
+}
+let geometry: Geometry
+do {
+    geometry = try JSONDecoder().decode(Geometry.self, from: geometryData)
+} catch {
+    fatalError("\(geometryURL.path) doesn't match the expected shape: \(error)")
+}
+
+// The window's content size in points. dmg-settings.py uses the same numbers
+// for window_rect, so changing a value in dmg-geometry.json changes the
+// layout coherently.
+let width = CGFloat(geometry.width)
+let height = CGFloat(geometry.height)
 
 // Icon centres, in Finder's coordinate space: origin top-left, y downward.
-let leftIconCenter = CGPoint(x: 168, y: 172)
-let rightIconCenter = CGPoint(x: 472, y: 172)
-let iconSize: CGFloat = 128
+let leftIconCenter = CGPoint(x: geometry.leftIconCenter[0], y: geometry.leftIconCenter[1])
+let rightIconCenter = CGPoint(x: geometry.rightIconCenter[0], y: geometry.rightIconCenter[1])
+let iconSize = CGFloat(geometry.iconSize)
 
 func srgb(_ hex: UInt32, _ alpha: CGFloat = 1) -> CGColor {
     CGColor(
