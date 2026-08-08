@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cheerio's Sparkle update feed, served at https://obviosco.github.io/cheerio/appcast.xml
+  (the SUFeedURL in Cheerio/Info.plist).
+
+  Generated, not hand-written: .github/workflows/release.yml runs Sparkle's
+  generate_appcast on every v* tag, commits the result back here, and redeploys the
+  Pages site. Edit it by hand and the next release overwrites you.
+
+  It is committed with no items on purpose. An empty feed answers "you are up to
+  date"; a 404 is an error every installed copy would report until the first release
+  lands. Both are quiet, but only one of them is honest.
+-->
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+    <channel>
+        <title>Cheerio</title>
+        <link>https://obviosco.github.io/cheerio/appcast.xml</link>
+        <description>Updates for Cheerio, open-source AI meeting notes for macOS.</description>
+        <language>en</language>
+    </channel>
+</rss>

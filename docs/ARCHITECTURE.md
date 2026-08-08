@@ -30,7 +30,7 @@ The model itself (~93 MB) is not committed. `Scripts/fetch-models.sh` downloads 
 
 `Scripts/bootstrap.sh` is what a fresh checkout should run — it verifies the toolchain, fetches the model, and generates the project in that order. The order is load-bearing: `project.yml` references the `.mlmodelc` as a folder reference, so `xcodegen generate` refuses to write a project until the model is on disk, and the pre-build phase can't cover that gap because there's no project yet to hang a phase on.
 
-It is fetched at *build* time, never at runtime — Cheerio has no networking code, so a runtime download is not an option available to it today. The hard requirement is narrower than that, though: nothing may need the network *while recording or processing a meeting*. A one-time download at install or first launch would be acceptable if there were ever a reason for one; bundling the model just makes the question moot.
+It is fetched at *build* time, never at runtime. The app does have networking code now — Sparkle, for updates — but it is deliberately confined to that, and nothing in the capture or processing path is allowed to reach for it. The hard requirement: nothing may need the network *while recording or processing a meeting*. A one-time download at install or first launch would be acceptable if there were ever a reason for one; bundling the model just makes the question moot.
 
 ## Audio pipeline
 
@@ -100,4 +100,11 @@ Swift 6 strict concurrency. Audio IOProcs/taps hand buffers off through `AsyncSt
 
 `com.apple.security.device.audio-input`, `com.apple.security.personal-information.calendars`. Usage strings: mic, audio capture, calendar. No network entitlement.
 
-One consequence of the sandbox being off: the missing network entitlement no longer *enforces* anything — entitlements only constrain a sandboxed process. Local-only now rests entirely on there being **no networking code in the app at all**: no `URLSession`, no sockets, nothing. That is what to protect in review — the entitlement is a statement of intent rather than a guarantee. The requirement behind it is that recording and processing a meeting must never need the network; a one-time setup download would be compatible with that, but since the diarization model ships in the bundle, nothing has ever needed to open a connection.
+One consequence of the sandbox being off: the missing network entitlement no longer *enforces* anything — entitlements only constrain a sandboxed process. So local-only rests on review, not on the system.
+
+What that means concretely, now that Sparkle is in the app:
+
+- **The invariant is unchanged**: recording and processing a meeting must never need the network. Every model is on the machine, and the diarization model ships in the bundle, so nothing in that path opens a connection. A one-time setup download would be compatible with the invariant; a connection during capture never is.
+- **There is exactly one thing in the app that talks to the network**, and it is the updater: `Cheerio/Updates/AppUpdater.swift`. It fetches the appcast from Cheerio's Pages site and, if the user accepts, a zip from GitHub Releases. Nothing else in the app should contain `URLSession`, sockets or `import Network` — that is the line to hold in review, and it is narrower and more checkable than "no networking code".
+- **Updates keep out of the way of capture.** `UpdatePolicy` implements `updater(_:mayPerform:)` and refuses a *scheduled* check unless `CaptureSession.state == .idle`. Sparkle treats the refusal as a deferral and reschedules, but it also stamps the attempt as the last check, so a vetoed check waits out the next interval rather than retrying when the meeting ends. A user-initiated check is always allowed; they can see the meeting they are in.
+- **No analytics, still.** Sparkle's system profile would append OS version, CPU, model and language to the feed request. `SUEnableSystemProfiling` is false, `sendsSystemProfile` is set false in code, and the delegate returns no feed parameters and no allowed profile keys. Three refusals for one switch, because the invariant is worth more than the tidiness.

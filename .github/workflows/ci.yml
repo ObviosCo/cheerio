@@ -75,11 +75,13 @@ jobs:
           path: Cheerio/Resources/Models
           key: model-${{ hashFiles('Scripts/fetch-models.sh') }}
 
+      # project.yml is hashed too: Sparkle is an app-target dependency declared
+      # there rather than in Package.swift, and the cache holds the resolved binary.
       - name: Cache SwiftPM (xcodebuild)
         uses: actions/cache@v6
         with:
           path: SourcePackages
-          key: spm-app-${{ runner.os }}-${{ hashFiles('CheerioKit/Package.swift') }}
+          key: spm-app-${{ runner.os }}-${{ hashFiles('CheerioKit/Package.swift', 'project.yml') }}
           restore-keys: |
             spm-app-${{ runner.os }}-
 

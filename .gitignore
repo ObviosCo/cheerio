@@ -8,6 +8,9 @@ DerivedData/
 .build/
 .swiftpm/
 Package.resolved
+# Where CI (and anyone passing -clonedSourcePackagesDirPath) puts resolved
+# packages, including Sparkle's binary xcframework and its command-line tools.
+SourcePackages/
 
 # macOS
 .DS_Store

@@ -11,6 +11,25 @@
 # Gatekeeper opens it without ceremony. Hardened runtime stays on; the sandbox
 # stays off (see CLAUDE.md — a sandboxed build records silence).
 #
+# Automatic updates (Sparkle) ride along on a tag push:
+#
+#   1. the notarized, stapled zip is built and packaged as it always was;
+#   2. Sparkle's generate_appcast EdDSA-signs that exact zip and folds an entry
+#      for it into a copy of site/appcast.xml — the minimum system version comes
+#      from the app's own LSMinimumSystemVersion (macOS 26), and the release notes
+#      are a short embedded fragment linking to the GitHub release;
+#   3. a guard step re-verifies the signature in that entry against the zip's
+#      bytes with sign_update --verify, and refuses to publish if it doesn't
+#      match — a bad appcast must not be able to ship quietly;
+#   4. the GitHub Release is created *first*, so the enclosure URL resolves;
+#   5. site/appcast.xml is committed back to main and the Pages deploy is kicked
+#      off, which publishes https://obviosco.github.io/cheerio/appcast.xml — the
+#      SUFeedURL baked into the app.
+#
+# Manual (workflow_dispatch) runs do steps 2 and 3 as a dry run and attach the
+# appcast to the workflow artifacts. Nothing is published and nothing is
+# committed, so the appcast pipeline can be exercised without cutting a version.
+#
 # Required repository secrets:
 #   DEVELOPER_ID_P12_BASE64    — base64 of the Developer ID Application .p12
 #   DEVELOPER_ID_P12_PASSWORD  — password protecting that .p12
@@ -18,6 +37,28 @@
 #   NOTARY_KEY_ID              — that key's Key ID
 #   NOTARY_ISSUER_ID           — the team's Issuer ID (App Store Connect →
 #                                Users and Access → Integrations)
+#   SPARKLE_ED_PRIVATE_KEY     — Sparkle's EdDSA (ed25519) update-signing key
+#
+# One-time setup for that last secret, which only a maintainer can do — the
+# private key must never be committed, and no automation here generates one:
+#
+#   1. Resolve the packages once (./Scripts/bootstrap.sh, then a build in Xcode)
+#      and run Sparkle's key generator from the resolved artifact:
+#        ./SourcePackages/artifacts/sparkle/Sparkle/bin/generate_keys
+#      It stores the private key in your login keychain and prints the public one.
+#      (It also lives in the Sparkle-*.tar.xz on Sparkle's GitHub releases.)
+#   2. Export the private key and paste its contents into the
+#      SPARKLE_ED_PRIVATE_KEY repository secret:
+#        ./…/bin/generate_keys -x sparkle-private-key.txt
+#      Then delete the file. Keep the keychain copy; it is the only backup, and
+#      losing it means no existing install can ever be updated again.
+#   3. Paste the printed public key into SUPublicEDKey in Cheerio/Info.plist,
+#      replacing REPLACE_WITH_SPARKLE_PUBLIC_ED_KEY, and commit that.
+#
+# The "Verify Sparkle signing key" step below refuses to release until 2 and 3
+# have both been done and agree with each other: signing with a key the shipped
+# app doesn't trust produces a perfectly valid appcast that every installed copy
+# rejects, silently and permanently.
 name: Release
 
 on:
@@ -26,7 +67,10 @@ on:
   workflow_dispatch:
 
 permissions:
+  # contents: to create the release and commit the appcast to main.
+  # actions:  to trigger the Pages deploy, which a GITHUB_TOKEN commit won't.
   contents: write
+  actions: write
 
 concurrency:
   group: release-${{ github.ref }}
@@ -53,11 +97,14 @@ jobs:
           path: Cheerio/Resources/Models
           key: model-${{ hashFiles('Scripts/fetch-models.sh') }}
 
+      # project.yml is hashed too: Sparkle is declared there, not in Package.swift,
+      # and the cache holds the binary artifact its version resolves to — including
+      # the generate_appcast and sign_update this workflow runs below.
       - name: Cache SwiftPM
         uses: actions/cache@v6
         with:
           path: SourcePackages
-          key: spm-app-${{ runner.os }}-${{ hashFiles('CheerioKit/Package.swift') }}
+          key: spm-app-${{ runner.os }}-${{ hashFiles('CheerioKit/Package.swift', 'project.yml') }}
           restore-keys: |
             spm-app-${{ runner.os }}-
 
@@ -72,6 +119,10 @@ jobs:
       # the build number so re-runs of the same tag stay distinguishable.
       # Manual runs keep the version already in Info.plist and get a -<sha>
       # suffix on the zip instead.
+      #
+      # download_prefix is where Sparkle will be told to fetch the update from. On a
+      # tag that is the release asset this run is about to attach; on a manual run
+      # it is a URL that deliberately doesn't exist, because nothing is published.
       - name: Determine version
         id: version
         run: |
@@ -79,11 +130,21 @@ jobs:
             version="${GITHUB_REF_NAME#v}"
             /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${version}" Cheerio/Info.plist
             suffix="${version}"
+            prefix="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/"
+            notes_link="https://github.com/${GITHUB_REPOSITORY}/releases/tag/${GITHUB_REF_NAME}"
           else
             suffix="$(git rev-parse --short HEAD)"
+            version="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Cheerio/Info.plist)"
+            prefix="https://github.com/${GITHUB_REPOSITORY}/releases/download/dry-run/"
+            notes_link="https://github.com/${GITHUB_REPOSITORY}/releases"
           fi
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${GITHUB_RUN_NUMBER}" Cheerio/Info.plist
-          echo "suffix=${suffix}" >> "$GITHUB_OUTPUT"
+          {
+            echo "suffix=${suffix}"
+            echo "short_version=${version}"
+            echo "download_prefix=${prefix}"
+            echo "notes_link=${notes_link}"
+          } >> "$GITHUB_OUTPUT"
 
       # The signing keychain is temporary and throwaway: a random password,
       # deleted in the always() cleanup step. The G2 intermediate ships inside
@@ -146,8 +207,8 @@ jobs:
             echo "::error::App carries get-task-allow; notarization would reject it"
             exit 1
           fi
-          # The diarization model must ship inside the app — Cheerio has no
-          # networking code and cannot download it at runtime.
+          # The diarization model must ship inside the app: nothing in the capture
+          # or processing path may need the network, so it cannot be fetched later.
           test -d "$app/Contents/Resources/Sortformer_v2.1.mlmodelc" \
             || { echo "::error::Sortformer model missing from app bundle"; exit 1; }
           # The model is CC BY 4.0 and FluidAudio is Apache-2.0 with BSD-licensed
@@ -158,14 +219,84 @@ jobs:
           notices="$app/Contents/Resources/THIRD-PARTY-NOTICES.md"
           test -f "$notices" \
             || { echo "::error::THIRD-PARTY-NOTICES.md missing from app bundle"; exit 1; }
-          for needle in "CC BY 4.0" "Apache License" "TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION" "fastcluster" "BUT Speech@FIT"; do
+          for needle in "CC BY 4.0" "Apache License" "TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION" "fastcluster" "BUT Speech@FIT" "Sparkle" "Andy Matuschak"; do
             grep -q "$needle" "$notices" \
               || { echo "::error::THIRD-PARTY-NOTICES.md is missing: $needle"; exit 1; }
           done
+          # Sparkle has to be embedded and separately signed, not just linked: its
+          # updater and installer are nested bundles inside the framework, and an
+          # unsigned or wrongly-signed one fails notarization or refuses to install
+          # anything at runtime. --strict above already walked them; this proves the
+          # framework is actually in the bundle rather than silently dropped.
+          test -d "$app/Contents/Frameworks/Sparkle.framework" \
+            || { echo "::error::Sparkle.framework missing from app bundle; updates would not work"; exit 1; }
+          codesign --verify --strict --verbose=2 "$app/Contents/Frameworks/Sparkle.framework"
           # Apple Silicon only — a stray Intel slice means ARCHS drifted.
           archs="$(lipo -archs "$app/Contents/MacOS/Cheerio")"
           [ "$archs" = "arm64" ] \
             || { echo "::error::Expected arm64 only, got: $archs"; exit 1; }
+
+      # Before the notary round trip, because this is the mistake that cannot be
+      # taken back: an app shipped trusting public key A, updated with a feed signed
+      # by key B, rejects every update from then on — silently, on every install,
+      # fixable only by asking people to download the app again by hand.
+      #
+      # Ed25519 public keys are derived from the private seed, so the two can be
+      # compared without ever putting the private key anywhere but this shell.
+      - name: Verify Sparkle signing key
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          app="build/Build/Products/Release/Cheerio.app"
+          # `|| true` so a plist with no SUPublicEDKey at all reaches the message
+          # below instead of dying on PlistBuddy's exit code.
+          embedded="$(/usr/libexec/PlistBuddy -c "Print :SUPublicEDKey" "$app/Contents/Info.plist" 2>/dev/null || true)"
+          if [ -z "$embedded" ] || [ "$embedded" = "REPLACE_WITH_SPARKLE_PUBLIC_ED_KEY" ]; then
+            echo "::error::SUPublicEDKey in Cheerio/Info.plist is still the placeholder. See this workflow's header for the one-time key setup."
+            exit 1
+          fi
+          if [ -z "$SPARKLE_ED_PRIVATE_KEY" ]; then
+            echo "::error::SPARKLE_ED_PRIVATE_KEY secret is not set. See this workflow's header."
+            exit 1
+          fi
+          # macOS ships LibreSSL as /usr/bin/openssl, which won't do ed25519 key
+          # derivation; Homebrew's OpenSSL 3 will, and is present on the runner image.
+          openssl_bin=""
+          for candidate in "$(brew --prefix openssl@3 2>/dev/null || true)/bin/openssl" \
+                           /opt/homebrew/opt/openssl@3/bin/openssl \
+                           /usr/local/opt/openssl@3/bin/openssl; do
+            if [ -x "$candidate" ] && "$candidate" version | grep -q '^OpenSSL 3'; then
+              openssl_bin="$candidate"
+              break
+            fi
+          done
+          [ -n "$openssl_bin" ] || { echo "::error::No OpenSSL 3 on the runner; cannot derive the EdDSA public key"; exit 1; }
+          secret_hex="$(printf '%s' "$SPARKLE_ED_PRIVATE_KEY" | tr -d '[:space:]' | base64 --decode | xxd -p | tr -d '\n')"
+          case "${#secret_hex}" in
+            64)
+              # Current generate_keys format: the secret is the 32-byte private seed.
+              # Wrapping it in the PKCS#8 prefix for ed25519 lets openssl do the
+              # scalar multiplication for us.
+              printf '302e020100300506032b657004220420%s' "$secret_hex" | xxd -r -p > "$RUNNER_TEMP/ed25519.der"
+              spki_hex="$("$openssl_bin" pkey -inform DER -in "$RUNNER_TEMP/ed25519.der" -pubout -outform DER | xxd -p | tr -d '\n')"
+              rm -f "$RUNNER_TEMP/ed25519.der"
+              public_hex="${spki_hex: -64}"
+              ;;
+            192)
+              # Keys generated by older Sparkle: private key concatenated with public.
+              public_hex="${secret_hex: -64}"
+              ;;
+            *)
+              echo "::error::SPARKLE_ED_PRIVATE_KEY is not a Sparkle EdDSA key (decoded to $((${#secret_hex} / 2)) bytes; expected 32 or 96)"
+              exit 1
+              ;;
+          esac
+          derived="$(printf '%s' "$public_hex" | xxd -r -p | base64)"
+          if [ "$derived" != "$embedded" ]; then
+            echo "::error::SPARKLE_ED_PRIVATE_KEY does not match SUPublicEDKey in the built app. Updates signed by this key would be rejected by every install."
+            exit 1
+          fi
+          echo "Signing key matches the app's SUPublicEDKey."
 
       # Submit for notarization, then staple the ticket to the app so
       # Gatekeeper can verify it offline — fitting for an app with no
@@ -216,6 +347,75 @@ jobs:
             build/Build/Products/Release/Cheerio.app \
             "Cheerio-${{ steps.version.outputs.suffix }}.zip"
 
+      # Sparkle's generate_appcast signs the zip and folds an entry for it into the
+      # feed. Notes worth knowing:
+      #
+      # - The tools come from the resolved Sparkle package, so they are always the
+      #   same version as the framework inside the app.
+      # - The starting feed is read from origin/main, not from this checkout: the
+      #   previous release's entry was committed to main *after* its tag, so the tag
+      #   being built may not have it, and starting from a stale feed would drop
+      #   older versions out of it.
+      # - The zip's neighbouring .html file becomes the entry's release notes.
+      #   Without DOCTYPE or body tags, generate_appcast embeds it as CDATA, so
+      #   Sparkle needs no second request to show it.
+      # - minimumSystemVersion is not passed here. generate_appcast reads it out of
+      #   the app's own LSMinimumSystemVersion (macOS 26); the verify step below
+      #   asserts it came out right.
+      # - --maximum-deltas 0 because delta updates would need every previous zip on
+      #   disk, and CI keeps none. Full downloads only.
+      - name: Generate appcast
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          tool="$(find SourcePackages/artifacts -type f -name generate_appcast | head -1)"
+          [ -x "$tool" ] || { echo "::error::generate_appcast not found in the resolved Sparkle package"; exit 1; }
+          mkdir -p appcast
+          git fetch --depth=1 origin main:refs/remotes/origin/main
+          git show refs/remotes/origin/main:site/appcast.xml > appcast/appcast.xml \
+            || cp site/appcast.xml appcast/appcast.xml
+          cp "Cheerio-${{ steps.version.outputs.suffix }}.zip" appcast/
+          cat > "appcast/Cheerio-${{ steps.version.outputs.suffix }}.html" <<EOF
+          <h2>Cheerio ${{ steps.version.outputs.short_version }}</h2>
+          <p>Everything still runs on your Mac. Requires macOS 26 or later on Apple Silicon.</p>
+          <p><a href="${{ steps.version.outputs.notes_link }}">Full release notes on GitHub</a></p>
+          EOF
+          printf '%s' "$SPARKLE_ED_PRIVATE_KEY" | "$tool" \
+            --ed-key-file - \
+            --download-url-prefix "${{ steps.version.outputs.download_prefix }}" \
+            --link "https://obviosco.github.io/cheerio/" \
+            --full-release-notes-url "https://github.com/${GITHUB_REPOSITORY}/releases" \
+            --maximum-deltas 0 \
+            -o appcast/appcast.xml \
+            appcast
+
+      # The guard. generate_appcast exits 0 after merely *warning* that it could not
+      # sign a build, so "it ran" proves nothing — this is what proves the entry
+      # describes this zip, and that the signature in it verifies against these
+      # bytes. Runs on manual builds too, which is the dry run: a broken appcast
+      # pipeline is found without cutting a tag.
+      - name: Verify appcast against the built zip
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          # The zip at the repo root, not the copy in appcast/ — this is the exact
+          # file the release attaches, and the signature has to match those bytes.
+          zip="Cheerio-${{ steps.version.outputs.suffix }}.zip"
+          signature="$(python3 Scripts/verify-appcast.py \
+            appcast/appcast.xml "$zip" \
+            --short-version "${{ steps.version.outputs.short_version }}" \
+            --bundle-version "${GITHUB_RUN_NUMBER}" \
+            --url "${{ steps.version.outputs.download_prefix }}Cheerio-${{ steps.version.outputs.suffix }}.zip")"
+          # sign_update derives the public key from the private one and checks the
+          # signature against the file, so this is the same arithmetic a user's copy
+          # of Sparkle will do before it installs anything.
+          printf '%s' "$SPARKLE_ED_PRIVATE_KEY" \
+            | "$(find SourcePackages/artifacts -type f -name sign_update -not -path '*old_dsa*' | head -1)" \
+              --verify --ed-key-file - "$zip" "$signature"
+          echo "Appcast entry verifies against ${zip}."
+
+      # Before the appcast is published, so the enclosure URL it points at exists by
+      # the time anyone's updater reads it.
       - name: Create GitHub Release
         if: github.ref_type == 'tag'
         env:
@@ -231,8 +431,12 @@ jobs:
           Apple — no security warnings, no extra steps.
 
           Requires **macOS 26 (Tahoe) or later on Apple Silicon** — there is
-          no Intel build. Everything runs on-device: no network access, no
-          accounts, no analytics.
+          no Intel build. Everything runs on-device: transcription, speaker
+          names and notes never leave your Mac. No accounts, no analytics.
+
+          Later versions install themselves: the app checks this release feed
+          for updates, and nothing else. You can turn that off, or switch on
+          automatic installs, in **Settings → Updates**.
 
           The app bundles the Sortformer diarization model (© NVIDIA,
           [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)) — full
@@ -245,16 +449,44 @@ jobs:
             --generate-notes \
             --verify-tag
 
+      # Commit the feed back to site/ and redeploy the Pages site, which is what
+      # actually serves https://obviosco.github.io/cheerio/appcast.xml. Two details:
+      #
+      # - The commit goes through the API rather than a push, because this checkout
+      #   is a detached tag with a modified Info.plist and a generated .xcodeproj in
+      #   it — switching it to main to commit one file is asking for trouble.
+      # - pages.yml has to be triggered by hand: commits made with GITHUB_TOKEN
+      #   deliberately do not fire other workflows, so its push trigger won't see
+      #   this one. Without the second call the feed sits in git, unpublished.
+      - name: Publish appcast to the Pages site
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha="$(gh api "repos/${GITHUB_REPOSITORY}/contents/site/appcast.xml?ref=main" --jq .sha)"
+          gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/site/appcast.xml" \
+            -f message="Publish appcast for ${GITHUB_REF_NAME}" \
+            -f branch=main \
+            -f sha="$sha" \
+            -f content="$(base64 -i appcast/appcast.xml | tr -d '\n')" \
+            > /dev/null
+          gh workflow run pages.yml --ref main
+          echo "Appcast committed to main; Pages deploy started."
+
+      # Manual runs publish nothing, so the appcast rides along with the zip. It is
+      # the dry run's output: read it, or feed it to a local Sparkle test app.
       - name: Upload build artifact
         if: github.ref_type != 'tag'
         uses: actions/upload-artifact@v7
         with:
           name: Cheerio-${{ steps.version.outputs.suffix }}
-          path: Cheerio-${{ steps.version.outputs.suffix }}.zip
+          path: |
+            Cheerio-${{ steps.version.outputs.suffix }}.zip
+            appcast/appcast.xml
           if-no-files-found: error
 
       - name: Clean up signing keychain
         if: always()
         run: |
           security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
-          rm -f "$RUNNER_TEMP/AuthKey.p8" "$RUNNER_TEMP/notarize.zip"
+          rm -f "$RUNNER_TEMP/AuthKey.p8" "$RUNNER_TEMP/notarize.zip" "$RUNNER_TEMP/ed25519.der"
