@@ -72,6 +72,7 @@ bug and isn't).
   Developer ID-signed and notarized; the five signing/notary secrets it needs
   are listed in the workflow's header comment.
 - Bundle prefix `app.cheerio` is a placeholder (`project.yml` TODO).
+- New user-facing features decide whether the first-run walkthrough (`Cheerio/Views/Onboarding/`) needs to teach them — most won't, but a new permission or something as easy to miss as voice enrollment used to be, does.
 
 ## Reference
 

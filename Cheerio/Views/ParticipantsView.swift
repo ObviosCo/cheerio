@@ -1,4 +1,3 @@
-import AVFoundation
 import CheerioKit
 import SwiftData
 import SwiftUI
@@ -9,22 +8,7 @@ struct ParticipantsView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \EnrolledSpeaker.enrolledAt) private var speakers: [EnrolledSpeaker]
 
-    @State private var recorder: VoiceSampleRecorder?
-    @State private var capture: MicrophoneCapture?
-    @State private var pendingName = ""
-    @State private var pendingPath: String?
-    @State private var elapsed: TimeInterval = 0
     @State private var errorMessage: String?
-
-    private var isRecording: Bool { recorder != nil }
-
-    private var isSampleLongEnough: Bool { elapsed >= EnrolledSpeaker.recommendedDuration }
-
-    private var recordingHint: String {
-        guard !isSampleLongEnough else { return "Long enough — stop whenever you like." }
-        let remaining = Int((EnrolledSpeaker.recommendedDuration - elapsed).rounded(.up))
-        return "Keep them talking — about \(remaining)s to go."
-    }
 
     var body: some View {
         Form {
@@ -47,68 +31,15 @@ struct ParticipantsView: View {
             }
 
             Section("Add a voice") {
-                TextField("Name", text: $pendingName)
-                    .disabled(isRecording)
-
-                if isRecording {
-                    HStack {
-                        Image(systemName: "record.circle.fill").foregroundStyle(.red)
-                        Text(elapsed.formatted(.number.precision(.fractionLength(0))) + "s")
-                            .monospacedDigit()
-                        Spacer()
-                        // Naming the early exit "Save anyway" makes stopping short a
-                        // choice rather than the obvious thing to do.
-                        Button(isSampleLongEnough ? "Stop and save" : "Save anyway") {
-                            Task { await stopRecording() }
-                        }
-                        .keyboardShortcut(.defaultAction)
-                    }
-                    ProgressView(value: min(elapsed / EnrolledSpeaker.recommendedDuration, 1))
-                    Text(recordingHint)
-                        .font(.caption)
-                        .foregroundStyle(isSampleLongEnough ? .green : .secondary)
-                } else {
-                    // Up front, not after the fact: this guidance only appeared once
-                    // recording had already started, so nobody knew how long to talk.
-                    Text(
-                        "Have them talk naturally for about \(Int(EnrolledSpeaker.recommendedDuration)) seconds — read something aloud if it helps. Shorter samples get mistaken for similar voices, or split into two speakers mid-meeting."
-                    )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    Button("Record voice sample") { Task { await startRecording() } }
-                        .disabled(pendingName.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
+                VoiceEnrollmentRecorder()
             }
         }
         .formStyle(.grouped)
         .frame(width: 460, height: 420)
-        .alert("Couldn't record the sample", isPresented: $errorMessage.presented()) {
+        .alert("Couldn't update the roster", isPresented: $errorMessage.presented()) {
             Button("OK") { errorMessage = nil }
         } message: {
             Text(errorMessage ?? "")
-        }
-        .onDisappear {
-            // Closing Settings or switching tabs mid-recording left the microphone
-            // running until the view was torn down, and a partial CAF with nothing
-            // referencing it.
-            guard isRecording else { return }
-            let recorder = recorder
-            let capture = capture
-            let pendingPath = pendingPath
-            capture?.stop()
-            Task {
-                await recorder?.finish()
-                if let pendingPath {
-                    try? AudioStorage.removeFile(atRelativePath: pendingPath)
-                }
-            }
-        }
-        .task(id: isRecording) {
-            // Poll the recorder for a live duration readout while capturing.
-            while isRecording, !Task.isCancelled {
-                elapsed = await recorder?.duration ?? 0
-                try? await Task.sleep(for: .milliseconds(200))
-            }
         }
     }
 
@@ -141,6 +72,12 @@ struct ParticipantsView: View {
 
     /// Only one voice can be you, so claiming it clears whoever held it before.
     private func setMe(_ speaker: EnrolledSpeaker, isMe: Bool) {
+        // Snapshot exactly what this call is about to flip, so a failed save can
+        // restore precisely that — not everything in the context.
+        let previousIsMe = speaker.isMe
+        let previouslyOtherMe = speakers.filter {
+            $0.persistentModelID != speaker.persistentModelID && $0.isMe
+        }
         for other in speakers where other.persistentModelID != speaker.persistentModelID {
             other.isMe = false
         }
@@ -156,7 +93,15 @@ struct ParticipantsView: View {
         do {
             try context.save()
         } catch {
-            context.rollback()
+            // This context is shared with the rest of the scene, and Settings can be
+            // open while a meeting is recording: CaptureSession leaves the live
+            // meeting's transcript segments unsaved in this same context until stop.
+            // `context.rollback()` discards every pending change in the context, not
+            // just this method's — it would throw away part of the meeting in progress
+            // along with this failed toggle. Undo only what this method touched
+            // instead: restore `isMe` on exactly the speakers it flipped.
+            speaker.isMe = previousIsMe
+            for other in previouslyOtherMe { other.isMe = true }
             errorMessage = error.localizedDescription
         }
     }
@@ -166,75 +111,6 @@ struct ParticipantsView: View {
         return speaker.hasEnoughAudio
             ? "\(seconds)s sample"
             : "\(seconds)s sample — shorter than recommended"
-    }
-
-    private func startRecording() async {
-        guard await MicrophoneCapture.permission() == .granted else {
-            errorMessage = "Microphone access is required. Turn it on in System Settings → Privacy & Security → Microphone."
-            return
-        }
-        do {
-            let (relativePath, url) = try AudioStorage.makeSpeakerSampleFile()
-            let recorder = VoiceSampleRecorder(destination: url)
-            await recorder.start()
-            let capture = MicrophoneCapture { buffer in recorder.submit(buffer) }
-            try capture.start()
-
-            pendingPath = relativePath
-            self.recorder = recorder
-            self.capture = capture
-            elapsed = 0
-        } catch {
-            errorMessage = error.localizedDescription
-            await cleanUpFailedRecording()
-        }
-    }
-
-    private func stopRecording() async {
-        capture?.stop()
-        capture = nil
-        let duration = await recorder?.finish()
-        recorder = nil
-
-        guard let duration, let relativePath = pendingPath else {
-            errorMessage = "No audio was captured."
-            await cleanUpFailedRecording()
-            return
-        }
-
-        let name = pendingName.trimmingCharacters(in: .whitespaces)
-        let speaker = EnrolledSpeaker(name: name, audioPath: relativePath, duration: duration)
-        context.insert(speaker)
-        do {
-            try context.save()
-        } catch {
-            // The CAF is written but nothing durable points at it, so leaving it would
-            // orphan a file nobody can find. Undo the whole enrollment and say so —
-            // resetting the form silently would look like it worked.
-            context.delete(speaker)
-            try? AudioStorage.removeFile(atRelativePath: relativePath)
-            errorMessage = error.localizedDescription
-            pendingPath = nil
-            elapsed = 0
-            return
-        }
-
-        pendingName = ""
-        pendingPath = nil
-        elapsed = 0
-    }
-
-    /// Don't leave an orphaned sample file behind when enrollment doesn't complete.
-    private func cleanUpFailedRecording() async {
-        capture?.stop()
-        capture = nil
-        await recorder?.finish()
-        recorder = nil
-        if let pendingPath {
-            try? AudioStorage.removeFile(atRelativePath: pendingPath)
-        }
-        pendingPath = nil
-        elapsed = 0
     }
 
     private func remove(_ speaker: EnrolledSpeaker) {

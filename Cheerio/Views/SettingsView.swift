@@ -4,11 +4,34 @@ import SwiftUI
 struct SettingsView: View {
     var body: some View {
         TabView {
+            GeneralSettingsView()
+                .tabItem { Label("General", systemImage: "gearshape") }
             PrivacySettingsView()
                 .tabItem { Label("Privacy", systemImage: "lock") }
             ParticipantsView()
                 .tabItem { Label("Participants", systemImage: "person.2") }
         }
+    }
+}
+
+struct GeneralSettingsView: View {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Form {
+            Section {
+                Button("Show the Welcome Walkthrough Again") {
+                    openWindow(id: OnboardingView.windowID)
+                }
+                Text(
+                    "Walks through permissions and voice enrollment again. Nothing you've already set up gets reset or re-asked unless you want it to."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: 420)
     }
 }
 
