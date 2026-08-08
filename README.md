@@ -11,7 +11,7 @@ you typed during the call into structured enhanced notes. No bot joins your call
 third-party service sits between the recording and the output — the transcript and notes stay
 in your library, ready to hand to whatever comes next.
 
-> **Status: works, lightly tested.** The app builds and runs, 47 package tests pass, and
+> **Status: works, lightly tested.** The app builds and runs, the package tests pass, and
 > speaker differentiation is verified for in-person meetings. It has **not** been verified
 > against a live video call yet, and there is a known echo problem when you use speakers
 > instead of headphones. See [Current status](#current-status).
@@ -185,7 +185,7 @@ Verified against this commit on macOS 27 / Xcode 26:
 
 | Check | Result |
 |---|---|
-| `CheerioKit` tests | 47 tests, 8 suites, all pass |
+| `CheerioKit` tests | all pass (`cd CheerioKit && swift test`) |
 | `Cheerio` app build | succeeds (2 warnings) |
 | End-to-end capture | verified 2026-07-28 — both channels transcribe, notes generate, both CAFs write |
 | Speaker differentiation, in person | verified 2026-07-31 — 9/9 segments labelled correctly across 1–2s alternating turns |
