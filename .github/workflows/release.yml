@@ -29,6 +29,11 @@
 #
 # Automatic updates (Sparkle) ride along on a tag push:
 #
+# One historical wrinkle: v2026.8.8 predates this scheme (it was YYYY.M.D), so
+# the first CalVer tag is v26.8.9 — deliberately starting August 2026's BUILD
+# counter at 9 so the version reads as that release's successor. Months after
+# 2026-08 start at .1 as documented above.
+#
 #   1. the notarized, stapled zip is built and packaged as it always was;
 #   2. Sparkle's generate_appcast EdDSA-signs that exact zip and folds an entry
 #      for it into the previous release's feed, downloaded from the stable
