@@ -29,10 +29,24 @@ struct RecordingView: View {
             if let meeting = session.meeting {
                 @Bindable var meeting = meeting
                 HStack(spacing: 8) {
-                    TextField("Meeting name", text: $meeting.title)
+                    // Routed through `rename(to:)` rather than a direct `$meeting.title`
+                    // binding: a title typed here is exactly as manual as one typed from
+                    // the library later, and both need to retire `isTitleAutomatic` so
+                    // the auto-title pass at the end of the recording doesn't overwrite it.
+                    TextField("Meeting name", text: Binding(get: { meeting.title }, set: { meeting.rename(to: $0) }))
                         .textFieldStyle(.plain)
                         .font(.title2.weight(.semibold))
                         .onSubmit { try? context.save() }
+                    // Same badge style as the library row (MeetingListView) — small
+                    // affordance only, not a forked layout. It's the one visual cue
+                    // that the scratchpad matters less for this recording.
+                    if meeting.kind == .directive {
+                        Text("Directive")
+                            .font(.caption2.weight(.medium))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(.tint.opacity(0.15), in: .capsule)
+                    }
                     // Set the roster while you can see who's in the room — the automatic
                     // pass at the end of the recording uses it, so getting it right now
                     // saves a re-identify later.

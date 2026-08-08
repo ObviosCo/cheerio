@@ -49,8 +49,8 @@
         <img src="img/library.png"
              srcset="img/library.png 1x, img/library-2x.png 2x"
              width="1440" height="900"
-             alt="The Cheerio window. A sidebar lists past meetings by date; the detail pane shows enhanced notes with a summary and action items, a speakers panel naming four people, and a transcript below where each line is labelled with a coloured monogram for whoever said it.">
-        <figcaption>Reading a finished meeting: enhanced notes on top, the speakers the model resolved, and the full transcript with every line attributed.</figcaption>
+             alt="The Cheerio window. A sidebar lists seven past meetings by date, one tagged “Directive”. The detail pane shows a meeting's notes: a summary paragraph, key points, decisions, an “Action items” list, and a “Follow-ups” list where most items name the person to chase. Below them are the rough notes typed during the call and a speakers panel listing three people with their line counts.">
+        <figcaption>Reading a finished meeting: the summary and the decisions, then the two lists that matter — what you committed to, and what you're waiting on from everyone else.</figcaption>
       </figure>
     </div>
   </section>
@@ -87,6 +87,42 @@
           <p>Browse past meetings, search across titles, notes, transcripts and speaker names, and export any meeting as Markdown.</p>
         </li>
       </ul>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap stack stack--8">
+      <div class="stack stack--3">
+        <p class="label">How it works</p>
+        <h2 class="section-title">Thirty seconds of setup, then it gets out of the way.</h2>
+        <p class="muted" style="max-width:60ch">Three screens, past the one at the top of this page. All of them are captures of the current build against invented meetings, taken by a script that lives in the repo — so they go stale the week the app changes rather than the year after.</p>
+      </div>
+
+      <figure class="shot">
+        <img src="img/library-transcript.png"
+             srcset="img/library-transcript.png 1x, img/library-transcript-2x.png 2x"
+             width="1440" height="900" loading="lazy"
+             alt="The same window, scrolled to a shorter meeting. Under the notes and the speakers panel is a transcript headed “Transcript (6 segments)”, where each line is prefixed with the name of the person who said it — the two names alternating down the page.">
+        <figcaption>Under the notes, the transcript it was written from. Every line carries a name rather than “Speaker 2”, and any line you rename stays renamed — a correction outranks the model, including when identification runs again.</figcaption>
+      </figure>
+
+      <div class="shot-row">
+        <figure class="shot shot--panel">
+          <img src="img/onboarding-voice.png"
+               srcset="img/onboarding-voice.png 1x, img/onboarding-voice-2x.png 2x"
+               width="560" height="632" loading="lazy"
+               alt="A step of the welcome walkthrough, headed “Put a name to your voice”, with a name field and a “Record voice sample” button. Progress dots across the top show it's the fifth of seven steps.">
+          <figcaption>Teach it your voice once, in the walkthrough. About thirty seconds of you talking is what turns “Speaker&nbsp;1” into your name in every meeting afterwards. Skippable, like every other screen in there.</figcaption>
+        </figure>
+
+        <figure class="shot shot--panel">
+          <img src="img/settings-callback.png"
+               srcset="img/settings-callback.png 1x, img/settings-callback-2x.png 2x"
+               width="480" height="450" loading="lazy"
+               alt="Cheerio's Settings window on the Callback tab, headed “When a transcript is ready”. A monospaced Command field holds claude -p &quot;Turn my action items into tasks&quot;, with a “Run for” menu set to All recordings below it.">
+          <figcaption>When a meeting finishes processing, Cheerio can hand it to a command you name — the transcript as JSON on stdin, the meeting's ID and title in the environment. That's how your own tooling gets the notes without you pasting them anywhere. Cheerio itself never sends a transcript anywhere; naming <em>claude -p</em> here is your call, not Cheerio's, and a cloud-backed agent sends whatever it's handed on to its own model.</figcaption>
+        </figure>
+      </div>
     </div>
   </section>
 
