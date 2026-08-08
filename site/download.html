@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Download Cheerio</title>
+<meta name="description" content="Download Cheerio for macOS, or build it from source. Requires macOS 26 or later on Apple Silicon.">
+<link rel="icon" href="logo/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="wordmark" href="./">Cheeri<svg class="wordmark-ring" viewBox="0 0 100 100" width="16" height="16" aria-hidden="true" focusable="false"><circle cx="50" cy="50" r="37" fill="none" stroke="currentColor" stroke-width="26"/></svg><span class="visually-hidden">o</span></a>
+    <nav class="site-nav" aria-label="Main">
+      <ul>
+        <li><a href="./">Overview</a></li>
+        <li><a href="download.html" aria-current="page">Download</a></li>
+        <li><a href="releases.html">Release notes</a></li>
+        <li><a href="https://github.com/ObviosCo/cheerio">Source</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+  <section class="section">
+    <div class="wrap wrap--narrow stack stack--6">
+      <h1 class="page-title">Download Cheerio</h1>
+      <p class="lede">Cheerio isn't on the Mac App Store, and can't be — the App Sandbox has to be off for it to capture system audio at all, which makes the store unavailable. So it comes from here.</p>
+
+      <!-- ============================================================
+           PUBLISHED BUILD
+
+           No build is published yet, so the button below is disabled and
+           the honest state is shown. When the first release ships, replace
+           this whole block with the commented-out version underneath it and
+           fill in the version, date, and size.
+           ============================================================ -->
+      <div class="card stack stack--4">
+        <div class="stack stack--2">
+          <h2 class="sub-title">No build published yet</h2>
+          <p class="muted">Cheerio runs and records real meetings, but nothing has been cut as a downloadable release. Until it is, building from source is the way in — it's one command, and the instructions are below.</p>
+        </div>
+        <p><a class="button button--primary" href="#build">Build from source</a></p>
+        <p class="caption">Watch <a href="https://github.com/ObviosCo/cheerio/releases">the releases page</a> to be told when a build lands.</p>
+      </div>
+
+      <!-- Replace the card above with this when a release exists.
+
+           The release workflow (.github/workflows/release.yml) publishes a
+           versioned zip made with ditto — `Cheerio-<version>.zip` — not a DMG
+           and not a stable filename, so the href must name the exact version.
+
+           Keep whichever caption matches how that build is actually signed.
+           Today the workflow ad-hoc signs without notarization, so the second
+           one; switch to the first only once notarized releases ship (PR #18
+           sets that up).
+
+      <div class="card stack stack--4">
+        <div class="stack stack--2">
+          <h2 class="sub-title">Cheerio 0.1.0</h2>
+          <p class="muted">Released <time datetime="2026-00-00">DATE</time> · Universal? no — Apple Silicon only · 00&nbsp;MB</p>
+        </div>
+        <p><a class="button button--primary" href="https://github.com/ObviosCo/cheerio/releases/download/v0.1.0/Cheerio-0.1.0.zip">Download Cheerio 0.1.0 (zip)</a></p>
+        <p class="caption">Signed and notarized by Apple. <a href="releases.html#v0-1-0">What's in this release</a></p>
+        <p class="caption">Ad-hoc signed — macOS will warn once on first launch; the steps are under First launch below. <a href="releases.html#v0-1-0">What's in this release</a></p>
+      </div>
+
+      -->
+
+      <div class="table-scroll">
+        <table>
+          <caption>What you need</caption>
+          <tbody>
+            <tr><th scope="row">macOS</th><td>26 (Tahoe) or later</td></tr>
+            <tr><th scope="row">Hardware</th><td>Apple Silicon. There is no Intel build — the speaker model runs on the Neural Engine.</td></tr>
+            <tr><th scope="row">Permissions</th><td>Microphone and system audio recording. Calendar is optional and only affects meeting titles.</td></tr>
+            <tr><th scope="row">Disk</th><td>Space for retained audio, which you control — the default keeps seven days.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap wrap--narrow stack stack--6">
+      <div class="stack stack--3">
+        <p class="label">First launch</p>
+        <h2 class="section-title">What to expect the first time.</h2>
+      </div>
+
+      <ol class="stack stack--6" style="padding-left:var(--ch-space-5);max-width:60ch">
+        <li>
+          <h3 class="sub-title">Open it</h3>
+          <p class="muted">Drag Cheerio to your Applications folder and open it. A notarized build opens the way any app does. Today's builds are ad-hoc signed, so macOS will warn about an unidentified developer once: right-click the app and choose <strong>Open</strong>, or approve it under System&nbsp;Settings → Privacy&nbsp;&amp;&nbsp;Security. Each release's notes say how that build is signed.</p>
+        </li>
+        <li>
+          <h3 class="sub-title">Grant the microphone</h3>
+          <p class="muted">Asked once, the first time you record. If you refuse, macOS won't ask again and you'll need System&nbsp;Settings → Privacy &amp; Security to change your mind.</p>
+        </li>
+        <li>
+          <h3 class="sub-title">Wait once for the speech model</h3>
+          <p class="muted">macOS downloads the transcription model for your language the first time you start a recording. It happens once per language, and it's the only thing Cheerio ever causes to be fetched.</p>
+        </li>
+        <li>
+          <h3 class="sub-title">Enroll your voice</h3>
+          <p class="muted">In Settings&nbsp;→ Participants. Speaker identification only returns names for voices it has heard before, and samples need at least 30 seconds — shorter ones measurably cause one person to be split across two speakers.</p>
+        </li>
+        <li>
+          <h3 class="sub-title">Put headphones on</h3>
+          <p class="muted">Until echo cancellation lands, meeting audio playing out loud gets picked up by your microphone and the transcript says everything twice.</p>
+        </li>
+      </ol>
+
+      <!-- ============================================================
+           GATEKEEPER
+
+           The signing question has a current answer: release.yml ad-hoc
+           signs (no notarization), and its release notes carry the
+           right-click → Open steps — so "Open it" above mirrors them.
+           That's Apple's supported flow, not a bypass; deeper workarounds
+           (xattr etc.) stay out of this page on purpose. When notarized
+           releases ship (PR #18), trim "Open it" back to a single
+           sentence and delete this note.
+           ============================================================ -->
+    </div>
+  </section>
+
+  <section class="section" id="build">
+    <div class="wrap wrap--narrow stack stack--6">
+      <div class="stack stack--3">
+        <p class="label">From source</p>
+        <h2 class="section-title">Build it yourself.</h2>
+        <p class="muted" style="max-width:60ch">You'll need macOS&nbsp;26, Xcode&nbsp;26, and <a href="https://github.com/yonaskolb/XcodeGen">XcodeGen</a> (<code>brew install xcodegen</code>). The Xcode project is generated rather than committed.</p>
+      </div>
+
+      <pre><code>git clone https://github.com/ObviosCo/cheerio.git &amp;&amp; cd cheerio
+./Scripts/bootstrap.sh
+open Cheerio.xcodeproj</code></pre>
+
+      <p class="muted"><code>bootstrap.sh</code> checks your toolchain, downloads the ~93&nbsp;MB speaker model that isn't committed to the repo, and generates the Xcode project — in that order, because the project file references the model and generation fails without it. Every step is safe to repeat. Then build and run the <code>Cheerio</code> scheme.</p>
+
+      <div class="notice">
+        <strong class="notice-label">Before you run it</strong>
+        <p class="muted">Set <code>PRODUCT_BUNDLE_IDENTIFIER</code> in <code>project.yml</code> — it's the placeholder <code>app.cheerio.mac</code>, and it overrides <code>options.bundleIdPrefix</code>, so changing the prefix alone leaves you building with the placeholder. Change both.</p>
+      </div>
+
+      <p class="small">Re-run <code>bootstrap.sh</code> after adding or removing source files, or the build won't see them. <a href="https://github.com/ObviosCo/cheerio#building">Full instructions are in the README.</a></p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap wrap--narrow">
+      <div class="card stack stack--3">
+        <h2 class="sub-title">Licensing, in one paragraph</h2>
+        <p class="muted">Cheerio's source is MIT. It depends on <a href="https://github.com/FluidInference/FluidAudio">FluidAudio</a> (Apache&nbsp;2.0) and bundles NVIDIA's Sortformer model under the <a href="https://huggingface.co/FluidInference/diar-streaming-sortformer-coreml">NVIDIA Open Model License</a>. The model is fetched by a script rather than committed, which keeps the source tree MIT while an app built from it bundles an NVIDIA-licensed model. Check that licence before redistributing a build.</p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap stack stack--4">
+    <nav aria-label="Footer">
+      <ul>
+        <li><a href="./">Overview</a></li>
+        <li><a href="releases.html">Release notes</a></li>
+        <li><a href="https://github.com/ObviosCo/cheerio">Source</a></li>
+        <li><a href="https://github.com/ObviosCo/cheerio/issues">Issues</a></li>
+      </ul>
+    </nav>
+    <p class="caption">Cheerio is MIT-licensed. It bundles a diarization model under the NVIDIA Open Model License — check that before redistributing a build.</p>
+  </div>
+</footer>
+
+</body>
+</html>

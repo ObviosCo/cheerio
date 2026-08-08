@@ -1,0 +1,66 @@
+# Publishes site/ to GitHub Pages.
+#
+# Pages is set to "GitHub Actions" as its source rather than a branch, which is
+# what keeps site/ servable without Jekyll touching it. That matters here: the
+# repo root and docs/ are full of Markdown, and a branch-sourced Pages build
+# would try to render all of it.
+#
+# There is no build step. site/ is already the site — HTML, one stylesheet,
+# four woff2 and some SVG. This workflow copies it and nothing else, so the
+# whole thing stays reviewable in a pull request.
+#
+# One-time setup: Settings -> Pages -> Source: GitHub Actions.
+
+name: Deploy site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish rather than cancelling it; skip queued duplicates.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the fonts are actually there
+        # A missing woff2 doesn't break the build, it just silently ships the
+        # fallback face. Fail loudly instead.
+        run: |
+          for f in Literata-Regular IBMPlexSans-Regular IBMPlexSans-SemiBold JetBrainsMono-Regular; do
+            test -s "site/fonts/$f.woff2" || { echo "missing site/fonts/$f.woff2"; exit 1; }
+          done
+          test -s site/tokens.css || { echo "missing site/tokens.css"; exit 1; }
+
+      - name: No third-party requests
+        # The site self-hosts everything. This catches a stray CDN link before
+        # it reaches a visitor, rather than in someone's network tab.
+        run: |
+          if grep -rInE 'https?://(fonts\.(googleapis|gstatic)\.com|cdn\.|unpkg\.com|cdnjs\.)' site/ ; then
+            echo "third-party asset reference found in site/ — self-host it"
+            exit 1
+          fi
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4
