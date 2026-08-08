@@ -14,14 +14,25 @@ struct MeetingListView: View {
     @State private var searchText = ""
     /// The calendar event happening right now, offered as a title but never assumed.
     @State private var currentEvent: CalendarMeeting?
+    /// A menu toggle rather than a section split: there aren't enough directives yet
+    /// to earn their own part of the list, but hiding meetings while looking for one
+    /// is already useful today.
+    @State private var directivesOnly = false
+    /// The meeting the "Rename" context-menu item was chosen for. Driving an alert
+    /// off this (rather than an inline field in the row) keeps the row layout the
+    /// same whether or not something's being renamed — the row's width is already
+    /// tight with the directive badge and timestamp.
+    @State private var renamingMeeting: Meeting?
+    @State private var renameText = ""
 
     /// Matches title, rough notes, enhanced notes, and transcript text. The library
     /// is one person's meetings, so filtering in memory is cheaper than rebuilding
     /// the query on every keystroke.
     private var visibleMeetings: [Meeting] {
+        let base = directivesOnly ? meetings.filter { $0.kind == .directive } : meetings
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return meetings }
-        return meetings.filter { $0.matches(query) }
+        guard !query.isEmpty else { return base }
+        return base.filter { $0.matches(query) }
     }
 
     /// `visibleMeetings`, bucketed into Today/Yesterday/weekday/absolute-date
@@ -49,10 +60,18 @@ struct MeetingListView: View {
                     Text("No meetings match “\(searchText)”.")
                         .foregroundStyle(.secondary)
                 }
+            } else if visibleMeetings.isEmpty, directivesOnly {
+                Section("Meetings") {
+                    Text("No directives yet.")
+                        .foregroundStyle(.secondary)
+                }
             } else {
                 // One `Section` per date bucket instead of a single flat "Meetings"
                 // section — empty buckets never appear because grouping only ever
-                // produces a section for a day that has something in it.
+                // produces a section for a day that has something in it. This runs on
+                // `visibleMeetings`, which already reflects both the search text and
+                // the directives-only toggle above, so the toggle and search need no
+                // grouping-specific handling here — they're just a smaller input.
                 ForEach(meetingSections) { section in
                     Section(section.title) {
                         ForEach(section.meetings) { meeting in
@@ -64,6 +83,30 @@ struct MeetingListView: View {
         }
         .navigationTitle("Cheerio")
         .searchable(text: $searchText, prompt: "Search meetings")
+        .toolbar {
+            // A toggle, not a segmented control or a separate section: there are only
+            // a handful of directives so far, and a menu item is the smallest way to
+            // offer the filter without giving it its own piece of the layout.
+            ToolbarItem(placement: .automatic) {
+                Menu {
+                    Toggle("Directives only", isOn: $directivesOnly)
+                } label: {
+                    Label(
+                        "Filter",
+                        systemImage: directivesOnly
+                            ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle"
+                    )
+                }
+            }
+        }
+        .task {
+            // No-op unless the screenshot harness passed its launch arguments; see
+            // `ScreenshotMode`. Here rather than in `ContentView` because this is
+            // where the sidebar's order is already resolved.
+            if let index = ScreenshotMode.selectedMeetingIndex, meetings.indices.contains(index) {
+                selection = meetings[index]
+            }
+        }
         .task {
             // Keep the calendar offer fresh as events start and end.
             while !Task.isCancelled {
@@ -71,8 +114,13 @@ struct MeetingListView: View {
                 try? await Task.sleep(for: .seconds(30))
             }
         }
-        // Both alerts read the session, not local state, so a recording started from the
-        // menu bar can explain itself here.
+        .alert("Rename meeting", isPresented: $renamingMeeting.presented()) {
+            TextField("Meeting name", text: $renameText)
+            Button("Cancel", role: .cancel) { renamingMeeting = nil }
+            Button("Save") { applyRename() }
+        }
+        // Both alerts below read the session, not local state, so a recording started
+        // from the menu bar can explain itself here.
         .alert("Couldn't start recording", isPresented: startFailed) {
             Button("OK") { session.startFailure = nil }
         } message: {
@@ -100,8 +148,9 @@ struct MeetingListView: View {
         VStack(alignment: .leading) {
             HStack(spacing: 4) {
                 Text(meeting.title).font(.headline)
-                // Nothing creates directives yet, so this is dormant today —
-                // it only needs to be visible once something does.
+                // Set via "Give Direction…" in the menu bar (see MenuBarView); also
+                // what the toolbar's "Directives only" toggle filters `visibleMeetings`
+                // on above.
                 if meeting.kind == .directive {
                     Text("Directive")
                         .font(.caption2.weight(.medium))
@@ -118,6 +167,12 @@ struct MeetingListView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(.rect)
         .tag(meeting)
+        .contextMenu {
+            Button("Rename") {
+                renameText = meeting.title
+                renamingMeeting = meeting
+            }
+        }
     }
 
     /// Start and stop live in the same place so stopping is as findable as starting.
@@ -203,6 +258,18 @@ struct MeetingListView: View {
             get: { session.startFailure?.message != nil },
             set: { if !$0 { session.startFailure = nil } }
         )
+    }
+
+    /// Commits the "Rename" context-menu flow. Plain SwiftData write, same as the
+    /// live rename in `RecordingView` and the detail view — the only thing specific
+    /// to this affordance is where the new text came from.
+    private func applyRename() {
+        defer { renamingMeeting = nil }
+        guard let renamingMeeting else { return }
+        let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        renamingMeeting.rename(to: trimmed)
+        try? context.save()
     }
 
     private func startRecording(event: CalendarMeeting?) {
