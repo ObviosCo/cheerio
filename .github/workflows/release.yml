@@ -85,7 +85,8 @@ permissions:
 
 # One fixed group across every ref, not one per tag. Nothing is committed any more,
 # but the feed is still shared mutable state: every run reads the *current* latest
-# release's appcast and writes a superset of it to a new latest. Two tags released
+# release's appcast and writes that feed plus its own entry to a new latest (minus
+# anything past generate_appcast's --maximum-versions). Two tags released
 # concurrently would both seed from the same older feed, and whichever finished
 # second would become "latest" while missing the other's entry. Serializing all
 # release runs — regardless of tag — through one group is what keeps that
@@ -98,6 +99,11 @@ jobs:
   release:
     name: Build and publish
     runs-on: macos-26
+    # One place for the signing identity: xcodebuild signs the app with it, and the
+    # Sparkle re-signing step below has to use the *same* one, or the app's seal and
+    # its nested code would disagree about who signed them.
+    env:
+      DEVELOPER_ID: "Developer ID Application: Jackson Miller (HXGV36NV7T)"
     steps:
       - uses: actions/checkout@v7
 
@@ -205,11 +211,91 @@ jobs:
             -destination 'platform=macOS' \
             -derivedDataPath build \
             -clonedSourcePackagesDirPath SourcePackages \
-            CODE_SIGN_IDENTITY="Developer ID Application: Jackson Miller (HXGV36NV7T)" \
+            CODE_SIGN_IDENTITY="$DEVELOPER_ID" \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO \
             OTHER_CODE_SIGN_FLAGS=--timestamp \
             | xcbeautify --renderer github-actions
+
+      # Sparkle's helper tools ship *pre-signed by the Sparkle project*, and signing
+      # an app does not re-sign the code nested inside it — so Updater.app,
+      # Autoupdate and the XPC services reach the notary carrying someone else's
+      # certificate and no secure timestamp. Apple rejects each by name
+      # ("not signed with a valid Developer ID certificate", "signature does not
+      # include a secure timestamp"); that is what run 31274611820 hit.
+      #
+      # Signing order is inside-out and not negotiable: a signature seals everything
+      # nested within it, so signing an outer bundle first is invalidated the moment
+      # anything inside it is re-signed. Sparkle's own guidance
+      # (sparkle-project.org/documentation/sandboxing/) gives the sequence used here:
+      # XPC services → Autoupdate → Updater.app → Sparkle.framework. The app itself
+      # follows, because re-signing the framework broke the app's seal over it.
+      #
+      # Two details from that guidance:
+      #   - Downloader.xpc (Sparkle ≥ 2.6, and we pin 2.9.5) carries its own
+      #     entitlements, so it is signed with --preserve-metadata=entitlements;
+      #     re-signing plain would strip them.
+      #   - No --deep, for the same reason: one blanket recursive signature would
+      #     flatten the app's entitlements onto every nested binary.
+      # The app's own entitlements have to be passed explicitly on its signature —
+      # codesign does not carry over what xcodebuild applied.
+      - name: Re-sign Sparkle's nested code
+        run: |
+          set -euo pipefail
+          app="build/Build/Products/Release/Cheerio.app"
+          sparkle="$app/Contents/Frameworks/Sparkle.framework"
+          test -d "$sparkle" \
+            || { echo "::error::Sparkle.framework missing from the built app; nothing to re-sign"; exit 1; }
+
+          # --timestamp: the secure timestamp the notary requires.
+          # --options runtime: hardened runtime, likewise required.
+          # --force: these are already signed; without it codesign refuses.
+          sign() {
+            codesign --force --timestamp --options runtime --sign "$DEVELOPER_ID" "$@"
+          }
+
+          signed=()
+          for service in Installer Downloader; do
+            target="$sparkle/Versions/B/XPCServices/${service}.xpc"
+            # Which XPC services ship has varied across Sparkle versions, so presence
+            # is checked rather than assumed. Everything below this loop is mandatory.
+            if [ ! -d "$target" ]; then
+              echo "No ${service}.xpc in this Sparkle build; nothing to sign there."
+              continue
+            fi
+            if [ "$service" = Downloader ]; then
+              sign --preserve-metadata=entitlements "$target"
+            else
+              sign "$target"
+            fi
+            signed+=("$target")
+          done
+
+          for target in \
+            "$sparkle/Versions/B/Autoupdate" \
+            "$sparkle/Versions/B/Updater.app" \
+            "$sparkle"; do
+            test -e "$target" || { echo "::error::Expected Sparkle component missing: $target"; exit 1; }
+            sign "$target"
+            signed+=("$target")
+          done
+
+          # The app last, now that its framework has a new signature underneath it.
+          sign --entitlements Cheerio/Cheerio.entitlements "$app"
+          signed+=("$app")
+
+          # Assert each component now has all three things the notary checks for,
+          # instead of learning it from Apple twenty minutes later.
+          for target in "${signed[@]}"; do
+            info="$(codesign -dvv "$target" 2>&1)"
+            grep -q "Authority=Developer ID Application" <<<"$info" \
+              || { echo "::error::${target} is not signed with Developer ID"; exit 1; }
+            grep -q "^Timestamp=" <<<"$info" \
+              || { echo "::error::${target} has no secure timestamp"; exit 1; }
+            grep -q "flags=.*runtime" <<<"$info" \
+              || { echo "::error::${target} is not hardened-runtime signed"; exit 1; }
+            echo "Signed: $target"
+          done
 
       - name: Verify app bundle
         run: |
@@ -244,11 +330,15 @@ jobs:
           # Sparkle has to be embedded and separately signed, not just linked: its
           # updater and installer are nested bundles inside the framework, and an
           # unsigned or wrongly-signed one fails notarization or refuses to install
-          # anything at runtime. --strict above already walked them; this proves the
-          # framework is actually in the bundle rather than silently dropped.
+          # anything at runtime. The re-signing step above gave each of them our own
+          # Developer ID signature; this proves the framework is actually in the
+          # bundle rather than silently dropped, and that re-signing it inside-out
+          # left both it and the app's seal over it intact. --deep so the nested
+          # Updater.app and XPC services are walked explicitly rather than by
+          # default-behaviour assumption.
           test -d "$app/Contents/Frameworks/Sparkle.framework" \
             || { echo "::error::Sparkle.framework missing from app bundle; updates would not work"; exit 1; }
-          codesign --verify --strict --verbose=2 "$app/Contents/Frameworks/Sparkle.framework"
+          codesign --verify --strict --deep --verbose=2 "$app/Contents/Frameworks/Sparkle.framework"
           # Apple Silicon only — a stray Intel slice means ARCHS drifted.
           archs="$(lipo -archs "$app/Contents/MacOS/Cheerio")"
           [ "$archs" = "arm64" ] \
@@ -376,6 +466,16 @@ jobs:
       #   The fallback covers exactly two cases — the first release ever, and a repo
       #   whose latest release predates this mechanism and so has no appcast asset —
       #   where that URL 404s and site/appcast.xml's empty template is the right seed.
+      # - Seeding works because generate_appcast re-uses an appcast it finds *in the
+      #   archives directory* and only adds to it. Verified against the pinned 2.9.5
+      #   binary: with a directory holding nothing but the new zip plus the previous
+      #   feed, the older entries survive with their edSignature and their original
+      #   enclosure URL intact — --download-url-prefix applies to new entries only, so
+      #   an old entry keeps pointing at the release it actually shipped from. Entries
+      #   are pruned by count (--maximum-versions, default 3 per branch point), never
+      #   by whether their archive is still on disk. This is why -o has to name a path
+      #   *inside* the archives directory passed as the argument: point it elsewhere
+      #   and the seed is never read, and every release publishes a one-item feed.
       # - The zip's neighbouring .html file becomes the entry's release notes.
       #   Without DOCTYPE or body tags, generate_appcast embeds it as CDATA, so
       #   Sparkle needs no second request to show it.
@@ -391,13 +491,45 @@ jobs:
           tool="$(find SourcePackages/artifacts -type f -name generate_appcast | head -1)"
           [ -x "$tool" ] || { echo "::error::generate_appcast not found in the resolved Sparkle package"; exit 1; }
           mkdir -p appcast
-          # -f so a 404 is a failure rather than an HTML error page written into the
-          # feed; -L to follow the redirect to the current latest release's asset.
-          if ! curl -fLsS -o appcast/appcast.xml \
-            "https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/appcast.xml"; then
-            echo "No published appcast yet; seeding from the empty template in site/."
-            cp site/appcast.xml appcast/appcast.xml
+          feed_url="https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/appcast.xml"
+          # Only a definitive 404 means "there is no previous feed". Anything else —
+          # a timeout, a TLS or DNS failure, a rate limit, a 5xx — has to stop the run,
+          # because seeding from the empty template on a transport failure would
+          # publish an appcast that silently drops every previous release's entry.
+          # Installs still on an older version would then see a feed that no longer
+          # mentions any upgrade path they can take.
+          #
+          # -L because the stable releases/latest/download URL 302-redirects to the
+          # current latest release's own asset; %{http_code} reports the code of the
+          # *last* transfer, so what we capture is the status after redirects, not the
+          # 302. No -f: a nonzero exit would hide the status we want to name.
+          # --retry 3 --retry-all-errors so genuinely transient failures retry before
+          # being called failures.
+          set +e
+          status="$(curl -sSL --retry 3 --retry-all-errors --retry-delay 2 \
+            --connect-timeout 15 --max-time 180 \
+            -w '%{http_code}' -o appcast/appcast.xml "$feed_url")"
+          curl_rc=$?
+          set -e
+          if [ "$curl_rc" -ne 0 ]; then
+            echo "::error::Could not read the published appcast at ${feed_url}: curl exited ${curl_rc} (HTTP status: ${status:-none}). Refusing to seed an empty feed — that would drop every previous release's entry."
+            exit 1
           fi
+          case "$status" in
+            200)
+              echo "Seeded from the published appcast (HTTP 200)."
+              ;;
+            404)
+              # The only two legitimate cases: the first release ever, and a repo whose
+              # latest release predates this mechanism and so has no appcast asset.
+              echo "No published appcast yet (HTTP 404); seeding from the empty template in site/."
+              cp site/appcast.xml appcast/appcast.xml
+              ;;
+            *)
+              echo "::error::Unexpected HTTP ${status} fetching ${feed_url}. Only 404 means 'no previous feed'; refusing to seed an empty appcast on a ${status}, which would drop every previous release's entry."
+              exit 1
+              ;;
+          esac
           cp "Cheerio-${{ steps.version.outputs.suffix }}.zip" appcast/
           cat > "appcast/Cheerio-${{ steps.version.outputs.suffix }}.html" <<EOF
           <h2>Cheerio ${{ steps.version.outputs.short_version }}</h2>
@@ -468,24 +600,63 @@ jobs:
           [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)) — full
           attribution in `THIRD-PARTY-NOTICES.md` inside the app bundle.
           EOF
+          zip="Cheerio-${{ steps.version.outputs.suffix }}.zip"
           # If the release already exists, this is a re-run after something failed
-          # later on, and `create` refuses. Upload the assets to the existing release
-          # instead (--clobber to replace the previous attempt's copies): a re-run
-          # after a partial failure has to be able to finish the job, rather than
-          # leaving a release whose feed was never attached.
+          # later on, and `create` refuses. The re-run still has to be able to finish
+          # the job — a release whose feed was never attached is worse than useless —
+          # but it must do so by *adding* what is missing, never by replacing what is
+          # already out there.
+          #
+          # A published Sparkle asset is immutable. Clients hold the appcast they last
+          # fetched, and it names the zip's URL alongside an EdDSA signature over that
+          # zip's exact bytes. Replacing the zip under a URL some client already has
+          # signed makes every such client fail the signature check — and even for
+          # clients that refetch, there is a window in which the appcast and the zip
+          # are a mismatched pair. So: upload only missing assets, and if the zip is
+          # already published, prove the local one is byte-identical before continuing.
           if ! gh release create "${GITHUB_REF_NAME}" \
-            "Cheerio-${{ steps.version.outputs.suffix }}.zip" \
+            "$zip" \
             appcast/appcast.xml \
             --title "Cheerio ${GITHUB_REF_NAME}" \
             --notes-file release-notes.md \
             --generate-notes \
             --verify-tag; then
-            echo "gh release create failed; assuming the release exists and uploading assets."
+            echo "gh release create failed; checking whether the release already exists."
+            # Fails the step if `create` broke for any reason other than the release
+            # already being there (auth, network, a bad tag).
             gh release view "${GITHUB_REF_NAME}" > /dev/null
-            gh release upload "${GITHUB_REF_NAME}" \
-              "Cheerio-${{ steps.version.outputs.suffix }}.zip" \
-              appcast/appcast.xml \
-              --clobber
+            published="$(gh release view "${GITHUB_REF_NAME}" --json assets --jq '.assets[].name')"
+
+            if grep -qxF "$zip" <<<"$published"; then
+              # Same name, already published. Byte-identical is the only safe answer.
+              # Note a re-run of the same tag normally is *not* identical: CFBundleVersion
+              # is the run number, so the app inside differs. That is precisely the case
+              # this must refuse rather than clobber.
+              mkdir -p "$RUNNER_TEMP/published"
+              gh release download "${GITHUB_REF_NAME}" \
+                --pattern "$zip" --dir "$RUNNER_TEMP/published" --clobber
+              if cmp -s "$zip" "$RUNNER_TEMP/published/$zip"; then
+                echo "$zip is already published and byte-identical; leaving it untouched."
+              else
+                echo "::error::${zip} is already published on ${GITHUB_REF_NAME} with different bytes ($(wc -c <"$RUNNER_TEMP/published/$zip" | tr -d ' ') published vs $(wc -c <"$zip" | tr -d ' ') local; sha256 $(shasum -a 256 "$RUNNER_TEMP/published/$zip" | cut -d' ' -f1) vs $(shasum -a 256 "$zip" | cut -d' ' -f1))."
+                echo "::error::A published, signed asset can never be replaced: appcasts already fetched by clients carry an EdDSA signature over the published bytes, and swapping the file under that URL breaks every one of them. Cut a new tag instead."
+                exit 1
+              fi
+            else
+              echo "$zip is not published yet; uploading it."
+              gh release upload "${GITHUB_REF_NAME}" "$zip"
+            fi
+
+            # The feed is the asset a partial failure most often leaves missing, since
+            # it went on in the same call as the zip. Upload it if absent; if it is
+            # already there it was published by the run that produced the matching zip,
+            # so it is left alone for the same immutability reason.
+            if grep -qxF appcast.xml <<<"$published"; then
+              echo "appcast.xml is already published; leaving it untouched."
+            else
+              echo "appcast.xml is not published yet; uploading it."
+              gh release upload "${GITHUB_REF_NAME}" appcast/appcast.xml
+            fi
           fi
           echo "Released ${GITHUB_REF_NAME} with the zip and appcast.xml attached."
 
