@@ -88,6 +88,23 @@ import Testing
         #expect(item.disposition == .followUp)
     }
 
+    @Test func mergeClearsTheNameWhenTwoDifferentGuestsAreBlamed() {
+        // Two sightings of the same commitment naming two different guests: the
+        // attribution is disputed, and exporting an arbitrary one would send the
+        // user to chase the wrong person. Disputed means unnamed — still a
+        // follow-up, still never actionable.
+        let items = ActionItem.resolved(
+            from: [
+                ActionItemDraft(task: "Send the contract", owner: "Carter", disposition: .followUp),
+                ActionItemDraft(task: "Send the contract", owner: "Sarah", disposition: .followUp),
+            ],
+            ownerNames: ["Jackson"]
+        )
+        #expect(items.count == 1)
+        #expect(items[0].owner == nil)
+        #expect(items[0].disposition == .followUp)
+    }
+
     @Test func mergeKeepsTheChaseableNameWhenSightingsDisagree() {
         // One chunk attributed the commitment to the owner, another to Carter. The
         // merge demotes — and a follow-up's name is who to chase, so it must be

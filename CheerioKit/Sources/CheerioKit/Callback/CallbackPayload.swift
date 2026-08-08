@@ -25,17 +25,21 @@ public enum CallbackPayload {
 
     /// Subdirectory of Application Support the export JSON lands in.
     ///
-    /// Retention: one file per meeting, named by its stable UUID, left in place
-    /// rather than deleted after the callback runs or overwritten by the next one.
-    /// A single shared filename would race a real recording's callback against a
-    /// "run now" test firing on a different meeting, or against a slow command
-    /// that's still reading the file when the next meeting finishes and reuses it.
-    /// Per-meeting names cost little to keep around — a meeting's JSON export runs
-    /// from a few KB to the low hundreds, not megabytes — and having the last
-    /// several sitting on disk is actively useful when a user is debugging their
-    /// command against a real payload. Nothing purges this folder automatically;
-    /// if that ever needs to change, it belongs next to `AudioRetentionService`
-    /// rather than as a second, unrelated cleanup policy.
+    /// Retention: one file per *invocation*, named `<meeting>.<invocation>.json`,
+    /// left in place rather than deleted after the callback runs. Naming by
+    /// meeting alone isn't enough — callbacks run detached, and the "run now"
+    /// button can fire the same meeting again while the previous command is still
+    /// working, so a second atomic write would swap the file out from under a
+    /// command that hasn't opened `CHEERIO_EXPORT_PATH` yet. That would break the
+    /// documented contract that the file holds exactly the bytes piped to stdin.
+    /// A fresh invocation UUID per ``prepare(export:in:)`` gives every run its own
+    /// immutable file. Files therefore accumulate per invocation, not per meeting;
+    /// they're still tiny — a meeting's JSON export runs from a few KB to the low
+    /// hundreds, not megabytes — and having the last several on disk is actively
+    /// useful when a user is debugging their command against a real payload.
+    /// Nothing purges this folder automatically; if that ever needs to change, it
+    /// belongs next to `AudioRetentionService` rather than as a second, unrelated
+    /// cleanup policy.
     private static let folderName = "Callbacks"
 
     /// Where `prepare(export:)` writes unless a caller overrides it. Exposed so
@@ -48,13 +52,17 @@ public enum CallbackPayload {
     /// Writes `export`'s JSON to `directory` (or ``defaultDirectory()``) and builds
     /// the environment entries that point at it.
     ///
+    /// Each call writes a file nobody else will touch — see ``folderName`` for why
+    /// the name carries a per-invocation UUID and not just the meeting's.
+    ///
     /// - Parameter directory: Override for tests, so they don't write into the
     ///   shared Application Support directory a real app run uses.
     public static func prepare(export: MeetingExport, in directory: URL? = nil) throws -> Prepared {
         let directory = try directory ?? defaultDirectory()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
-        let fileURL = directory.appending(path: "\(export.uuid.uuidString).json")
+        let invocationID = UUID()
+        let fileURL = directory.appending(path: "\(export.uuid.uuidString).\(invocationID.uuidString).json")
         let data = try MeetingExport.makeJSONEncoder().encode(export)
         try data.write(to: fileURL, options: .atomic)
 
