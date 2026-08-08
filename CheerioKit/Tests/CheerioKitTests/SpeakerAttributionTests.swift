@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import CheerioKit
 
 @Suite struct SpeakerAttributionTests {
@@ -46,18 +47,21 @@ import Testing
     /// "Speaker 1" is worse than leaving it "Me", because the summarizer is instructed
     /// not to assume a numbered speaker is the user.
     @Test func aLoneUnnamedVoiceAddsNothingOverTheChannelName() {
-        #expect(!SpeakerAttribution.addsInformation([
-            SpeakerTurn(label: "Speaker 1", startTime: 0, endTime: 30)
-        ]))
+        #expect(
+            !SpeakerAttribution.addsInformation([
+                SpeakerTurn(label: "Speaker 1", startTime: 0, endTime: 30)
+            ]))
         // Several unnamed voices is real information: three people in a room.
-        #expect(SpeakerAttribution.addsInformation([
-            SpeakerTurn(label: "Speaker 1", startTime: 0, endTime: 5),
-            SpeakerTurn(label: "Speaker 2", startTime: 5, endTime: 9),
-        ]))
+        #expect(
+            SpeakerAttribution.addsInformation([
+                SpeakerTurn(label: "Speaker 1", startTime: 0, endTime: 5),
+                SpeakerTurn(label: "Speaker 2", startTime: 5, endTime: 9),
+            ]))
         // And one *named* voice is an actual identification, so it stays.
-        #expect(SpeakerAttribution.addsInformation([
-            SpeakerTurn(label: "Jackson", startTime: 0, endTime: 30)
-        ]))
+        #expect(
+            SpeakerAttribution.addsInformation([
+                SpeakerTurn(label: "Jackson", startTime: 0, endTime: 30)
+            ]))
         #expect(!SpeakerAttribution.addsInformation([]))
     }
 
@@ -72,9 +76,9 @@ import Testing
     @Test func enrolledSpeakerIsNamed() async throws {
         let environment = ProcessInfo.processInfo.environment
         guard let modelPath = environment["CHEERIO_SORTFORMER_MODEL"],
-              let audioPath = environment["CHEERIO_TEST_AUDIO"],
-              let enrollPath = environment["CHEERIO_ENROLL_AUDIO"],
-              let enrollName = environment["CHEERIO_ENROLL_NAME"]
+            let audioPath = environment["CHEERIO_TEST_AUDIO"],
+            let enrollPath = environment["CHEERIO_ENROLL_AUDIO"],
+            let enrollName = environment["CHEERIO_ENROLL_NAME"]
         else { return }
 
         let service = SpeakerAttributionService(modelURL: URL(fileURLWithPath: modelPath))
@@ -100,7 +104,7 @@ import Testing
     @Test func diarizesRealRecording() async throws {
         let environment = ProcessInfo.processInfo.environment
         guard let modelPath = environment["CHEERIO_SORTFORMER_MODEL"],
-              let audioPath = environment["CHEERIO_TEST_AUDIO"]
+            let audioPath = environment["CHEERIO_TEST_AUDIO"]
         else { return }
 
         let service = SpeakerAttributionService(modelURL: URL(fileURLWithPath: modelPath))

@@ -17,6 +17,17 @@ settings:
 packages:
   CheerioKit:
     path: CheerioKit
+# Declared explicitly so the scheme exists without opening Xcode — headless
+# xcodebuild (CI) can't use the schemes the Xcode UI auto-generates.
+schemes:
+  Cheerio:
+    build:
+      targets:
+        Cheerio: all
+    run:
+      config: Debug
+    archive:
+      config: Release
 targets:
   Cheerio:
     type: application

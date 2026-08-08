@@ -40,7 +40,7 @@ public enum StorageMigration {
                 let old = source.appending(path: relativePath, directoryHint: .isDirectory)
                 let new = destination.appending(path: relativePath, directoryHint: .isDirectory)
                 guard !fileManager.fileExists(atPath: new.path),
-                      fileManager.fileExists(atPath: old.path)
+                    fileManager.fileExists(atPath: old.path)
                 else { continue }
 
                 do {

@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import Testing
+
 @testable import CheerioKit
 
 /// Interleaved stereo Float32 at 48kHz — what the system-audio tap delivers.

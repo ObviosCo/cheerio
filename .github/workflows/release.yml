@@ -1,0 +1,148 @@
+# Builds a downloadable Cheerio.app and publishes it.
+#
+# Two ways in:
+#   - Push a tag like v0.2.0 → tests run, a Release build is made, and a GitHub
+#     Release is created with the zipped app attached.
+#   - Run manually (workflow_dispatch) → same build, but the zip is uploaded as
+#     a workflow artifact instead of a release. Useful for trying a build of
+#     main without cutting a version.
+#
+# The app is ad-hoc signed: there is no Developer ID in this repo's secrets, so
+# Gatekeeper will warn on first launch. The release notes tell users what to do.
+# Hardened runtime stays on; the sandbox stays off (see CLAUDE.md — a sandboxed
+# build records silence).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Cache diarization model
+        uses: actions/cache@v4
+        with:
+          path: Cheerio/Resources/Models
+          key: model-${{ hashFiles('Scripts/fetch-models.sh') }}
+
+      - name: Cache SwiftPM
+        uses: actions/cache@v4
+        with:
+          path: SourcePackages
+          key: spm-app-${{ runner.os }}-${{ hashFiles('CheerioKit/Package.swift') }}
+          restore-keys: |
+            spm-app-${{ runner.os }}-
+
+      # Never ship what fails its own tests.
+      - name: Run package tests
+        run: swift test --package-path CheerioKit
+
+      - name: Bootstrap (fetch model, generate project)
+        run: ./Scripts/bootstrap.sh
+
+      # Tag v1.2.3 → CFBundleShortVersionString 1.2.3; the run number becomes
+      # the build number so re-runs of the same tag stay distinguishable.
+      # Manual runs keep the version already in Info.plist and get a -<sha>
+      # suffix on the zip instead.
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${version}" Cheerio/Info.plist
+            suffix="${version}"
+          else
+            suffix="$(git rev-parse --short HEAD)"
+          fi
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${GITHUB_RUN_NUMBER}" Cheerio/Info.plist
+          echo "suffix=${suffix}" >> "$GITHUB_OUTPUT"
+
+      # CODE_SIGN_IDENTITY=- is ad-hoc signing: a real signature (so hardened
+      # runtime and the entitlements apply) but no Developer ID behind it.
+      - name: Build Release
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project Cheerio.xcodeproj \
+            -scheme Cheerio \
+            -configuration Release \
+            -destination 'platform=macOS' \
+            -derivedDataPath build \
+            -clonedSourcePackagesDirPath SourcePackages \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGN_STYLE=Manual \
+            | xcbeautify --renderer github-actions
+
+      - name: Verify app bundle
+        run: |
+          app="build/Build/Products/Release/Cheerio.app"
+          codesign --verify --strict --verbose=2 "$app"
+          # The diarization model must ship inside the app — Cheerio has no
+          # network entitlement and cannot download it at runtime.
+          test -d "$app/Contents/Resources/Sortformer_v2.1.mlmodelc" \
+            || { echo "::error::Sortformer model missing from app bundle"; exit 1; }
+          lipo -archs "$app/Contents/MacOS/Cheerio"
+
+      # ditto (not zip) preserves symlinks, resource forks, and extended
+      # attributes — a plain zip can produce a bundle codesign rejects.
+      - name: Package
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent \
+            build/Build/Products/Release/Cheerio.app \
+            "Cheerio-${{ steps.version.outputs.suffix }}.zip"
+
+      - name: Create GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > release-notes.md <<'EOF'
+          ## Install
+
+          1. Download `Cheerio-*.zip` below and unzip it.
+          2. Move `Cheerio.app` to `/Applications`.
+          3. First launch: macOS will warn that the app is from an unidentified
+             developer (it is ad-hoc signed, not notarized). Either right-click
+             the app and choose **Open**, or approve it under
+             **System Settings → Privacy & Security → Open Anyway**.
+             If it still won't open, clear quarantine from Terminal:
+             `xattr -dr com.apple.quarantine /Applications/Cheerio.app`
+
+          Requires **macOS 26 (Tahoe) or later**. Everything runs on-device:
+          no network access, no accounts, no analytics.
+          EOF
+          gh release create "${GITHUB_REF_NAME}" \
+            "Cheerio-${{ steps.version.outputs.suffix }}.zip" \
+            --title "Cheerio ${GITHUB_REF_NAME}" \
+            --notes-file release-notes.md \
+            --generate-notes \
+            --verify-tag
+
+      - name: Upload build artifact
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cheerio-${{ steps.version.outputs.suffix }}
+          path: Cheerio-${{ steps.version.outputs.suffix }}.zip
+          if-no-files-found: error

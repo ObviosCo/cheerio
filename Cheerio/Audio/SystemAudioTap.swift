@@ -1,5 +1,5 @@
-import AudioToolbox
 import AVFoundation
+import AudioToolbox
 import CheerioKit
 import CoreAudio
 import Foundation
@@ -131,7 +131,7 @@ final class SystemAudioTap: @unchecked Sendable {
             // `inputData` belongs to Core Audio and is recycled as soon as this
             // block returns, so wrap it without copying and then take a copy we own.
             guard let transient = AVAudioPCMBuffer(pcmFormat: format, bufferListNoCopy: inputData, deallocator: nil),
-                  let buffer = transient.detachedCopy()
+                let buffer = transient.detachedCopy()
             else { return }
             signalWatch.inspect(buffer)
             onBuffer(buffer)

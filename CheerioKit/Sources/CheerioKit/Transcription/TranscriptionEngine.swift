@@ -149,12 +149,12 @@ public actor TranscriptionEngine {
             converter = AVAudioConverter(from: buffer.format, to: analyzerFormat)
         }
         guard let converter,
-              let converted = AVAudioPCMBuffer(
+            let converted = AVAudioPCMBuffer(
                 pcmFormat: analyzerFormat,
                 frameCapacity: AVAudioFrameCount(
                     Double(buffer.frameLength) * analyzerFormat.sampleRate / buffer.format.sampleRate
                 ) + 1
-              )
+            )
         else { return }
 
         // AVAudioConverterInputBlock is @Sendable, but the converter calls it

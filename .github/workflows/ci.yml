@@ -1,0 +1,101 @@
+# Lint, test, and build on every push to main and every PR.
+#
+# Everything here targets macOS 26 / Xcode 26 — the app uses SpeechAnalyzer and
+# FoundationModels, which exist in no earlier SDK, so `macos-26` is the floor,
+# not a preference.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      # swift-format ships inside the Swift 6 toolchain; config is .swift-format
+      # at the repo root. `--strict` turns warnings into a nonzero exit.
+      - name: swift format lint
+        run: swift format lint --recursive --strict Cheerio CheerioKit/Sources CheerioKit/Tests
+
+  test:
+    name: Package tests
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app
+          xcodebuild -version
+          swift --version
+
+      - name: Cache SwiftPM
+        uses: actions/cache@v4
+        with:
+          path: CheerioKit/.build
+          key: spm-test-${{ runner.os }}-${{ hashFiles('CheerioKit/Package.swift') }}
+          restore-keys: |
+            spm-test-${{ runner.os }}-
+
+      - name: Run tests
+        run: swift test --package-path CheerioKit
+
+  build:
+    name: Build app
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      # ~93 MB from Hugging Face; the checksum manifest lives in the fetch
+      # script, so hashing the script keys the cache to the exact model bytes.
+      - name: Cache diarization model
+        uses: actions/cache@v4
+        with:
+          path: Cheerio/Resources/Models
+          key: model-${{ hashFiles('Scripts/fetch-models.sh') }}
+
+      - name: Cache SwiftPM (xcodebuild)
+        uses: actions/cache@v4
+        with:
+          path: SourcePackages
+          key: spm-app-${{ runner.os }}-${{ hashFiles('CheerioKit/Package.swift') }}
+          restore-keys: |
+            spm-app-${{ runner.os }}-
+
+      - name: Bootstrap (fetch model, generate project)
+        run: ./Scripts/bootstrap.sh
+
+      # Unsigned build — CI has no signing identity and a Debug build only needs
+      # to prove the code compiles and links.
+      - name: Build
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project Cheerio.xcodeproj \
+            -scheme Cheerio \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -clonedSourcePackagesDirPath SourcePackages \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcbeautify --renderer github-actions

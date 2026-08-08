@@ -71,7 +71,7 @@ public enum AudioRetentionService {
         var removed = 0
         for meeting in try context.fetch(descriptor) {
             guard let endedAt = meeting.endedAt, endedAt < cutoff,
-                  let relativePath = meeting.audioDirectory
+                let relativePath = meeting.audioDirectory
             else { continue }
             do {
                 try AudioStorage.removeDirectory(atRelativePath: relativePath)

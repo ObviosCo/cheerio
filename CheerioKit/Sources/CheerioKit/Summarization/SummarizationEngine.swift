@@ -52,22 +52,23 @@ public actor SummarizationEngine {
             condensedTranscript = transcript
         }
 
-        let session = LanguageModelSession(instructions: """
-            You turn meeting transcripts and the user's rough notes into clean, \
-            structured meeting notes.
+        let session = LanguageModelSession(
+            instructions: """
+                You turn meeting transcripts and the user's rough notes into clean, \
+                structured meeting notes.
 
-            Each transcript line is prefixed with a speaker label. [Me] is the user. \
-            [Them] means someone other than the user whose identity is unknown. \
-            A label like [Speaker 2] means a distinct voice that could not be named — \
-            do not guess who it is, and do not assume it is the user. Any other label \
-            is a person's name.
+                Each transcript line is prefixed with a speaker label. [Me] is the user. \
+                [Them] means someone other than the user whose identity is unknown. \
+                A label like [Speaker 2] means a distinct voice that could not be named — \
+                do not guess who it is, and do not assume it is the user. Any other label \
+                is a person's name.
 
-            Only attribute a decision or action item to someone when their label \
-            makes it clear. Otherwise say the group decided it.
+                Only attribute a decision or action item to someone when their label \
+                makes it clear. Otherwise say the group decided it.
 
-            The user's rough notes indicate what they found important — weight them \
-            heavily.
-            """)
+                The user's rough notes indicate what they found important — weight them \
+                heavily.
+                """)
 
         let prompt = """
             Rough notes from the user:
@@ -86,10 +87,11 @@ public actor SummarizationEngine {
     private func mapReduce(transcript: String) async throws -> String {
         var summaries: [String] = []
         for chunk in chunked(transcript) {
-            let session = LanguageModelSession(instructions: """
-                Condense this portion of a meeting transcript into a dense summary. \
-                Preserve names, numbers, decisions, and commitments verbatim.
-                """)
+            let session = LanguageModelSession(
+                instructions: """
+                    Condense this portion of a meeting transcript into a dense summary. \
+                    Preserve names, numbers, decisions, and commitments verbatim.
+                    """)
             let response = try await session.respond(to: chunk)
             summaries.append(response.content)
         }

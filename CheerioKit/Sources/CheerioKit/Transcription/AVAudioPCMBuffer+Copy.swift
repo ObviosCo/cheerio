@@ -20,13 +20,14 @@ extension AVAudioPCMBuffer {
         var streamDescription = format.streamDescription.pointee
         let detachedFormat: AVAudioFormat?
         if let layoutTag = format.channelLayout?.layoutTag,
-           let layout = AVAudioChannelLayout(layoutTag: layoutTag) {
+            let layout = AVAudioChannelLayout(layoutTag: layoutTag)
+        {
             detachedFormat = AVAudioFormat(streamDescription: &streamDescription, channelLayout: layout)
         } else {
             detachedFormat = AVAudioFormat(streamDescription: &streamDescription)
         }
         guard let detachedFormat,
-              let copy = AVAudioPCMBuffer(pcmFormat: detachedFormat, frameCapacity: frameLength)
+            let copy = AVAudioPCMBuffer(pcmFormat: detachedFormat, frameCapacity: frameLength)
         else { return nil }
         copy.frameLength = frameLength
 
@@ -35,7 +36,7 @@ extension AVAudioPCMBuffer {
         guard source.count == destination.count else { return nil }
         for index in 0..<source.count {
             guard let sourceData = source[index].mData,
-                  let destinationData = destination[index].mData
+                let destinationData = destination[index].mData
             else { return nil }
             let byteCount = min(source[index].mDataByteSize, destination[index].mDataByteSize)
             destinationData.copyMemory(from: sourceData, byteCount: Int(byteCount))

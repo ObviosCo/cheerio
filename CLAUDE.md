@@ -53,6 +53,10 @@ bug and isn't).
 - Realtime audio callbacks do no work — hand buffers off immediately (AsyncStream/Task).
 - Two transcription engines (mic/system) for the Me/Them split — that's deliberate; don't merge streams. Diarization sits *on top* of them, per-channel, to tell people apart within one channel.
 - Swift 6, strict concurrency complete. SwiftData for storage. MIT licensed.
+- Formatting is enforced in CI: `swift format lint --strict` with the repo's `.swift-format`
+  config. Run `swift format --in-place --recursive Cheerio CheerioKit/Sources CheerioKit/Tests`
+  before pushing. Release builds come from `.github/workflows/release.yml` on `v*` tags —
+  ad-hoc signed, so the release notes carry the Gatekeeper instructions.
 - Bundle prefix `app.cheerio` is a placeholder (`project.yml` TODO).
 
 ## Reference
