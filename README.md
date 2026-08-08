@@ -219,8 +219,10 @@ protocol, semantic search, and Obsidian folder auto-export.
 
 ## Contributing
 
-Issues and pull requests are welcome. Two constraints are not up for negotiation: **no
-networking code and no network entitlement, ever**, and no analytics or accounts. Beyond that,
+Issues and pull requests are welcome. Two constraints are not up for negotiation: **nothing
+may need the network while recording or processing a meeting** (today the app has no
+networking code at all — a one-time setup download would be acceptable, a dependency during
+capture never is), and no analytics or accounts. Beyond that,
 keep portable logic in `CheerioKit`, do no work on realtime audio callbacks, and leave strict
 concurrency on.
 
@@ -238,8 +240,10 @@ Cheerio itself is MIT — see [LICENSE](LICENSE).
 Two things it depends on are not:
 
 - **FluidAudio** (Apache-2.0), the Swift wrapper around Sortformer.
-- **NVIDIA Sortformer v2.1**, the diarization model, under the
-  [NVIDIA Open Model License](https://huggingface.co/FluidInference/diar-streaming-sortformer-coreml).
-  It is deliberately not committed to this repo — that keeps the source tree MIT, while an app
-  you build from it bundles an NVIDIA-licensed model. Check that license before redistributing
-  a build.
+- **Sortformer v2.1**, the diarization model — © NVIDIA, licensed
+  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), with the Core ML conversion by
+  [FluidInference](https://huggingface.co/FluidInference/diar-streaming-sortformer-coreml)
+  under the same license. Redistributing it — including inside a built app — is fine as long
+  as the attribution in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) travels with it,
+  which the build does for you by bundling that file into the app. The model is kept out of
+  the repo because it's ~93 MB, not because the license requires it.

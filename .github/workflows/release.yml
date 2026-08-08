@@ -99,9 +99,21 @@ jobs:
           app="build/Build/Products/Release/Cheerio.app"
           codesign --verify --strict --verbose=2 "$app"
           # The diarization model must ship inside the app — Cheerio has no
-          # network entitlement and cannot download it at runtime.
+          # networking code and cannot download it at runtime.
           test -d "$app/Contents/Resources/Sortformer_v2.1.mlmodelc" \
             || { echo "::error::Sortformer model missing from app bundle"; exit 1; }
+          # The model is CC BY 4.0 and FluidAudio is Apache-2.0 with BSD-licensed
+          # parts — the notices (including the full Apache license text, which
+          # its §4(a) requires as a copy, and fastcluster's BSD notice) must
+          # travel with any redistributed build. Check content, not just
+          # existence, so a gutted file can't slip through.
+          notices="$app/Contents/Resources/THIRD-PARTY-NOTICES.md"
+          test -f "$notices" \
+            || { echo "::error::THIRD-PARTY-NOTICES.md missing from app bundle"; exit 1; }
+          for needle in "CC BY 4.0" "Apache License" "TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION" "fastcluster" "BUT Speech@FIT"; do
+            grep -q "$needle" "$notices" \
+              || { echo "::error::THIRD-PARTY-NOTICES.md is missing: $needle"; exit 1; }
+          done
           # Apple Silicon only — a stray Intel slice means ARCHS drifted.
           archs="$(lipo -archs "$app/Contents/MacOS/Cheerio")"
           [ "$archs" = "arm64" ] \
@@ -135,6 +147,10 @@ jobs:
           Requires **macOS 26 (Tahoe) or later on Apple Silicon** — there is
           no Intel build. Everything runs on-device: no network access, no
           accounts, no analytics.
+
+          The app bundles the Sortformer diarization model (© NVIDIA,
+          [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)) — full
+          attribution in `THIRD-PARTY-NOTICES.md` inside the app bundle.
           EOF
           gh release create "${GITHUB_REF_NAME}" \
             "Cheerio-${{ steps.version.outputs.suffix }}.zip" \

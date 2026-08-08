@@ -30,9 +30,10 @@ load-bearing: `project.yml` references the `.mlmodelc` as a folder reference, so
 generating before the model exists fails with a spec-validation error that names a
 file you've never heard of. The pre-build phase can't save you there — you can't get
 a build phase without a project. Both steps are idempotent; re-run after adding or
-removing files. The model is licensed under the **NVIDIA Open Model License**, not
-MIT; keeping it out of the repo keeps the source tree MIT while the built app ships
-an NVIDIA-licensed model.
+removing files. The model is **CC BY 4.0** (© NVIDIA; Core ML conversion by
+FluidInference), not MIT — redistribution is fine with the attribution in
+`THIRD-PARTY-NOTICES.md`, which is bundled into the app. It's kept out of the repo
+because it's ~93 MB, not because the license requires it.
 
 ## Tasks
 
@@ -48,7 +49,7 @@ bug and isn't).
 
 - **App Sandbox must stay off.** A sandboxed build creates the tap with `noErr` at every step and then reads pure digital silence, with no TCC prompt — it looks like a transcription bug but it's a capture-permission failure. Measured: `peak=0.0` sandboxed vs `-1.8 dBFS` unsandboxed, same code. This rules out Mac App Store distribution. `SystemAudioTap`'s `SilenceWatch` logs the verdict at `.notice`/`.error` on stop (`.info` never reaches `log show`).
 - **Both capture channels run in every recording mode.** Input and output can be different devices, so a solo recording through AirPods still has system audio worth keeping. `RecordingMode` (#12) drives echo cancellation, never whether the tap starts.
-- Local-only by construction: **no networking code and no network entitlement, ever**. With the sandbox off the entitlement enforces nothing, so the absence of `URLSession`, sockets, and `import Network` is the actual invariant — protect it in review. No analytics, no accounts.
+- Local-only where it counts: **nothing may need the network while recording or processing a meeting**. Today the app has no networking code at all — with the sandbox off the entitlement enforces nothing, so the absence of `URLSession`, sockets, and `import Network` is what makes the property true; protect it in review. A one-time download at install/setup (e.g. fetching a model) would be acceptable if ever needed; a network dependency during capture never is. No analytics, no accounts.
 - Anything portable to iOS lives in `CheerioKit`; Core Audio tap code stays in the app target.
 - Realtime audio callbacks do no work — hand buffers off immediately (AsyncStream/Task).
 - Two transcription engines (mic/system) for the Me/Them split — that's deliberate; don't merge streams. Diarization sits *on top* of them, per-channel, to tell people apart within one channel.

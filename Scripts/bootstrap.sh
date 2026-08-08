@@ -73,7 +73,7 @@ if [ "${xcode_version%%.*}" -lt 26 ]; then
 fi
 step "Xcode ${xcode_version} at ${developer_dir}"
 
-# 3. The diarization model (~93 MB, NVIDIA Open Model License, not committed).
+# 3. The diarization model (~93 MB, CC BY 4.0, not committed).
 #    Checksummed and idempotent — a no-op once it's present and intact.
 step "Fetching the diarization model"
 "${SCRIPT_DIR}/fetch-models.sh"

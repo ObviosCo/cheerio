@@ -45,6 +45,10 @@ targets:
       - path: Cheerio/Resources/Models/Sortformer_v2.1.mlmodelc
         type: folder
         buildPhase: resources
+      # CC BY 4.0 requires attribution to travel with the model, so the notices
+      # file ships inside the app bundle.
+      - path: THIRD-PARTY-NOTICES.md
+        buildPhase: resources
     preBuildScripts:
       - script: "\"$SRCROOT/Scripts/fetch-models.sh\""
         name: Fetch diarization model

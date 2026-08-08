@@ -26,11 +26,11 @@ Rule: anything that could run on iOS goes in `CheerioKit`. System-audio capture 
 
 One third-party package: **FluidAudio** (Apache-2.0), pinned to an exact version. It wraps NVIDIA's Sortformer diarization model for Core ML / the Neural Engine.
 
-The model itself (~93 MB) is not committed. `Scripts/fetch-models.sh` downloads it against pinned SHA-256 hashes and also runs as a pre-build phase. The model carries the **NVIDIA Open Model License**, not MIT: keeping it out of the tree is what lets the source stay MIT while a built app ships an NVIDIA-licensed model.
+The model itself (~93 MB) is not committed. `Scripts/fetch-models.sh` downloads it against pinned SHA-256 hashes and also runs as a pre-build phase. The model is **CC BY 4.0** (© NVIDIA; Core ML conversion by FluidInference), not MIT — redistribution is allowed with attribution, which ships in `THIRD-PARTY-NOTICES.md` inside the app bundle. Keeping it out of the tree is a size decision, not a license requirement.
 
 `Scripts/bootstrap.sh` is what a fresh checkout should run — it verifies the toolchain, fetches the model, and generates the project in that order. The order is load-bearing: `project.yml` references the `.mlmodelc` as a folder reference, so `xcodegen generate` refuses to write a project until the model is on disk, and the pre-build phase can't cover that gap because there's no project yet to hang a phase on.
 
-It is fetched at *build* time, never at runtime. Cheerio has no networking code, so a runtime download is not an option available to it.
+It is fetched at *build* time, never at runtime — Cheerio has no networking code, so a runtime download is not an option available to it today. The hard requirement is narrower than that, though: nothing may need the network *while recording or processing a meeting*. A one-time download at install or first launch would be acceptable if there were ever a reason for one; bundling the model just makes the question moot.
 
 ## Audio pipeline
 
@@ -100,4 +100,4 @@ Swift 6 strict concurrency. Audio IOProcs/taps hand buffers off through `AsyncSt
 
 `com.apple.security.device.audio-input`, `com.apple.security.personal-information.calendars`. Usage strings: mic, audio capture, calendar. No network entitlement.
 
-One consequence of the sandbox being off: the missing network entitlement no longer *enforces* anything — entitlements only constrain a sandboxed process. Local-only now rests entirely on there being **no networking code in the app at all**: no `URLSession`, no sockets, nothing. That is the invariant to protect in review; the entitlement is now a statement of intent rather than a guarantee. The diarization model is fetched by a build script, which is why runtime networking is never needed.
+One consequence of the sandbox being off: the missing network entitlement no longer *enforces* anything — entitlements only constrain a sandboxed process. Local-only now rests entirely on there being **no networking code in the app at all**: no `URLSession`, no sockets, nothing. That is what to protect in review — the entitlement is a statement of intent rather than a guarantee. The requirement behind it is that recording and processing a meeting must never need the network; a one-time setup download would be compatible with that, but since the diarization model ships in the bundle, nothing has ever needed to open a connection.
