@@ -24,6 +24,20 @@ struct VoiceEnrollmentRecorder: View {
     @State private var pendingPath: String?
     @State private var elapsed: TimeInterval = 0
     @State private var errorMessage: String?
+    /// Guards the `recorder.finish()` transition. `finish()` suspends, and while it's
+    /// suspended `recorder` is still non-nil — so `isRecording` still reads true and
+    /// the Save button is still enabled, and the view can still disappear. Without
+    /// this flag, a second tap of Save, or `onDisappear` firing mid-save, would call
+    /// `finish()` again concurrently: two saves racing (possible duplicate
+    /// `EnrolledSpeaker`), or `onDisappear`'s cleanup deleting `pendingPath` out from
+    /// under a save that goes on to reference it.
+    ///
+    /// Both `stopRecording()` and `onDisappear` check-and-set this synchronously,
+    /// with no `await` in between, before doing anything else — whichever runs
+    /// first wins, and the other becomes a no-op. That makes the two outcomes
+    /// mutually exclusive: either the in-flight save completes, or (if
+    /// `onDisappear` won the race) it's cancelled and cleaned up — never both.
+    @State private var isFinalizing = false
 
     private var isRecording: Bool { recorder != nil }
     private var isSampleLongEnough: Bool { elapsed >= EnrolledSpeaker.recommendedDuration }
@@ -53,6 +67,7 @@ struct VoiceEnrollmentRecorder: View {
                         Task { await stopRecording() }
                     }
                     .keyboardShortcut(.defaultAction)
+                    .disabled(isFinalizing)
                 }
                 ProgressView(value: min(elapsed / EnrolledSpeaker.recommendedDuration, 1))
                 Text(recordingHint)
@@ -80,7 +95,13 @@ struct VoiceEnrollmentRecorder: View {
             // Closing the enclosing sheet/window/tab mid-recording left the
             // microphone running until the view was torn down, and a partial CAF
             // with nothing referencing it.
-            guard isRecording else { return }
+            //
+            // Check-and-set `isFinalizing` synchronously, before the `Task` below
+            // (or anything else) runs, so this races safely against `stopRecording()`
+            // — see the comment on `isFinalizing`. If a save is already in flight,
+            // this is a no-op and the save is left to finish on its own.
+            guard isRecording, !isFinalizing else { return }
+            isFinalizing = true
             let recorder = recorder
             let capture = capture
             let pendingPath = pendingPath
@@ -124,6 +145,14 @@ struct VoiceEnrollmentRecorder: View {
     }
 
     private func stopRecording() async {
+        // Check-and-set `isFinalizing` synchronously, before the first `await`
+        // below, so a second tap of Save (or `onDisappear` firing mid-save) sees
+        // it already set and becomes a no-op instead of racing this call — see
+        // the comment on `isFinalizing`.
+        guard !isFinalizing else { return }
+        isFinalizing = true
+        defer { isFinalizing = false }
+
         capture?.stop()
         capture = nil
         let duration = await recorder?.finish()

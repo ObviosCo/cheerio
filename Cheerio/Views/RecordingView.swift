@@ -94,7 +94,7 @@ struct RecordingView: View {
         HStack(spacing: 10) {
             Image(systemName: "person.wave.2")
                 .foregroundStyle(.tint)
-            Text("Recording without an enrolled voice — speakers will show up as “Me” and “Them” instead of names.")
+            Text("Add your voice and, once this meeting ends, your lines will come back with your name instead of a generic speaker label.")
                 .font(.callout)
             Spacer()
             Button("Add my voice") { showEnrollmentSheet = true }

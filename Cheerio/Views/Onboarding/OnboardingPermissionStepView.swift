@@ -141,11 +141,17 @@ struct OnboardingPermissionStepView: View {
     ///
     /// So instead of guessing, this runs the exact production code path — start a
     /// real tap, hold it open briefly, stop it — which is what actually triggers
-    /// the one-time system prompt on a fresh install. `SystemAudioTap.stop()`
-    /// still logs the SilenceWatch verdict at `.notice`/`.error`, so the outcome is
-    /// verifiable in `log show` even though this screen can't surface it directly.
+    /// the one-time system prompt on a fresh install.
+    ///
+    /// It passes `logsSilenceVerdict: false`, though: the production path logs
+    /// `SilenceWatch`'s verdict because minutes of silence during a real meeting
+    /// really does mean a denied tap, but this probe only holds the tap open for
+    /// ~1 second, purely to surface the TCC prompt. A quiet Mac — nobody talking,
+    /// nothing playing — looks identical to a denied tap in that one second, so
+    /// logging the verdict here would be a false "denied" alarm on a perfectly
+    /// granted permission, not a diagnosis. See `SystemAudioTap.logsSilenceVerdict`.
     private func requestSystemAudio() async {
-        let tap = SystemAudioTap { _ in }
+        let tap = SystemAudioTap(logsSilenceVerdict: false) { _ in }
         // Tap creation failing outright is rare and unrelated to TCC (see
         // `SystemAudioTap.TapError`) — `try?` means it's not worth dead-ending the
         // walkthrough over either way.
