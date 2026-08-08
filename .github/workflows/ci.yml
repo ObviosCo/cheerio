@@ -28,7 +28,7 @@ jobs:
       # swift-format ships inside the Swift 6 toolchain; config is .swift-format
       # at the repo root. `--strict` turns warnings into a nonzero exit.
       - name: swift format lint
-        run: swift format lint --recursive --strict Cheerio CheerioKit/Sources CheerioKit/Tests
+        run: swift format lint --recursive --strict Cheerio CheerioMCP CheerioKit/Sources CheerioKit/Tests
 
   test:
     name: Package tests
