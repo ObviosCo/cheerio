@@ -16,7 +16,7 @@ any of them exist yet, since docs describing the goal land ahead of the code tha
 
 ## State of the repo
 
-Builds and runs; 47 package tests across 8 suites pass. **Not yet verified against a live call** — see issue #5.
+Builds and runs; the package test suite passes (`cd CheerioKit && swift test` — the count moves with every PR, so this file doesn't track it). **Not yet verified against a live call** — see issue #5.
 
 Two build warnings remain, both `Binding<Optional<Wrapped>>` captured in a `@Sendable` closure in `Views/Binding+Presented.swift`.
 
