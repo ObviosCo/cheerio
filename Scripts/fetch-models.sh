@@ -6,12 +6,14 @@
 #     ./Scripts/fetch-models.sh
 #
 # The model is not committed — it's ~93 MB, which would bloat every clone of the
-# repo forever. It IS bundled into the built app: Cheerio has no network
-# entitlement, so nothing may be downloaded at runtime. This script is the
-# build-time half of that arrangement.
+# repo forever. It IS bundled into the built app: nothing may need the network
+# while recording a meeting, and Cheerio has no networking code at all, so the
+# model must already be on disk. This script is the build-time half of that
+# arrangement.
 #
 # Model: NVIDIA Sortformer v2.1, 6-bit palettized, converted to Core ML by
-# FluidInference. Licensed under the NVIDIA Open Model License.
+# FluidInference. Licensed CC BY 4.0 — redistribution is fine as long as the
+# attribution in THIRD-PARTY-NOTICES.md travels with it (the app bundles it).
 # Source: https://huggingface.co/FluidInference/diar-streaming-sortformer-coreml
 #
 set -euo pipefail

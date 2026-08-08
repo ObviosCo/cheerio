@@ -262,7 +262,7 @@ This is a public MIT-licensed repository, and it ships outside the App Store.
 - Every delivered asset must be redistributable under MIT or a compatible license, with **no attribution requirement we can't satisfy in a LICENSE file**.
 - No stock icons, no CC-BY-ND, no "free for personal use" fonts, no AI-generated assets whose provenance we can't state.
 - SF Symbols may be used **in the app** (that's their license) but **not** in the app icon, the wordmark, or marketing material — Apple's license prohibits that.
-- For context on how carefully this is handled, read the README's [License](../README.md#license) section: the speaker model is under the NVIDIA Open Model License and is fetched by script rather than committed, specifically so the source tree stays MIT while a built app bundles an NVIDIA-licensed model. The one third-party dependency (FluidAudio) is Apache-2.0 and pinned exactly. Please hold your assets to the same standard.
+- For context on how carefully this is handled, read the README's [License](../README.md#license) section: the speaker model is CC BY 4.0 (© NVIDIA), fetched by script rather than committed (a size decision), with its attribution shipped in `THIRD-PARTY-NOTICES.md` inside every built app. The one third-party dependency (FluidAudio) is Apache-2.0 and pinned exactly. Please hold your assets to the same standard.
 - Confirm in writing that the work can be committed to a public repo under MIT, and tell us up front if you want an attribution line — we're happy to give one, we just need it declared rather than discovered.
 
 - **The website inherits all of this.** Anything it embeds — a face, an icon, an image — is redistributable and committed to the repo under a license we can name, same as everything else. See §5.

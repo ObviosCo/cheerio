@@ -31,7 +31,7 @@ Granola-style AI meeting notes require sending your meetings to someone else's s
 - macOS 26 (Tahoe)+, Apple Silicon
 - Permissions: microphone, system audio capture (TCC), calendar (optional)
 - Transcription model downloaded on first run via `AssetInventory` (one-time, per-locale)
-- Diarization model (~93 MB, NVIDIA Open Model License) fetched at build time by `Scripts/fetch-models.sh` and bundled — never downloaded at runtime
+- Diarization model (~93 MB, CC BY 4.0 — attribution in `THIRD-PARTY-NOTICES.md`) fetched at build time by `Scripts/fetch-models.sh` and bundled — never downloaded at runtime
 - Distributed outside the Mac App Store. App Sandbox has to be off for process taps to capture anything at all, which makes the App Store unavailable; see [ARCHITECTURE.md](ARCHITECTURE.md#permissions--entitlements)
 
 ## Success criteria
