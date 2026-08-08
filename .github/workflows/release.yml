@@ -133,7 +133,8 @@ jobs:
           app="build/Build/Products/Release/Cheerio.app"
           codesign --verify --strict --verbose=2 "$app"
           # Catch a silent fallback to ad-hoc or development signing.
-          codesign -dv "$app" 2>&1 | grep -q "Authority=Developer ID Application" \
+          # (-dvv, not -dv: Authority lines only appear at verbosity ≥ 2.)
+          codesign -dvv "$app" 2>&1 | grep -q "Authority=Developer ID Application" \
             || { echo "::error::App is not signed with Developer ID"; exit 1; }
           # The diarization model must ship inside the app — Cheerio has no
           # network entitlement and cannot download it at runtime.
