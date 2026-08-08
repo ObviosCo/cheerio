@@ -10,7 +10,7 @@ Granola-style AI meeting notes require sending your meetings to someone else's s
 
 1. **Capture** — Record both sides of a meeting: microphone (you) and system audio (everyone else on Zoom/Meet/Teams), via Core Audio process taps. Works with any meeting app — no bots joining calls.
 2. **Transcribe** — Live, on-device transcription of both streams via SpeechTranscriber, labeled "Me" / "Them", with timestamps.
-3. **Notes** — A plain-text scratchpad during the meeting. Rough notes are first-class input.
+3. **Notes** — A Markdown scratchpad during the meeting: entered and rendered as Markdown, since rough notes want structure and that's what people expect a text box to accept now. Rough notes are first-class input. (Plain text is what's built today.)
 4. **Enhance** — After the meeting, the on-device Foundation Model merges your rough notes with the transcript into structured enhanced notes: summary, key points, decisions, action items.
 5. **Calendar** — Read today's events via EventKit; suggest recording when a meeting starts; attach notes to the event.
 6. **Library** — Browse, search, and export past meetings (Markdown export).

@@ -44,7 +44,7 @@ an NVIDIA-licensed model.
 
 4. Calendar is read-only: SPEC goal 5 also wants "suggest recording when a meeting starts" and "attach notes to the event". Neither is implemented — `calendarEventID` is stored but never used afterward.
 
-5. `RecordingMode` (solo / in-person / video call) was designed but not built. It matters because the system tap is pointless for solo and in-person work, and mic voice processing should differ per mode: AEC on for video calls to kill speaker bleed, and `voiceProcessingAGCEnabled` is a separate toggle from AEC (an earlier note here wrongly conflated them).
+5. `RecordingMode` (solo / in-person / video call) was designed but not built. What it should drive is mic voice processing: AEC on for video calls to kill speaker bleed, and `voiceProcessingAGCEnabled` is a separate toggle from AEC (an earlier note here wrongly conflated them). What it should **not** do is gate the system tap. Both channels stay on in every mode — input and output can be different devices, so someone recording alone through AirPods still has system audio worth keeping. An earlier version of this note said the tap was pointless for solo work; that was wrong.
 6. `SummarizationEngine.chunked` splits on a character budget; a single line longer than the budget still goes through whole, and an over-long first line appends an empty chunk.
 7. Playback of retained audio — files are written and purged but there's no UI to hear them.
 
