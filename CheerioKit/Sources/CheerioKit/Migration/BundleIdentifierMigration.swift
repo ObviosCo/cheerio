@@ -75,6 +75,22 @@ public enum BundleIdentifierMigration {
             )
             return .migrated
         } catch {
+            // Nothing prevents two Cheerio processes launching at once — this doc
+            // comment already says so — so the guards above and this `moveItem` are
+            // not one atomic step: another launch can win the identical rename in the
+            // gap between them. When that's what happened, `old` is gone and `new` now
+            // holds the migrated container; misreading that as `.failed` would set the
+            // caller's container override back to the identifier that no longer has
+            // anything at it, and `applicationSupport()` would silently recreate an
+            // empty directory there instead of using the container the other launch
+            // just finished populating. Only when `old` is *still* there — a genuine
+            // failure, not a lost race — does this report `.failed`.
+            if !fileManager.fileExists(atPath: old.path), fileManager.fileExists(atPath: new.path) {
+                log.notice(
+                    "Lost the migration race to another launch; \(newBundleIdentifier, privacy: .public) is already the current container."
+                )
+                return .migrated
+            }
             log.error(
                 "Couldn't move the Application Support container to the new bundle identifier; the old one stays current for this launch: \(error)"
             )

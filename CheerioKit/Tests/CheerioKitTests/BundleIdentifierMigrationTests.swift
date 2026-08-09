@@ -124,4 +124,47 @@ import Testing
         #expect(FileManager.default.fileExists(atPath: old.appending(path: "default.store").path))
         #expect(!FileManager.default.fileExists(atPath: shared.appending(path: newID).path))
     }
+
+    /// Reproduces the interleaving directly, rather than faking the error it
+    /// produces: nothing prevents a second Cheerio process from launching at the
+    /// same moment, and if *that* process's `moveItem` wins the identical rename
+    /// between this call's existence checks and its own `moveItem`, our call sees
+    /// the source vanish out from under it. The fix is in `migrate`'s `catch`
+    /// block, not in this test — this only proves the fix handles a real race
+    /// instead of the narrower "moveItem threw for some reason" case.
+    @Test func losingTheRaceToAConcurrentLaunchStillReportsSuccess() throws {
+        let shared = try scratchDirectory()
+        defer { try? FileManager.default.removeItem(at: shared) }
+        let old = shared.appending(path: oldID, directoryHint: .isDirectory)
+        let new = shared.appending(path: newID, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: old, withIntermediateDirectories: true)
+        try Data("migrated-by-the-other-launch".utf8).write(to: old.appending(path: "default.store"))
+
+        let outcome = BundleIdentifierMigration.migrate(
+            sharedApplicationSupport: shared, oldBundleIdentifier: oldID, newBundleIdentifier: newID,
+            fileManager: RaceSimulatingFileManager()
+        )
+
+        #expect(outcome == .migrated)
+        #expect(!FileManager.default.fileExists(atPath: old.path))
+        #expect(
+            try Data(contentsOf: new.appending(path: "default.store"))
+                == Data("migrated-by-the-other-launch".utf8)
+        )
+    }
+}
+
+/// Stands in for a second Cheerio process winning the exact same rename between
+/// this launch's existence checks and its own `moveItem` call. Rather than fake
+/// the error `moveItem` would throw, this performs the *real* competing rename on
+/// the "other launch's" behalf the moment this launch asks to perform its own,
+/// then lets the now-doomed second rename throw for real — an actual
+/// reproduction of the interleaving, not a stand-in for one.
+private final class RaceSimulatingFileManager: FileManager {
+    override func moveItem(at srcURL: URL, to dstURL: URL) throws {
+        try super.moveItem(at: srcURL, to: dstURL)
+        // The caller's own attempt, now racing against a source that's already
+        // gone — exactly what a real second launch would produce.
+        try super.moveItem(at: srcURL, to: dstURL)
+    }
 }

@@ -36,12 +36,15 @@ enum InstalledCopyScan {
     }
 
     /// `nil` if no `/Applications`-or-`~/Applications` bundle shares this
-    /// app's bundle identifier.
+    /// app's bundle identifier — or, transitionally, the pre-`co.obvios`
+    /// identifier, since an installed copy that hasn't relaunched since the
+    /// rename still carries that one. See
+    /// `InstalledCopyLocator.find(among:acceptableBundleIdentifiers:preferredName:)`.
     static func find() -> String? {
         guard let identifier = Bundle.main.bundleIdentifier else { return nil }
         return InstalledCopyLocator.find(
             among: candidates(in: searchDirectories()),
-            bundleIdentifier: identifier,
+            acceptableBundleIdentifiers: [identifier, AudioStorage.legacyBundleIdentifier],
             preferredName: Bundle.main.bundleURL.lastPathComponent
         )
     }

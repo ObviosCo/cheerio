@@ -221,7 +221,7 @@ import Testing
 
     @Test func noCandidatesIsNil() {
         let path = InstalledCopyLocator.find(
-            among: [], bundleIdentifier: "app.cheerio.mac", preferredName: "Cheerio.app"
+            among: [], acceptableBundleIdentifiers: ["app.cheerio.mac"], preferredName: "Cheerio.app"
         )
 
         #expect(path == nil)
@@ -231,7 +231,7 @@ import Testing
         let candidates = [Candidate(path: "/Applications/NotCheerio.app", bundleIdentifier: "com.example.other")]
 
         let path = InstalledCopyLocator.find(
-            among: candidates, bundleIdentifier: "app.cheerio.mac", preferredName: "Cheerio.app"
+            among: candidates, acceptableBundleIdentifiers: ["app.cheerio.mac"], preferredName: "Cheerio.app"
         )
 
         #expect(path == nil)
@@ -244,7 +244,7 @@ import Testing
         let candidates = [Candidate(path: "/Applications/Unreadable.app", bundleIdentifier: nil)]
 
         let path = InstalledCopyLocator.find(
-            among: candidates, bundleIdentifier: "app.cheerio.mac", preferredName: "Cheerio.app"
+            among: candidates, acceptableBundleIdentifiers: ["app.cheerio.mac"], preferredName: "Cheerio.app"
         )
 
         #expect(path == nil)
@@ -257,7 +257,7 @@ import Testing
         let candidates = [Candidate(path: "/Applications/Cheerio 2.app", bundleIdentifier: "app.cheerio.mac")]
 
         let path = InstalledCopyLocator.find(
-            among: candidates, bundleIdentifier: "app.cheerio.mac", preferredName: "Cheerio.app"
+            among: candidates, acceptableBundleIdentifiers: ["app.cheerio.mac"], preferredName: "Cheerio.app"
         )
 
         #expect(path == "/Applications/Cheerio 2.app")
@@ -274,7 +274,7 @@ import Testing
         ]
 
         let path = InstalledCopyLocator.find(
-            among: candidates, bundleIdentifier: "app.cheerio.mac", preferredName: "Cheerio.app"
+            among: candidates, acceptableBundleIdentifiers: ["app.cheerio.mac"], preferredName: "Cheerio.app"
         )
 
         #expect(path == "/Applications/Cheerio.app")
@@ -287,9 +287,27 @@ import Testing
         ]
 
         let path = InstalledCopyLocator.find(
-            among: candidates, bundleIdentifier: "app.cheerio.mac", preferredName: "Cheerio.app"
+            among: candidates, acceptableBundleIdentifiers: ["app.cheerio.mac"], preferredName: "Cheerio.app"
         )
 
         #expect(path == "/Applications/Cheerio (old).app")
+    }
+
+    /// The `co.obvios` rename (#22): a build carrying the *new* identifier,
+    /// launched from a DMG, still has to recognize an installed copy that
+    /// hasn't been relaunched since the rename and so still reports the old
+    /// one. Without this, `LaunchAdvisoryClassifier` would offer to move to
+    /// `/Applications`, and that move would fail — the path is already taken
+    /// by the very copy this search should have found.
+    @Test func matchesAnInstalledCopyStillCarryingTheLegacyIdentifier() {
+        let candidates = [Candidate(path: "/Applications/Cheerio.app", bundleIdentifier: "app.cheerio.mac")]
+
+        let path = InstalledCopyLocator.find(
+            among: candidates,
+            acceptableBundleIdentifiers: ["co.obvios.cheerio.mac", "app.cheerio.mac"],
+            preferredName: "Cheerio.app"
+        )
+
+        #expect(path == "/Applications/Cheerio.app")
     }
 }
