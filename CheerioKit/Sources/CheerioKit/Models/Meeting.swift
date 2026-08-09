@@ -326,14 +326,20 @@ extension Meeting {
     /// A speaker who already has a slot keeps it — ``SpeakerSlotAssigner/slot(for:isYou:)``
     /// only ever adds, never reassigns, so calling this again after a fresh
     /// diarization pass can't reshuffle a colour out from under someone mid-read.
-    /// Also reconciles away any assignment whose speaker no longer exists under
-    /// that identity — see ``SpeakerSlotAssigner/reconcile(liveIDs:)`` — which is
-    /// what reclaims a rename's abandoned key back into capacity. Renaming or
-    /// merging a *whole* speaker (``relabelSpeaker(_:to:)``) rekeys instead of
-    /// abandoning, so this only ever has to clean up after that; the one path that
-    /// can still abandon a key on its own is a single corrected transcript line
-    /// that happened to be the only line under its old label — capacity recovers
-    /// on the very next call here, but that one correction doesn't keep its colour.
+    ///
+    /// Prunes dead keys *before* allocating, not after — see
+    /// ``SpeakerSlotAssigner/reconcile(liveIDs:)``, called against a snapshot of
+    /// this same ``speakerSummaries`` list. Reconciling afterward would still see
+    /// every live id already accounted for in the loop below, so there'd be
+    /// nothing left for it to catch; pruning first is what lets a dead key's
+    /// number reach whoever just inherited that identity — a merge, or a
+    /// corrected line that happened to be the only one under its old label — in
+    /// this same pass, rather than leaving them `.unresolved` for one more
+    /// resolve cycle while a freed number sits idle. Renaming or merging a
+    /// *whole* speaker (``relabelSpeaker(_:to:)``) rekeys instead of abandoning,
+    /// so it's really only the single-corrected-line path that ever depends on
+    /// this pruning to recover capacity — and even then, the freed number isn't
+    /// the departing speaker's own colour, just a number back in circulation.
     ///
     /// `ownerNames` is whichever enrolled names have `isMe == true`, the same set
     /// ``isOwnerAttributed(_:ownerNames:)`` uses — a summary counts as "you" when
@@ -348,11 +354,11 @@ extension Meeting {
     @discardableResult
     public func resolveSpeakerSlots(ownerNames: Set<String>) -> [String: SpeakerSlot] {
         let summaries = speakerSummaries
+        speakerSlotAssigner.reconcile(liveIDs: Set(summaries.map(\.id)))
         for summary in summaries {
             let isYou = summary.label == "Me" || ownerNames.contains(summary.label)
             speakerSlotAssigner.slot(for: summary.id, isYou: isYou)
         }
-        speakerSlotAssigner.reconcile(liveIDs: Set(summaries.map(\.id)))
         return speakerSlotAssigner.assignments
     }
 

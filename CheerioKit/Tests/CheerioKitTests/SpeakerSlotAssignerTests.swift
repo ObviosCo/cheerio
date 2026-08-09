@@ -65,6 +65,59 @@ import Testing
         #expect(assigner.slot(for: "speaker-8") == .slot(8))
     }
 
+    /// The bug Copilot caught: `.unresolved` used to be stored and then returned
+    /// early on every subsequent lookup, so a speaker who was over capacity once
+    /// stayed `.unresolved` forever — even after a merge elsewhere freed a
+    /// number. `.unresolved` isn't sticky the way `.you` and a numbered slot are;
+    /// every lookup retries allocation.
+    @Test func unresolvedIsRetryableOnceASlotFreesUpElsewhere() {
+        var assigner = SpeakerSlotAssigner()
+        for n in 1...SpeakerSlot.capacity {
+            _ = assigner.slot(for: "speaker-\(n)")
+        }
+        #expect(assigner.slot(for: "over-capacity") == .unresolved)
+
+        // A merge elsewhere frees a number — "speaker-1" turns out to be
+        // "speaker-2", so "speaker-1"'s slot is abandoned.
+        assigner.rename(from: "speaker-1", to: "speaker-2")
+
+        // Looked up again, "over-capacity" actually gets the freed number now,
+        // rather than being stuck at whatever got stored last time.
+        #expect(assigner.slot(for: "over-capacity") == .slot(1))
+    }
+
+    /// Numbered and `.you` assignments stay sticky even though `.unresolved`
+    /// doesn't — retrying every lookup would otherwise risk reshuffling someone
+    /// who already has a real slot.
+    @Test func numberedAndYouAssignmentsStayStickyWhileUnresolvedDoesNot() {
+        var assigner = SpeakerSlotAssigner()
+        let glenSlot = assigner.slot(for: "Glen")
+        _ = assigner.slot(for: "Me", isYou: true)
+        #expect(assigner.slot(for: "Glen") == glenSlot)
+        #expect(assigner.slot(for: "Glen") == glenSlot)
+        #expect(assigner.slot(for: "Me", isYou: true) == .you)
+    }
+
+    /// The persisted-store half of the same fix: a `.unresolved` entry that was
+    /// encoded before this behaviour existed decodes as data with no special
+    /// marking at all — retryability comes from the lookup, not the stored
+    /// value, so there's nothing to migrate on an older store.
+    @Test func aDecodedUnresolvedEntryIsAlsoRetryable() throws {
+        var assigner = SpeakerSlotAssigner()
+        for n in 1...SpeakerSlot.capacity {
+            _ = assigner.slot(for: "speaker-\(n)")
+        }
+        _ = assigner.slot(for: "over-capacity")
+        #expect(assigner.assignments["over-capacity"] == .unresolved)
+
+        let data = try JSONEncoder().encode(assigner)
+        var decoded = try JSONDecoder().decode(SpeakerSlotAssigner.self, from: data)
+        #expect(decoded.assignments["over-capacity"] == .unresolved)
+
+        decoded.reconcile(liveIDs: Set(decoded.assignments.keys).subtracting(["speaker-1"]))
+        #expect(decoded.slot(for: "over-capacity") == .slot(1))
+    }
+
     // MARK: - Rename / merge / capacity reclaim
 
     @Test func renameTransfersTheExistingSlotToTheNewKey() {
@@ -325,5 +378,32 @@ import Testing
         let final = meeting.resolveSpeakerSlots(ownerNames: [])
         #expect(final.count == 1)
         #expect(final[currentLabel] == .slot(1))
+    }
+
+    /// The other bug Copilot caught: reconciling *after* allocating meant a dead
+    /// key still held its number during the very pass that was supposed to
+    /// reclaim it. At full capacity, a single corrected line that was the only
+    /// one under its old label — bypassing `relabelSpeaker`'s rekey, the way the
+    /// per-line quick-fix menu does — used to come back `.unresolved` even
+    /// though its old identity had just vacated a number in this same call.
+    @Test func relabelAtCapacityGetsTheFreedNumberInTheSameResolvePass() {
+        let meeting = Meeting(title: "Full house")
+        var segments: [TranscriptSegment] = []
+        for n in 1...SpeakerSlot.capacity {
+            let segment = TranscriptSegment(channel: .me, text: "hi", startTime: Double(n), endTime: Double(n) + 1)
+            segment.speakerLabel = "Speaker \(n)"
+            segments.append(segment)
+        }
+        meeting.segments = segments
+        _ = meeting.resolveSpeakerSlots(ownerNames: [])
+        #expect(meeting.speakerSlotAssigner.assignments.count == SpeakerSlot.capacity)
+
+        // The only line under "Speaker 1" gets corrected directly — its old key
+        // is genuinely abandoned, not transferred.
+        segments[0].assignSpeaker("Glen")
+
+        let resolved = meeting.resolveSpeakerSlots(ownerNames: [])
+        #expect(resolved["Glen"] == .slot(1))
+        #expect(resolved.count == SpeakerSlot.capacity)
     }
 }

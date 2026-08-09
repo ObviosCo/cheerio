@@ -45,13 +45,26 @@ public struct SpeakerSlotAssigner: Codable, Sendable, Equatable {
     public init() {}
 
     /// - Parameter isYou: pins the speaker to the navy `.you` slot, outside rotation.
+    ///
+    /// `.unresolved` is deliberately **not** sticky the way `.you` and a numbered
+    /// slot are: it means "no room *as of the last attempt*," not "never eligible
+    /// again." A speaker stored as `.unresolved` retries allocation on every call
+    /// instead of returning early, so freeing a number elsewhere — a merge, a
+    /// ``Meeting/resolveSpeakerSlots(ownerNames:)`` pass that prunes a dead key —
+    /// actually reaches them on their next lookup rather than stranding them
+    /// behind a decision this type made once and never revisited. That also
+    /// covers a `.unresolved` decoded from a store persisted before this existed:
+    /// nothing about the stored value marks it retryable, the *lookup* does, so
+    /// there's nothing to migrate.
     @discardableResult
     public mutating func slot(for speakerID: String, isYou: Bool = false) -> SpeakerSlot {
         if isYou {
             assignments[speakerID] = .you
             return .you
         }
-        if let existing = assignments[speakerID] { return existing }
+        if let existing = assignments[speakerID], existing != .unresolved {
+            return existing
+        }
         guard let number = lowestUnusedSlotNumber() else {
             assignments[speakerID] = .unresolved
             return .unresolved
