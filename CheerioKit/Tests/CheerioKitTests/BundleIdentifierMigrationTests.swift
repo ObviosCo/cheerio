@@ -344,6 +344,118 @@ import Testing
                 == Data("migrated-by-the-other-launch".utf8)
         )
     }
+
+    /// The active review finding: two launches can both observe a store-less
+    /// `new` and both try to move it aside. Forcing `new` to be bare (rather than
+    /// absent) routes this launch through the set-aside branch first, which is
+    /// exactly where the interleaving happens — `RaceSimulatingFileManager`
+    /// reproduces a second launch winning that identical move, then (since `new`
+    /// no longer exists to move a second time) winning the identical old→new
+    /// rename too. Both throws ask for a retry rather than reporting `.failed`;
+    /// the third attempt's fresh read finds `old` gone and `new` holding a store
+    /// and recognizes the race as already won, within `maxMigrationAttempts`.
+    @Test func aSetAsideRaceAsksForARetryInsteadOfFailing() throws {
+        let shared = try scratchDirectory()
+        defer { try? FileManager.default.removeItem(at: shared) }
+        let old = shared.appending(path: oldID, directoryHint: .isDirectory)
+        let new = shared.appending(path: newID, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(
+            at: old.appending(path: "Meetings/abc", directoryHint: .isDirectory),
+            withIntermediateDirectories: true
+        )
+        try Data("migrated-by-the-other-launch".utf8).write(to: old.appending(path: "default.store"))
+        // Bare and store-less — forces the set-aside branch, unlike
+        // `losingTheRaceToAConcurrentLaunchStillReportsSuccess` above, where `new`
+        // is absent and the race is only on the rename itself.
+        try FileManager.default.createDirectory(at: new, withIntermediateDirectories: true)
+
+        let outcome = BundleIdentifierMigration.migrate(
+            sharedApplicationSupport: shared, oldBundleIdentifier: oldID, newBundleIdentifier: newID,
+            fileManager: RaceSimulatingFileManager()
+        )
+
+        #expect(outcome == .migrated)
+        #expect(!FileManager.default.fileExists(atPath: old.path))
+        #expect(
+            try Data(contentsOf: new.appending(path: "default.store"))
+                == Data("migrated-by-the-other-launch".utf8)
+        )
+        #expect(FileManager.default.fileExists(atPath: new.appending(path: "Meetings/abc").path))
+        // The bare directory this launch's own (raced-away) set-aside attempt
+        // touched doesn't linger as an unreconciled sibling once the dust settles.
+        #expect(try setAsideSiblings(of: shared, newBundleIdentifier: newID).isEmpty)
+    }
+
+    /// The first suppressed review finding: losing the actual old→new rename
+    /// race after this launch's *own* set-aside step already succeeded must
+    /// still reconcile the sibling that step created — the early return for
+    /// "another launch already finished" can't just skip it, or a file that was
+    /// legitimately in `new` before this migration ever started stays stranded
+    /// in a UUID directory nobody ever named again, even though the migration as
+    /// a whole reports success.
+    @Test func losingTheRenameRaceStillReconcilesThisLaunchsOwnSibling() throws {
+        let shared = try scratchDirectory()
+        defer { try? FileManager.default.removeItem(at: shared) }
+        let old = shared.appending(path: oldID, directoryHint: .isDirectory)
+        let new = shared.appending(path: newID, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(
+            at: old.appending(path: "Meetings/abc", directoryHint: .isDirectory),
+            withIntermediateDirectories: true
+        )
+        try Data("store".utf8).write(to: old.appending(path: "default.store"))
+        try FileManager.default.createDirectory(at: new, withIntermediateDirectories: true)
+        try Data("crumb".utf8).write(to: new.appending(path: "widget.json"))
+
+        let outcome = BundleIdentifierMigration.migrate(
+            sharedApplicationSupport: shared, oldBundleIdentifier: oldID, newBundleIdentifier: newID,
+            fileManager: LosesTheRenameRaceAfterSettingAsideFileManager()
+        )
+
+        #expect(outcome == .migrated)
+        #expect(FileManager.default.fileExists(atPath: new.appending(path: "default.store").path))
+        #expect(FileManager.default.fileExists(atPath: new.appending(path: "Meetings/abc").path))
+        // The file that was in `new` before this launch ever touched it made it
+        // back, even though a different launch's rename is the one that actually
+        // won — reconciliation ran on this launch's own set-aside sibling anyway.
+        #expect(try Data(contentsOf: new.appending(path: "widget.json")) == Data("crumb".utf8))
+        #expect(try setAsideSiblings(of: shared, newBundleIdentifier: newID).isEmpty)
+    }
+
+    /// The second suppressed review finding: a sibling orphaned by a *previous*
+    /// launch's set-aside-then-genuinely-failed attempt is never revisited by
+    /// the ordinary machinery — the next successful launch finds `new` simply
+    /// absent (the orphan sits under a UUID-suffixed name, not `new`'s own) and
+    /// takes the plain-rename fast path with nothing pointing it at the orphan.
+    /// Reconciliation being keyed on "`new` now holds a store," rather than on
+    /// which attempt or launch created a given sibling, is what still sweeps it.
+    @Test func orphanedSiblingFromAnEarlierFailedLaunchIsSweptByALaterOne() throws {
+        let shared = try scratchDirectory()
+        defer { try? FileManager.default.removeItem(at: shared) }
+        let old = shared.appending(path: oldID, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(
+            at: old.appending(path: "Meetings/abc", directoryHint: .isDirectory),
+            withIntermediateDirectories: true
+        )
+        try Data("store".utf8).write(to: old.appending(path: "default.store"))
+        // Stands in for an earlier launch that moved a store-less `new` aside and
+        // then genuinely failed the rename: `new` itself is simply absent, and
+        // nothing but this sibling's own name still points back at what it was.
+        let orphan = shared.appending(
+            path: "\(newID).pre-migration-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: orphan, withIntermediateDirectories: true)
+        try Data("crumb".utf8).write(to: orphan.appending(path: "widget.json"))
+
+        let outcome = BundleIdentifierMigration.migrate(
+            sharedApplicationSupport: shared, oldBundleIdentifier: oldID, newBundleIdentifier: newID
+        )
+
+        #expect(outcome == .migrated)
+        let new = shared.appending(path: newID, directoryHint: .isDirectory)
+        #expect(FileManager.default.fileExists(atPath: new.appending(path: "default.store").path))
+        #expect(FileManager.default.fileExists(atPath: new.appending(path: "Meetings/abc").path))
+        #expect(try Data(contentsOf: new.appending(path: "widget.json")) == Data("crumb".utf8))
+        #expect(!FileManager.default.fileExists(atPath: orphan.path))
+    }
 }
 
 /// Stands in for a second Cheerio process winning the exact same rename between
@@ -373,6 +485,24 @@ private final class FailsOnTheSecondMoveFileManager: FileManager {
         guard moveCount == 1 else {
             throw CocoaError(.fileWriteUnknown)
         }
+        try super.moveItem(at: srcURL, to: dstURL)
+    }
+}
+
+/// Lets the set-aside move succeed cleanly (this launch wins that step), then
+/// applies `RaceSimulatingFileManager`'s trick only to the rename that follows
+/// it — a different launch's identical old→new rename wins first, so this
+/// launch's own attempt throws against a source that's already gone.
+private final class LosesTheRenameRaceAfterSettingAsideFileManager: FileManager {
+    private var moveCount = 0
+
+    override func moveItem(at srcURL: URL, to dstURL: URL) throws {
+        moveCount += 1
+        guard moveCount > 1 else {
+            try super.moveItem(at: srcURL, to: dstURL)
+            return
+        }
+        try super.moveItem(at: srcURL, to: dstURL)
         try super.moveItem(at: srcURL, to: dstURL)
     }
 }
