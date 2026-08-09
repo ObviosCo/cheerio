@@ -1,20 +1,33 @@
-# Photographs the app's screens on a PR that changes them, and puts the pictures in
-# the PR.
+# Photographs the app's screens on a PR that changes them. Uploads the pictures.
+# Publishes nothing.
 #
 # Copilot's review instructions already ask whether the site's screenshots need
 # updating; this is what makes that answerable without a reviewer building the branch.
 #
-# The mechanism, and why it's this one: capture runs inside `xcodebuild test` as
-# `CheerioScreenshotTests`, a UI-testing bundle. The local harness
-# (`Scripts/screenshots/capture.sh`) shoots windows with `screencapture -l`, which is
-# gated by Screen Recording — a permission a runner has nobody to grant, and which
-# fails by handing back a black frame rather than an error. A test host's own
-# screenshot API isn't reaching into another process's window, so it isn't gated the
-# same way. Everything else is shared with the local harness: the same seeded demo
-# store, the same `ScreenshotMode` launch arguments.
+# ## The trust boundary — read this before adding a permission here
 #
-# The pictures go to the orphan `screenshots` branch and into one sticky comment.
-# That branch is disposable history — see Scripts/screenshots/ci/publish-branch.sh.
+# This workflow is triggered by `pull_request`, so everything it runs is code from the
+# pull request: `bootstrap.sh`, `seed-store.sh`, the test bundle, the scripts under
+# `Scripts/screenshots/`, and this file itself. None of it has been reviewed — that's
+# what the pull request is for. A token that could write to the repository would
+# therefore be a token any contributor could spend by editing one of those files, so
+# this workflow has `contents: read` and nothing else, and it hands its output on as an
+# artifact instead of publishing it.
+#
+# The publishing half is `.github/workflows/screenshots-publish.yml`: triggered by
+# `workflow_run`, running the *base branch's* scripts with the write token, treating
+# this artifact as hostile input. **Do not move a step across that line** — if a step
+# here needs `GITHUB_TOKEN` to write anything, it belongs over there.
+#
+# ## The mechanism, and why it's this one
+#
+# Capture runs inside `xcodebuild test` as `CheerioScreenshotTests`, a UI-testing
+# bundle. The local harness (`Scripts/screenshots/capture.sh`) shoots windows with
+# `screencapture -l`, which is gated by Screen Recording — a permission a runner has
+# nobody to grant, and which fails by handing back a black frame rather than an error.
+# A test host's own screenshot API isn't reaching into another process's window, so it
+# isn't gated the same way. Everything else is shared with the local harness: the same
+# seeded demo store, the same `ScreenshotMode` launch arguments.
 name: Screen previews
 
 on:
@@ -29,12 +42,11 @@ on:
   # For refreshing the site's imagery from main without opening a PR to do it.
   workflow_dispatch:
 
-# contents: write to push the captures to the screenshots branch; pull-requests: write
-# for the sticky comment. A PR from a fork gets a read-only token regardless of what's
-# asked for here, which is what the `publishable` check below is really testing.
+# Read-only, deliberately, and the reason is the trust boundary above rather than
+# frugality: this job executes unreviewed code. The publish workflow holds the write
+# token.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   group: screenshots-${{ github.event.pull_request.number || github.ref }}
@@ -50,7 +62,6 @@ jobs:
       # baked into CheerioScreenshotTests for when the TEST_RUNNER_ forwarding
       # below doesn't reach the test process.
       SCREENSHOT_HOME: /tmp/cheerio-screenshots-home
-      MARKER: "<!-- screenshot-previews -->"
     steps:
       - uses: actions/checkout@v7
 
@@ -110,8 +121,9 @@ jobs:
         run: ./Scripts/screenshots/seed-store.sh --home "$SCREENSHOT_HOME"
 
       # `continue-on-error` because a surface that fails to photograph shouldn't cost
-      # the reviewer the ones that worked. The extraction step below is what fails the
-      # job when *nothing* came out, and the summary at the end says so either way.
+      # the reviewer the ones that worked: the steps below still extract, upload and
+      # publish whatever came out. The gate at the end of the job is what turns that
+      # into a red check, so "partial" doesn't get reported as "fine".
       - name: Capture
         id: capture
         continue-on-error: true
@@ -138,79 +150,45 @@ jobs:
             --xcresult "$RUNNER_TEMP/screenshots.xcresult" \
             --out "$RUNNER_TEMP/screenshots"
 
-      # Downloadable whether or not the branch push happens, which is the whole
-      # story for a fork's PR.
+      # What the publisher cross-checks against its own `workflow_run` payload. It's a
+      # claim, not a credential: the publisher believes the PR number only after the
+      # payload (or the API) says the same commit belongs to it.
+      - name: Describe the run for the publisher
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+        run: |
+          jq -n \
+            --arg event "$EVENT" \
+            --arg pr "$PR_NUMBER" \
+            --arg head_sha "$HEAD_SHA" \
+            --arg head_repo "$HEAD_REPO" \
+            '{event: $event, pr: $pr, head_sha: $head_sha, head_repo: $head_repo}' \
+            > "$RUNNER_TEMP/screenshots/metadata.json"
+          cat "$RUNNER_TEMP/screenshots/metadata.json"
+
+      # The one output of this job. `screens` is a fixed name because
+      # screenshots-publish.yml downloads it by name from the run that produced it.
       - name: Upload the captures
         uses: actions/upload-artifact@v7
         with:
-          name: screens-${{ github.event.pull_request.number || github.run_id }}
+          name: screens
           path: ${{ runner.temp }}/screenshots
           if-no-files-found: error
 
-      # A fork's PR gets a read-only GITHUB_TOKEN however this workflow's permissions
-      # are written, so pushing and commenting would both fail. Everything above still
-      # ran, and the artifact above is the fallback.
-      - name: Can this run publish?
-        id: publishable
-        env:
-          EVENT: ${{ github.event_name }}
-          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          if [ "$EVENT" = "workflow_dispatch" ]; then
-            echo "value=true" >> "$GITHUB_OUTPUT"
-            echo "prefix=manual/${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-          elif [ "$HEAD_REPO" = "$GITHUB_REPOSITORY" ]; then
-            echo "value=true" >> "$GITHUB_OUTPUT"
-            echo "prefix=pr-${PR_NUMBER}/${HEAD_SHA}" >> "$GITHUB_OUTPUT"
-          else
-            echo "value=false" >> "$GITHUB_OUTPUT"
-            echo "prefix=" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Publish to the screenshots branch
-        if: steps.publishable.outputs.value == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          ./Scripts/screenshots/ci/publish-branch.sh \
-            --dir "$RUNNER_TEMP/screenshots" \
-            --prefix "${{ steps.publishable.outputs.prefix }}" \
-            --prune-repo "${{ github.repository }}"
-
-      - name: Comment on the pull request
-        if: steps.publishable.outputs.value == 'true' && github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          ./Scripts/screenshots/ci/render-comment.sh \
-            --dir "$RUNNER_TEMP/screenshots" \
-            --raw-base "https://raw.githubusercontent.com/${{ github.repository }}/screenshots/${{ steps.publishable.outputs.prefix }}" \
-            --sha "${{ github.event.pull_request.head.sha }}" \
-            --marker "$MARKER" \
-            --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            > "$RUNNER_TEMP/comment.md"
-          ./Scripts/screenshots/ci/post-comment.sh \
-            --repo "${{ github.repository }}" \
-            --pr "${{ github.event.pull_request.number }}" \
-            --marker "$MARKER" \
-            --body-file "$RUNNER_TEMP/comment.md"
-
-      - name: Summary
+      # The truthful bit. Capture is allowed to fail without stopping the job, so
+      # something has to fail it afterwards or a half-photographed run reports green.
+      # `always()` so this also has its say when an earlier step blew up.
+      - name: Did every surface come out?
         if: always()
+        env:
+          CAPTURE_OUTCOME: ${{ steps.capture.outcome }}
         run: |
-          {
-            echo "### Screen previews"
-            echo
-            if [ "${{ steps.capture.outcome }}" != "success" ]; then
-              echo "- The capture pass reported a failure; whatever it did photograph is still below."
-            fi
-            if [ "${{ steps.publishable.outputs.value }}" = "true" ]; then
-              echo "- Published under \`${{ steps.publishable.outputs.prefix }}\` on the \`screenshots\` branch."
-            else
-              echo "- Not published: a pull request from a fork gets a read-only token, so this run can"
-              echo "  neither push to the \`screenshots\` branch nor comment. The captures are attached"
-              echo "  to this run as an artifact instead."
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
+          set -o pipefail
+          ./Scripts/screenshots/ci/check-captures.sh \
+            --dir "$RUNNER_TEMP/screenshots" \
+            --expected-from CheerioScreenshotTests/ScreenshotCaptureTests.swift \
+            --capture-outcome "$CAPTURE_OUTCOME" \
+            | tee -a "$GITHUB_STEP_SUMMARY"

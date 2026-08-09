@@ -22,6 +22,11 @@
 # Run from inside a checkout with a pushable `origin` — in CI, the one actions/checkout
 # left credentials in. Nothing here touches the working tree or the current branch: the
 # captures are committed from a detached `git worktree` of their own.
+#
+# In CI that checkout is the **base branch's**, from `screenshots-publish.yml`, which is
+# the only workflow holding a token that can push. `--dir` is the staging directory
+# `ci/verify-handoff.sh` filled with the files it accepted, never the artifact as
+# downloaded — see that script for what a pull request is and isn't allowed to say.
 
 set -euo pipefail
 
@@ -52,10 +57,28 @@ esac
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
+# Who the commits are from. Set here, once, because both the porcelain commit and the
+# `commit-tree` below need an identity and only one of them is obvious about it:
+# `commit-tree` resolves an author the same way `commit` does, so on the run that
+# creates the branch — a fresh checkout, no `user.email` anywhere — it fails with
+# "unable to auto-detect email address" before the branch has ever existed. The
+# variables cover the plumbing; the `-c` flags on the porcelain call say the same
+# thing, so the two can't drift.
+GIT_NAME="${GIT_COMMIT_NAME:-github-actions[bot]}"
+GIT_EMAIL="${GIT_COMMIT_EMAIL:-41898282+github-actions[bot]@users.noreply.github.com}"
+export GIT_AUTHOR_NAME="$GIT_NAME"
+export GIT_AUTHOR_EMAIL="$GIT_EMAIL"
+export GIT_COMMITTER_NAME="$GIT_NAME"
+export GIT_COMMITTER_EMAIL="$GIT_EMAIL"
+
 # The upload budget, checked before anything is committed. A run that blew past it is
 # a bug in the capture pass — a full-screen shot where a window was meant, say — and
 # failing here keeps that bug out of the branch's history rather than in it forever.
-TOTAL="$(find "$DIR" -type f -name '*.png' -exec stat -f %z {} + | awk '{sum += $1} END {print sum + 0}')"
+#
+# Summed by reading the bytes rather than asking `stat`, whose size flag is spelled
+# `-f %z` on macOS and `-c %s` on Linux — and this script runs on both: the captures
+# are taken on a macOS runner and published from a Linux one.
+TOTAL="$(find "$DIR" -type f -name '*.png' -exec cat {} + | wc -c | tr -d ' ')"
 if [ "$TOTAL" = 0 ]; then
     echo "No .png files in ${DIR}." >&2
     exit 1
@@ -83,7 +106,12 @@ else
     # no checkout in the main worktree. `hash-object -t tree /dev/null` is the empty
     # tree, and a commit on it has no parent and no files.
     EMPTY_TREE="$(git -C "$REPO_ROOT" hash-object -t tree /dev/null)"
-    ROOT="$(git -C "$REPO_ROOT" commit-tree "$EMPTY_TREE" -m "Start the screenshots branch")"
+    ROOT="$(
+        git -C "$REPO_ROOT" \
+            -c "user.name=${GIT_NAME}" \
+            -c "user.email=${GIT_EMAIL}" \
+            commit-tree "$EMPTY_TREE" -m "Start the screenshots branch"
+    )"
     git -C "$REPO_ROOT" worktree add --quiet --detach "$WORKTREE" "$ROOT"
     echo "Created ${BRANCH} from an empty tree — it had no remote copy."
 fi
@@ -146,8 +174,8 @@ apply() {
         return 1
     fi
     git -C "$WORKTREE" \
-        -c "user.name=${GIT_COMMIT_NAME:-github-actions[bot]}" \
-        -c "user.email=${GIT_COMMIT_EMAIL:-41898282+github-actions[bot]@users.noreply.github.com}" \
+        -c "user.name=${GIT_NAME}" \
+        -c "user.email=${GIT_EMAIL}" \
         commit --quiet -m "Screenshots for ${PREFIX}"
 }
 

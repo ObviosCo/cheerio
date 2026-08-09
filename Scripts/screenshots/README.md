@@ -41,19 +41,53 @@ because the next run makes a new one. Each PR keeps one directory (a new run rep
 the last), and closed PRs' directories are pruned, so the *tip* stays small; the
 objects behind old commits are what deleting the branch is for.
 
-The pieces, in the order the workflow runs them:
+### Two workflows, because one of them can't be trusted
+
+Capturing and publishing are deliberately separate:
+
+- **`screenshots.yml`** runs on `pull_request` and holds **`contents: read` and
+  nothing else**. Everything it executes — `bootstrap.sh`, the seeder, the test
+  bundle, every script in `ci/`, and that workflow file itself — is code from the pull
+  request, which by definition nobody has reviewed yet. A write token here would be a
+  write token any contributor could spend by editing one of those files. So it
+  captures, and uploads a `screens` artifact: the PNGs plus a `metadata.json` naming
+  the pull request and the head commit.
+- **`screenshots-publish.yml`** runs on `workflow_run` when that finishes. Because
+  `workflow_run` runs in the *base repository's* context from the *default branch's*
+  checkout, the scripts it executes are the reviewed, merged ones, and it can safely
+  hold `contents: write` and `pull-requests: write`.
+
+The artifact crosses that line, so it's treated as hostile: `ci/verify-handoff.sh`
+refuses anything that isn't a flat, plausibly-named file with a real PNG header,
+caps the count and the bytes, and copies only what passed into a clean directory that
+the publish scripts read instead of the download. The pull request number and head SHA
+come from the `workflow_run` payload — `metadata.json` is allowed to agree with it and
+nothing more.
+
+Consequences worth knowing. A pull request that changes the publishing half is
+publishing with the *old* half until it merges, which is the price of the base-branch
+checkout. And a `workflow_run` job's status doesn't appear as a check on the pull
+request: the PR's check is **Screen previews**, and it goes red when a surface didn't
+come out; the publish job's evidence is the comment.
+
+The pieces, in the order they run:
 
 | File | Job |
 | --- | --- |
 | `seed-store.sh` | Writes the demo store into a scratch home. Shared with `capture.sh`. |
 | `CheerioScreenshotTests/` (repo root) | Launches the app once per surface and attaches the picture. |
 | `ci/extract-screenshots.sh` | Pulls the attachments out of the `.xcresult`, restores their real names, writes the previews. |
-| `ci/publish-branch.sh` | Commits them to the `screenshots` branch, prunes, enforces the ~10 MB budget. |
+| `ci/check-captures.sh` | Fails the capture job when a surface is missing — the expected set is read out of the test file, so there's no second list to keep in step. |
+| — the artifact crosses the trust boundary here — | |
+| `ci/verify-handoff.sh` | Validates it, and works out which pull request (if any) this run may publish for. |
+| `ci/publish-branch.sh` | Commits the captures to the `screenshots` branch, prunes, enforces the ~10 MB budget. |
 | `ci/render-comment.sh`, `ci/post-comment.sh` | Build the comment and post or edit the one already there. |
 
-A PR **from a fork** gets a read-only token whatever the workflow asks for, so it can
-neither push nor comment. Nothing fails: the captures are attached to the run as an
-artifact and the job summary says why there's no comment.
+A PR **from a fork** isn't published. The token would allow it now — the publish half
+runs in the base repo either way — but a fork's captures were rendered by unreviewed
+code, and the repository's own branch and comments aren't the place to find that out.
+Nothing fails: the captures are attached to the capture run as an artifact, and both
+job summaries say so.
 
 Running the UI tests by hand is possible (`xcodebuild test -scheme CheerioScreenshots`
 after `./Scripts/screenshots/seed-store.sh`), but it drives your GUI for a couple of
