@@ -97,14 +97,18 @@ public enum MeetingListGrouping {
         let locale = calendar.locale ?? .autoupdatingCurrent
         let daysBeforeNow = calendar.dateComponents([.day], from: dayStart, to: startOfNow).day ?? 0
 
-        if daysBeforeNow == 0 {
-            return String(localized: "Today", comment: "Meeting list section header for meetings recorded today.")
-        }
-        if daysBeforeNow == 1 {
-            return String(
-                localized: "Yesterday",
-                comment: "Meeting list section header for meetings recorded yesterday."
-            )
+        if daysBeforeNow == 0 || daysBeforeNow == 1 {
+            // Not `String(localized:)`: this package ships no string catalogs, so that
+            // lookup always misses and non-English users would get English "Today"
+            // beside a localized weekday header. `RelativeDateTimeFormatter`'s named
+            // style carries the system's own translations, and `.standalone` gives
+            // header capitalization ("Today", not the mid-sentence "today").
+            let formatter = RelativeDateTimeFormatter()
+            formatter.locale = locale
+            formatter.calendar = calendar
+            formatter.dateTimeStyle = .named
+            formatter.formattingContext = .standalone
+            return formatter.localizedString(from: DateComponents(day: -daysBeforeNow))
         }
 
         // `timeZone` is spelled out explicitly: `Date.FormatStyle`'s own default is

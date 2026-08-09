@@ -32,6 +32,22 @@ import Testing
         #expect(sections.map(\.meetings) == [[today], [yesterday]])
     }
 
+    @Test func relativeHeadersLocalizeWithoutStringCatalogs() {
+        // The package ships no string catalogs, so `String(localized:)` would pin
+        // these headers to English beside a localized weekday — the formatter path
+        // must produce the locale's own words. German: "Heute" / "Gestern".
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = Locale(identifier: "de_DE")
+        calendar.timeZone = TimeZone(identifier: "Europe/Berlin")!
+        let now = Self.date(2026, 8, 12, hour: 10, in: calendar)
+        let today = Meeting(title: "Standup", startedAt: Self.date(2026, 8, 12, hour: 9, in: calendar))
+        let yesterday = Meeting(title: "1:1", startedAt: Self.date(2026, 8, 11, hour: 17, in: calendar))
+
+        let sections = MeetingListGrouping.sections(for: [today, yesterday], now: now, calendar: calendar)
+
+        #expect(sections.map(\.title) == ["Heute", "Gestern"])
+    }
+
     @Test func sameCalendarDayMeetingsShareOneSectionInGivenOrder() {
         let calendar = Self.calendar()
         let now = Self.date(2026, 8, 12, hour: 20, in: calendar)
