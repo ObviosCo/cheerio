@@ -126,26 +126,37 @@ func measure(_ path: String) throws -> (peakDBFS: Double, rmsDBFS: Double) {
         sampleRate: file.fileFormat.sampleRate,
         channels: file.fileFormat.channelCount,
         interleaved: false)!
-    guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(file.length))
-    else {
-        throw NSError(domain: "aec-ab-measure", code: 1, userInfo: [NSLocalizedDescriptionKey: "couldn't allocate buffer for \(path)"])
-    }
-    try file.read(into: buffer)
 
-    let frameCount = Int(buffer.frameLength)
-    guard frameCount > 0, let channels = buffer.floatChannelData else {
-        return (peakDBFS: -.infinity, rmsDBFS: -.infinity)
+    // Read in fixed-size chunks rather than the whole file into one buffer: an hour
+    // at 48 kHz mono float32 is already ~660 MiB in a single buffer (double that for
+    // stereo), and `AVAudioFrameCount(file.length)` is a UInt32 that traps outright
+    // past about a day of mono audio at that rate. ~1 MiB per chunk across all
+    // channels combined, accumulating peak/sum-of-squares/count as it goes.
+    let chunkFrames = AVAudioFrameCount(max(1024, 1_048_576 / (4 * Int(format.channelCount))))
+    guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: chunkFrames) else {
+        throw NSError(domain: "aec-ab-measure", code: 1, userInfo: [NSLocalizedDescriptionKey: "couldn't allocate a read buffer for \(path)"])
     }
+
     var peak: Float = 0
     var sumSquares: Double = 0
     var sampleCount = 0
-    for channel in 0..<Int(format.channelCount) {
-        let samples = channels[channel]
-        for i in 0..<frameCount {
-            let sample = samples[i]
-            peak = max(peak, abs(sample))
-            sumSquares += Double(sample) * Double(sample)
-            sampleCount += 1
+    // Guard on framePosition, not on getting an empty read back: AVAudioFile.read(into:)
+    // throws once position has already reached length, rather than returning a
+    // zero-length buffer, so a "read until empty" loop would throw on its last lap.
+    while file.framePosition < file.length {
+        buffer.frameLength = 0
+        try file.read(into: buffer, frameCount: chunkFrames)
+        let frameCount = Int(buffer.frameLength)
+        if frameCount == 0 { break }
+        guard let channels = buffer.floatChannelData else { break }
+        for channel in 0..<Int(format.channelCount) {
+            let samples = channels[channel]
+            for i in 0..<frameCount {
+                let sample = samples[i]
+                peak = max(peak, abs(sample))
+                sumSquares += Double(sample) * Double(sample)
+                sampleCount += 1
+            }
         }
     }
     let rms = sampleCount > 0 ? (sumSquares / Double(sampleCount)).squareRoot() : 0

@@ -71,6 +71,17 @@ final class MicrophoneCapture: @unchecked Sendable {
             // pump the level around as people vary in loudness — so it's turned off
             // explicitly rather than left to ride along with AEC.
             input.isVoiceProcessingAGCEnabled = false
+            // Voice processing also ducks "other" (non-voice) audio by default, at the
+            // level tuned for typical voice chat. That's the wrong default here: the
+            // "other" audio it would duck is the far-end call itself, which is both what
+            // the user is listening to and what SystemAudioTap is recording on the Them
+            // channel — ducking it would quietly attenuate the very signal the other
+            // channel needs, and confound the #5 A/B measurement into the bargain. Pin it
+            // to the minimum rather than leave the default active.
+            input.voiceProcessingOtherAudioDuckingConfiguration = AVAudioVoiceProcessingOtherAudioDuckingConfiguration(
+                enableAdvancedDucking: false,
+                duckingLevel: .min
+            )
         } catch {
             // .notice, not .info: .info-level os_log entries never reach `log show`, and this
             // is exactly the kind of silent failure issue #5 warned against.
