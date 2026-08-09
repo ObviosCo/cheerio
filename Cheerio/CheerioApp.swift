@@ -271,7 +271,7 @@ struct ContentView: View {
     /// look something up in an earlier meeting, and the sidebar offers a way back.
     @ViewBuilder private var detail: some View {
         if let selectedMeeting {
-            MeetingDetailView(meeting: selectedMeeting)
+            MeetingDetailView(meeting: selectedMeeting) { self.selectedMeeting = nil }
         } else if session.state == .recording || session.state == .finishing {
             RecordingView()
         } else {

@@ -4,11 +4,18 @@ import SwiftUI
 
 struct MeetingDetailView: View {
     let meeting: Meeting
+    /// Run after this meeting is deleted, so the caller can clear whatever
+    /// selection was pointing at it — this view owns no binding to that itself,
+    /// since `ContentView` passes it a plain `Meeting`, not a `Binding<Meeting?>`.
+    var onDelete: () -> Void = {}
 
     @Environment(\.modelContext) private var context
+    @Environment(CaptureSession.self) private var session
     @Query(sort: \EnrolledSpeaker.enrolledAt) private var enrolled: [EnrolledSpeaker]
     @State private var isRelabeling = false
     @State private var relabelError: String?
+    @State private var isDeleteConfirming = false
+    @State private var deleteError: String?
     /// Expanded by default: opening an old meeting is usually about re-reading what
     /// was said, and a collapsed disclosure made the transcript look like it was gone.
     @State private var isTranscriptExpanded = true
@@ -70,11 +77,38 @@ struct MeetingDetailView: View {
         } message: {
             Text(relabelError ?? "")
         }
+        .confirmationDialog(
+            DeleteMeetingConfirmation.title(for: meeting.title),
+            isPresented: $isDeleteConfirming,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) { delete() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(DeleteMeetingConfirmation.message)
+        }
+        .alert("Couldn't delete meeting", isPresented: $deleteError.presented()) {
+            Button("OK") { deleteError = nil }
+        } message: {
+            Text(deleteError ?? "")
+        }
         .toolbar {
             ToolbarItem {
                 ShareLink(item: exportMarkdown()) {
                     Label("Export", systemImage: "square.and.arrow.up")
                 }
+            }
+            ToolbarItem {
+                // Reachable even for the meeting currently recording (selecting it
+                // mid-call replaces the live view with this one) — `.disabled`
+                // rather than omitted, matching the library list's context menu, so
+                // the control doesn't appear to vanish depending on state.
+                Button(role: .destructive) {
+                    isDeleteConfirming = true
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+                .disabled(session.meeting == meeting)
             }
         }
     }
@@ -236,6 +270,16 @@ struct MeetingDetailView: View {
             try? context.save()
         } catch {
             relabelError = error.localizedDescription
+        }
+    }
+
+    /// Commits the toolbar's "Delete" flow, after confirmation.
+    private func delete() {
+        do {
+            try MeetingDeletion.delete(meeting, context: context)
+            onDelete()
+        } catch {
+            deleteError = error.localizedDescription
         }
     }
 
