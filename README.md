@@ -72,8 +72,13 @@ and a directive-capture mode ("Give Direction…" in the menu bar).
   system-audio, and calendar permissions and enrolling your voice. Recordings title themselves — from the
   calendar event, or generated from the transcript when there wasn't one — and any title is
   yours to change by hand.
-- **Library, search, and export.** Browse past meetings, search across titles, notes,
-  transcripts, and speaker names, and export any meeting as Markdown.
+- **Library, search, and export.** Browse past meetings grouped by day — Today, Yesterday,
+  then the weekday or the date — search across titles, notes, transcripts, and speaker names,
+  and export any meeting as Markdown.
+- **It comes to you when it matters.** A notification offers to record when a calendar meeting
+  with other people starts (never twice for the same occurrence, never while already
+  recording), and another one tells you when a finished meeting's notes are ready. Both
+  switches live in the Notifications section of Settings → General.
 - **Audio retention you control.** Raw audio is written to disk per channel so a transcription
   failure isn't fatal, then purged on your schedule — discard immediately, 24 hours, 7 days,
   30 days, or keep forever. The default is 7 days.
@@ -298,8 +303,9 @@ Known issues, roughly in priority order:
 - **In-room vs. remote isn't modelled.** Nothing records which side of the call a participant
   was on, so each one is primed against both channels and can burn a speaker slot on the wrong
   one.
-- **Calendar is read-only.** Recordings get their title and event ID from the current event, but
-  "suggest recording when a meeting starts" and "attach notes back to the event" aren't built.
+- **Calendar is mostly read-only.** Recordings get their title and event ID from the current
+  event, and a notification offers to record when a meeting starts — but "attach notes back to
+  the event" isn't built.
 - **No playback.** Retained audio is written and purged but there's no UI to listen to it.
 
 **No Mac App Store.** App Sandbox has to stay off: a sandboxed process tap is created with
