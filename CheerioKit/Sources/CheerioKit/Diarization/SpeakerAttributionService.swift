@@ -95,13 +95,50 @@ public actor SpeakerAttributionService {
             }
         }
 
-        let samples = try converter.resampleAudioFile(audioFile)
-        let timeline = try diarizer.processComplete(samples)
+        // Streamed rather than materialized whole: `processComplete` needs the
+        // entire channel as one [Float] up front — ~230 MB for a 60-minute side
+        // (issue #7), before the model's own state. `process(samples:)` +
+        // `finalizeSession` is FluidAudio's own tested streaming equivalent — its
+        // SortformerStreamingIntegrationTests assert the two paths land within 1
+        // frame (~80ms) of each other.
+        //
+        // Must be `process(samples:)`, not bare `addAudio`: `addAudio` only feeds
+        // the diarizer's raw-sample buffer through one *fixed* feature-extraction
+        // target (`startFeat + coreFrames + rightContext`), and `startFeat` only
+        // advances inside `process()`'s chunk-draining — so addAudio-only calls
+        // stop trimming that buffer after the first ~104-frame chunk and it grows
+        // right back to whole-file size by the time `finalizeSession` runs.
+        // `process(samples:)` drains completed chunks on every call, which is what
+        // actually keeps both the raw-sample and feature buffers bounded as each
+        // window is resampled and handed off.
+        let file = try AVAudioFile(forReading: audioFile)
+        try ChunkedAudioReader.read(file) { window in
+            let chunkSamples = try converter.resampleBuffer(window)
+            _ = try diarizer.process(samples: chunkSamples)
+        }
+        try diarizer.finalizeSession()
+        let timeline = diarizer.timeline
+        let turns = Self.turns(from: timeline)
 
-        // The name from enrollment lives on the speaker. `DiarizerSegment.speakerLabel`
-        // is hardcoded to "Speaker \(index)" and never carries it, so reading the
-        // segment's label silently discards every enrolled name.
-        let turns = timeline.speakers.values
+        let named = Set(timeline.speakers.values.compactMap(\.name))
+        log.notice("Named speakers: \(named.sorted().joined(separator: ", "), privacy: .public)")
+
+        log.notice("Diarized \(audioFile.lastPathComponent, privacy: .public): \(turns.count, privacy: .public) turns")
+        return turns
+    }
+
+    /// Reads a finalized `DiarizerTimeline` into the `[SpeakerTurn]` shape callers
+    /// use. `internal`, not `private`, so `DiarizationMemoryHarness`'s comparison
+    /// path (which builds its own timeline via the pre-fix whole-file call) turns
+    /// it into the exact same shape `attribute` returns — the regression test that
+    /// compares them would otherwise be comparing apples to a hand-rolled
+    /// imitation of oranges.
+    ///
+    /// The name from enrollment lives on the speaker. `DiarizerSegment.speakerLabel`
+    /// is hardcoded to "Speaker \(index)" and never carries it, so reading the
+    /// segment's label silently discards every enrolled name.
+    static func turns(from timeline: DiarizerTimeline) -> [SpeakerTurn] {
+        timeline.speakers.values
             .flatMap { speaker in
                 let label = speaker.name ?? "Speaker \(speaker.index)"
                 return speaker.finalizedSegments.map {
@@ -113,12 +150,6 @@ public actor SpeakerAttributionService {
                 }
             }
             .sorted { $0.startTime < $1.startTime }
-
-        let named = Set(timeline.speakers.values.compactMap(\.name))
-        log.notice("Named speakers: \(named.sorted().joined(separator: ", "), privacy: .public)")
-
-        log.notice("Diarized \(audioFile.lastPathComponent, privacy: .public): \(turns.count, privacy: .public) turns")
-        return turns
     }
 }
 
