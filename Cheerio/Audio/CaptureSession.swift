@@ -68,9 +68,9 @@ final class CaptureSession {
     private var recorder: MeetingAudioRecorder?
     private var consumerTasks: [Task<Void, Never>] = []
     /// Flushes finalized transcript segments to disk on ``checkpointInterval``'s
-    /// cadence — see ``startCheckpointing(context:)``. Cancelled in ``stop(context:)``
-    /// and ``rollbackFailedStart(context:)``, both of which take over saving
-    /// explicitly from that point on.
+    /// cadence — see ``startCheckpointing(context:)``. Cancelled in ``stop(context:)``,
+    /// which takes over saving explicitly from that point on, and defensively in
+    /// ``rollbackFailedStart()``, which in practice never finds it running.
     private var checkpointTask: Task<Void, Never>?
     /// How often ``handle(_:context:)``'s inserts are checkpointed while recording.
     ///
@@ -111,10 +111,10 @@ final class CaptureSession {
                 context: context)
         } catch {
             // Half-started is the worst state to leave: engines running, the recorder
-            // holding open files, possibly a live microphone, an empty meeting in the
-            // library, and the UI stuck on "Preparing model…" with no way back. Unwind
-            // all of it before handing the error up.
-            await rollbackFailedStart(context: context)
+            // holding open files, possibly a live microphone, and the UI stuck on
+            // "Preparing model…" with no way back. Unwind all of it before handing the
+            // error up.
+            await rollbackFailedStart()
             throw error
         }
     }
@@ -143,13 +143,12 @@ final class CaptureSession {
         if let me = SpeakerLabeling.allEnrolled(context: context).first(where: \.isMe) {
             meeting.participantNames = [me.name]
         }
-        // Inserted now but not yet saved — see the save right before `state =
-        // .recording` below for why persisting waits until both capture channels
-        // have actually started. The unsaved model is fine to use for the rest of
-        // this setup: everything between here and there only ever mutates it or
-        // reads it back from `self.meeting`, in this same context, on this same
-        // actor.
-        context.insert(meeting)
+        // Not inserted yet — see the insert right before `state = .recording`
+        // below for why. `self.meeting` is a plain Swift reference to an object
+        // this `context` doesn't know about yet, which is exactly the point:
+        // setting it can't touch disk. The rest of this setup only ever mutates
+        // this local `meeting` or reads it back through `self.meeting`, on this
+        // same actor, so nothing here needs it context-attached.
         self.meeting = meeting
         self.calendarEventOccurrenceStart = calendarEventOccurrenceStart
         self.startedAt = .now
@@ -207,23 +206,35 @@ final class CaptureSession {
         try micCapture.start(mode: .current)
         try systemTap.start()
 
-        // Persisted only now, not at `insert(meeting)` above: everything since
-        // then can still throw (either engine's `start()`, either capture source's
-        // `start()`), and `start()`'s catch block unwinds all of it through
-        // `rollbackFailedStart` on any of those. Saving before this point would
-        // let a second process (the MCP helper) observe a meeting for a recording
-        // that never actually happened — and worse, a *permanent* one if the
-        // rollback's own save then failed too, since nothing after that would ever
-        // try again. Deferred to exactly here, once nothing standing between this
-        // and `state = .recording` can still fail, saving is the last thing that
-        // can go wrong with starting a recording rather than one more thing that
-        // can leave a ghost row behind.
+        // Inserted only now, not when `meeting` was created above: everything
+        // since then can still throw (either engine's `start()`, either capture
+        // source's `start()`), and `start()`'s catch block unwinds all of it
+        // through `rollbackFailedStart` on any of those.
+        //
+        // This has to be the *insert* that's deferred, not just the `save()` below
+        // — `context` is the environment's `ModelContext` (every call site reaches
+        // `start(context:)` through `@Environment(\.modelContext)` or
+        // `ModelContainer.mainContext`, neither of which this app ever opts out of
+        // SwiftData's default `autosaveEnabled = true` for; contrast
+        // `MeetingQueryService.makeContext()` in CheerioKit, which sets
+        // `autosaveEnabled = false` explicitly because *that* context must never
+        // write on its own). Inserting early and only deferring the explicit save
+        // still leaves the meeting sitting in this autosaving context's pending
+        // changes across every `await` between here and there — any of which can
+        // let the run loop service something that trips autosave before this
+        // function ever calls `save()` itself. Deferring the insert closes that
+        // gap outright: there's nothing in `context`'s pending changes for
+        // autosave to act on until this line runs, and nothing suspends between
+        // this line and the explicit `save()` two lines down, so no interleaved
+        // event gets a chance to write an incomplete recording to disk before this
+        // function decides to.
         //
         // `stableID` is read here rather than left to backfill lazily, so the row
         // that lands on disk already carries the same identifier
         // `fireTranscriptReadyCallback` will hand out later — a reader that saw
         // this meeting mid-call and one that sees it after `stop()` need to agree
         // it's the same meeting.
+        context.insert(meeting)
         _ = meeting.stableID
         do {
             try context.save()
@@ -233,10 +244,10 @@ final class CaptureSession {
             // until the next one succeeds — at worst `stop()`'s own save.
             log.error("Couldn't persist meeting at recording start: \(error)")
         }
-        // Started only now too: a checkpoint firing any earlier has nothing on
-        // disk yet to add to, and — if it fired before the save above, on a slow
-        // enough model or device — would save a meeting with no `stableID` at all,
-        // defeating the save above's entire point.
+        // Started only now too: a checkpoint firing any earlier has nothing
+        // inserted yet to add to, and — if it fired between the insert and the
+        // save just above — would save a meeting with no `stableID` at all,
+        // defeating the save's entire point.
         startCheckpointing(context: context)
 
         state = .recording
@@ -251,9 +262,11 @@ final class CaptureSession {
 
     /// Starts the periodic save that makes ``handle(_:context:)``'s inserts visible
     /// to a second process, on ``checkpointInterval``'s cadence for as long as this
-    /// task runs — cancelled by ``stop(context:)`` and
-    /// ``rollbackFailedStart(context:)``, both of which save explicitly from that
-    /// point.
+    /// task runs — cancelled by ``stop(context:)``, which saves explicitly from
+    /// that point on. ``rollbackFailedStart()`` also cancels it defensively, but
+    /// can never actually find it running: this is the last thing `startCapturing`
+    /// calls before nothing further can throw, so a rollback never happens once
+    /// this has.
     private func startCheckpointing(context: ModelContext) {
         checkpointTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -297,7 +310,15 @@ final class CaptureSession {
 
     /// Returns to `.idle` from a `start` that threw partway through, leaving nothing
     /// running and no empty meeting behind.
-    private func rollbackFailedStart(context: ModelContext) async {
+    ///
+    /// No `ModelContext` involved, and deliberately so: `startCapturing` only ever
+    /// inserts the meeting once nothing between there and `state = .recording` can
+    /// still throw, so reaching this rollback means it was never inserted at all —
+    /// there is nothing in any context to delete or to undo with a save. The one
+    /// real cleanup left is the audio directory: `MeetingAudioRecorder.make()` can
+    /// succeed and record a path on `meeting` before either capture source's own
+    /// `start()` throws afterward, and that one did touch disk.
+    private func rollbackFailedStart() async {
         micCapture?.stop()
         systemTap?.stop()
         try? await micEngine?.stop()
@@ -308,21 +329,8 @@ final class CaptureSession {
         checkpointTask = nil
         await recorder?.finish()
 
-        if let meeting {
-            // Nothing was captured, so this would be an empty row in the library and an
-            // empty directory on disk. `startCapturing` only ever saves the meeting
-            // once nothing between there and `state = .recording` can still throw, so
-            // reaching this rollback means it never did — deleting an insert this
-            // context never saved needs no save of its own to undo, and this one is
-            // just belt-and-suspenders against that ordering changing later without
-            // this being noticed. Either way, no second process ever saw this row: the
-            // failure mode a save-then-delete-then-failed-save would risk (a
-            // permanently ghosted meeting nothing writes to again) can't happen here.
-            if let relativePath = meeting.audioDirectory {
-                try? AudioStorage.removeDirectory(atRelativePath: relativePath)
-            }
-            context.delete(meeting)
-            try? context.save()
+        if let relativePath = meeting?.audioDirectory {
+            try? AudioStorage.removeDirectory(atRelativePath: relativePath)
         }
 
         micEngine = nil
