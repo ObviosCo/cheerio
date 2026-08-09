@@ -319,10 +319,11 @@ struct MeetingListView: View {
     ///   `timeZoneID` cancels and restarts this `.task(id:)`, so the new zone takes
     ///   effect immediately instead of waiting out the stale deadline.
     /// - **Wake-after-suspend**, where the zone changed while the *process* wasn't
-    ///   running to receive that notification at all: `Calendar.current` is still
-    ///   re-read inside the loop below, not hoisted above it, so the restart this
-    ///   causes (see the next paragraph) re-derives the boundary under whatever zone
-    ///   is current the moment the Mac wakes.
+    ///   running to receive that notification at all: on wake, `Task.sleep` simply
+    ///   resumes and the loop begins its next iteration — no restart involved — and
+    ///   because `Calendar.current` is re-read inside the loop rather than hoisted
+    ///   above it, that iteration derives the next boundary under whatever zone is
+    ///   current the moment the Mac wakes.
     private func midnightRollover() async {
         while !Task.isCancelled {
             now = .now

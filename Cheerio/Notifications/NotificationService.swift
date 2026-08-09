@@ -378,9 +378,21 @@ final class NotificationService {
                 // un-recording it lets the occurrence be offered again if it becomes
                 // eligible; a banner that already delivered counts under the
                 // never-ask-twice contract even though it's being cleared as stale.
-                let wasDelivered = await center.deliveredNotifications()
-                    .contains { $0.request.identifier == request.identifier }
+                //
+                // An immediate (nil-trigger) request is treated as delivered without
+                // asking Notification Center: it's handed straight off on `add`, and
+                // a delivered-list query can race the handoff and miss it. For a
+                // scheduled trigger the pending removal runs *first*, so by the time
+                // the delivered list is read the request can no longer transition
+                // into it — the answer is authoritative, not a snapshot.
                 center.removePendingNotificationRequests(withIdentifiers: [request.identifier])
+                let wasDelivered: Bool
+                if request.trigger == nil {
+                    wasDelivered = true
+                } else {
+                    wasDelivered = await center.deliveredNotifications()
+                        .contains { $0.request.identifier == request.identifier }
+                }
                 center.removeDeliveredNotifications(withIdentifiers: [request.identifier])
                 if !wasDelivered {
                     ledger.remove([suggestion.occurrenceKey])
@@ -416,31 +428,35 @@ final class NotificationService {
     /// exactly what every caller of this function exists to prevent — clearing only
     /// the pending queue would leave that banner visible and actionable.
     private func removePendingSuggestionRequests(withPrefix prefix: String) async {
+        // Order is the correctness here. The pending queue is snapshotted and
+        // cleared *first*, so a request caught in that snapshot can no longer fire;
+        // only then is the delivered list read, which makes it authoritative — a
+        // request that slipped from pending to delivered between the snapshot and
+        // the removal shows up in it rather than falling between two stale
+        // snapshots and leaving an actionable banner behind.
         let pending = await center.pendingNotificationRequests()
         let pendingMatching = pending.map(\.identifier).filter { $0.hasPrefix(prefix) }
-
-        let delivered = await center.deliveredNotifications()
-        let deliveredMatching = delivered.map { $0.request.identifier }.filter { $0.hasPrefix(prefix) }
-
-        guard !pendingMatching.isEmpty || !deliveredMatching.isEmpty else { return }
-
         if !pendingMatching.isEmpty {
             center.removePendingNotificationRequests(withIdentifiers: pendingMatching)
         }
+
+        let delivered = await center.deliveredNotifications()
+        let deliveredMatching = delivered.map { $0.request.identifier }.filter { $0.hasPrefix(prefix) }
         if !deliveredMatching.isEmpty {
             center.removeDeliveredNotifications(withIdentifiers: deliveredMatching)
         }
 
-        // Only pending requests get un-recorded from the ledger. A pending request
-        // was an offer the user never saw, so withdrawing it should let the
-        // occurrence be offered again if it becomes eligible before it starts (the
-        // identifier is the category prefix plus the occurrence key, so stripping
-        // the prefix recovers the ledger key). A *delivered* banner was an offer
-        // made — the ledger's never-ask-twice contract counts it whether or not it
-        // was acted on — so its entry stays even as the stale banner is cleared
-        // above; dropping it would invite the same suggestion to be scheduled again
-        // the moment recording stops or the toggle comes back on.
-        let occurrenceKeys = pendingMatching.map {
+        // Only requests that were withdrawn *unseen* get un-recorded from the
+        // ledger. A pending request the user never saw should be offerable again if
+        // its occurrence becomes eligible before it starts (the identifier is the
+        // category prefix plus the occurrence key, so stripping the prefix recovers
+        // the ledger key). A *delivered* banner was an offer made — the
+        // never-ask-twice contract counts it whether or not it was acted on — so
+        // anything in the delivered list keeps its entry even as the stale banner
+        // is cleared above, including a request that was pending in the first
+        // snapshot and fired before the removal landed.
+        let deliveredSet = Set(deliveredMatching)
+        let occurrenceKeys = pendingMatching.filter { !deliveredSet.contains($0) }.map {
             String($0.dropFirst(Self.suggestionRequestPrefix.count))
         }
         if !occurrenceKeys.isEmpty {
