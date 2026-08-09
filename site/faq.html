@@ -94,7 +94,7 @@
       <div class="stack stack--3" id="app-store">
         <h2 class="sub-title">Why isn't it on the Mac App Store?</h2>
         <p class="muted">Because it can't be. Capturing system audio needs the App Sandbox turned off, and the App Store requires it on. That isn't a preference or a shortcut. A sandboxed build creates the audio tap successfully at every step, reports no error, prompts for nothing, and then records pure digital silence. We measured it on identical code: the sandboxed build peaked at 0.0, the unsandboxed one at −1.8&nbsp;dBFS.</p>
-        <p class="muted">It comes from <a href="download.html">this site</a> instead. Builds are Developer&nbsp;ID-signed and notarized by Apple, so they open without warnings or right-click ceremony, and the app updates itself after that.</p>
+        <p class="muted">It comes from <a href="download.html">this site</a> instead. Builds are Developer&nbsp;ID-signed and notarized by Apple, so the first open is macOS's ordinary downloaded-app confirmation, not a scary block or a right-click ceremony. After that the app updates itself.</p>
       </div>
     </div>
   </section>
