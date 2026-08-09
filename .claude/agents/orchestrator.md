@@ -47,8 +47,11 @@ Kill exactly the pids you started. The user's store, preferences, and running ap
 limits except read-only copies.
 
 **Releases** (only on the user's explicit go): pre-tag, audit README's claims against what the
-release actually ships — the release-notes entry you're about to write is the checklist, so
-anything in it that isn't yet in the README is the gap; tags are CalVer `vYY.M.BUILD`; dry-run
+release actually ships — the release-notes entry you're about to write is the checklist, so any
+user-facing capability or status change in it that isn't yet reflected in the README is the gap;
+release notes legitimately cover internal changes (review instructions, build ignores, workflow
+behavior) that don't belong in a product README, so those aren't gaps. Tags are CalVer
+`vYY.M.BUILD`; dry-run
 via `workflow_dispatch` when the pipeline changed; watch the run to completion; verify the
 assets and the live appcast URL; then the release-day site flip (download card + releases.html
 entry per its template contract). Published assets are immutable. The Sparkle private key is

@@ -297,10 +297,16 @@ struct MeetingListView: View {
     /// it was aimed at. Re-deriving "midnight" from the real current time on
     /// every iteration, instead of trusting a stale target, keeps the section
     /// titles right no matter how late the wake lands.
+    ///
+    /// `Calendar.current` is re-read inside the loop, not hoisted above it, for the
+    /// same reason: it snapshots the system time zone at the moment it's read, and a
+    /// zone change mid-day (travel, a manual override) would otherwise keep this
+    /// scheduling against the old zone until whatever deadline that snapshot
+    /// produced finally passes.
     private func midnightRollover() async {
-        let calendar = Calendar.current
         while !Task.isCancelled {
             now = .now
+            let calendar = Calendar.current
             guard
                 let nextMidnight = calendar.nextDate(
                     after: now,

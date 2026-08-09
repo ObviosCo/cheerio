@@ -179,8 +179,13 @@ final class NotificationService {
 
         // No calendar access means no suggestions, silently and permanently — the
         // permission is optional by design and this is not a place to ask for it.
-        // `refreshAccessStatus` is the read that never prompts.
-        guard await CalendarService.shared.refreshAccessStatus() else { return }
+        // `refreshAccessStatus` is the read that never prompts. Same backstop as the
+        // disabled-toggle guard above: revoking access mid-day shouldn't leave
+        // whatever's already pending sitting in the system's queue.
+        guard await CalendarService.shared.refreshAccessStatus() else {
+            await removePendingSuggestionRequests(withPrefix: Self.suggestionRequestPrefix)
+            return
+        }
 
         // First diff pass, against whatever's true right now. Withdrawing a request
         // that no longer qualifies — its event was cancelled, deleted, moved, or
@@ -356,6 +361,19 @@ final class NotificationService {
             // offer is as good as a made one. Keyed by occurrence, not by the raw
             // event id — see `MeetingSuggestion.occurrenceKey`.
             ledger.record(suggestion.occurrenceKey, at: now)
+
+            // `add` suspends, so `recordingDidStart()` or the toggle-disabled observer
+            // can run and finish removing every pending suggestion request while this
+            // insert was still in flight — that removal would have missed the request
+            // this call just added, because it didn't exist yet. Recheck both gates now
+            // that we're back, and undo this one specific insert if either flipped,
+            // rather than trusting the state read before the `await` above.
+            guard !isRecording, NotificationSettings.suggestsRecording else {
+                center.removePendingNotificationRequests(withIdentifiers: [request.identifier])
+                ledger.remove([suggestion.occurrenceKey])
+                ledger.save()
+                return
+            }
         } catch {
             log.error("Couldn't schedule a recording suggestion: \(error, privacy: .public)")
         }
