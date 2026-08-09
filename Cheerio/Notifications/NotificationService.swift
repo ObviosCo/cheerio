@@ -189,9 +189,21 @@ final class NotificationService {
         // `isRecording` has to suppress offers during one — while its
         // `calendarEventID` is always nil, since a directive is never started against
         // an event, so nothing gets withdrawn on its account.
+        //
+        // `occurrenceStart` is paired with whichever of `meeting`/`lastFinishedMeeting`
+        // won above — never `meeting.startedAt`, which is when capture actually began
+        // and can drift seconds from the calendar occurrence's own start, which is
+        // what `MeetingSuggestion.occurrenceKey` is keyed on downstream. Getting that
+        // pairing wrong is exactly the bug this exists to avoid: a mismatch would
+        // either fail to withhold the offer for the occurrence just recorded, or
+        // (worse) suppress a *different* occurrence of the same recurring event.
+        let occurrenceStart =
+            session.meeting != nil
+            ? session.calendarEventOccurrenceStart : session.lastFinishedMeetingOccurrenceStart
         let recording = MeetingSuggestionPlanner.RecordingContext(
             isRecording: session.state != .idle,
-            eventID: (session.meeting ?? session.lastFinishedMeeting)?.calendarEventID
+            eventID: (session.meeting ?? session.lastFinishedMeeting)?.calendarEventID,
+            occurrenceStart: occurrenceStart
         )
 
         // A recording that started for an event we'd already queued an offer for
@@ -309,6 +321,35 @@ final class NotificationService {
     private func clearPendingSuggestionsIfDisabled() async {
         guard !NotificationSettings.suggestsRecording else { return }
         await removePendingSuggestionRequests(withPrefix: Self.suggestionRequestPrefix)
+    }
+
+    /// Withdraws every pending "record it?" offer the instant a recording begins.
+    ///
+    /// Called once, from `CaptureSession.startCapturing()` — the single place every
+    /// recording path funnels through, whether it started from the menu bar, the
+    /// library, a notification action, or onboarding — rather than duplicated at
+    /// each of those call sites.
+    ///
+    /// This exists because ``reconcileCalendarSuggestions()``'s withdrawal is a
+    /// backstop, not a guarantee: it only runs on its own ``reconcileInterval``
+    /// cadence, so a request scheduled shortly before it fires can be delivered
+    /// before that loop ever gets to it. `willPresent` (``presentationOptions(for:)``)
+    /// catches a suggestion that fires *while already recording*, but only when
+    /// Cheerio is frontmost to run it — the delegate method is foreground-only, so a
+    /// banner delivered while the app is backgrounded skips it entirely and shows a
+    /// "Start Recording" action for a slot that's already taken. Withdrawing right
+    /// here, at the one moment a recording is guaranteed to have just started, closes
+    /// that gap regardless of what's frontmost. `willPresent`'s suppression stays in
+    /// place alongside this — it's what catches the case this hook can't: an offer
+    /// for something other than the event just recorded, still sitting in the
+    /// system's queue, delivered while a recording — any recording — is already in
+    /// flight and none of it can be honoured.
+    ///
+    /// Every pending suggestion, not just the one tied to the event that started
+    /// recording: Cheerio records one meeting at a time, so nothing else pending
+    /// could be honoured either.
+    func recordingDidStart() {
+        Task { await removePendingSuggestionRequests(withPrefix: Self.suggestionRequestPrefix) }
     }
 
     // MARK: Notes ready
@@ -495,6 +536,7 @@ final class NotificationService {
             try await session.start(
                 title: response.eventTitle ?? "Meeting \(Date.now.formatted(date: .abbreviated, time: .shortened))",
                 calendarEventID: response.eventID,
+                calendarEventOccurrenceStart: response.eventStart,
                 kind: .meeting,
                 context: container.mainContext
             )

@@ -78,18 +78,38 @@ public enum MeetingSuggestionPlanner {
     /// What the recorder is doing, which is a veto rather than a filter.
     public struct RecordingContext: Equatable, Sendable {
         public let isRecording: Bool
-        /// The calendar event the in-flight recording is linked to, if any.
+        /// The calendar event the in-flight (or just-finished) recording is linked
+        /// to, if any. Kept around for `NotificationService` to withdraw that
+        /// event's already-pending notification requests — never compare this
+        /// directly against a candidate meeting's id for the dedup veto below; see
+        /// ``occurrenceKey``.
         public let eventID: String?
+        /// Identifies the *specific occurrence* of ``eventID`` the recording is or
+        /// was tied to — see
+        /// ``MeetingSuggestion/occurrenceKey(eventID:startDate:)``. `eventID` alone
+        /// can't stand in for this: it repeats across every occurrence of a
+        /// recurring event, so comparing it directly would suppress every later
+        /// occurrence of that event for as long as this context persists (in
+        /// practice, until the *next* recording finishes and replaces
+        /// `lastFinishedMeeting`) — recording today's standup would otherwise keep
+        /// tomorrow's off the offer list too. Nil whenever `eventID` is, or when the
+        /// occurrence's start date wasn't available when the recording began; either
+        /// way, that withholds the veto rather than risking one broader than the
+        /// single occurrence actually recorded.
+        public let occurrenceKey: String?
 
-        public static let idle = RecordingContext(isRecording: false, eventID: nil)
+        public static let idle = RecordingContext(isRecording: false, eventID: nil, occurrenceStart: nil)
 
-        public static func recording(eventID: String?) -> RecordingContext {
-            RecordingContext(isRecording: true, eventID: eventID)
+        public static func recording(eventID: String?, occurrenceStart: Date? = nil) -> RecordingContext {
+            RecordingContext(isRecording: true, eventID: eventID, occurrenceStart: occurrenceStart)
         }
 
-        public init(isRecording: Bool, eventID: String?) {
+        public init(isRecording: Bool, eventID: String?, occurrenceStart: Date? = nil) {
             self.isRecording = isRecording
             self.eventID = eventID
+            self.occurrenceKey = eventID.flatMap { id in
+                occurrenceStart.map { MeetingSuggestion.occurrenceKey(eventID: id, startDate: $0) }
+            }
         }
     }
 
@@ -97,8 +117,11 @@ public enum MeetingSuggestionPlanner {
     ///
     /// An event qualifies when all of these hold:
     /// - Nothing is being recorded. Cheerio records one meeting at a time, so an
-    ///   offer to start a second one is an offer it couldn't honour — and the event
-    ///   the user is *already* recording least of all.
+    ///   offer to start a second one is an offer it couldn't honour — and, once
+    ///   idle again, the *occurrence* just recorded least of all
+    ///   (``RecordingContext/occurrenceKey``). Scoped to that one occurrence rather
+    ///   than the event as a whole, so recording today's standup doesn't suppress
+    ///   tomorrow's.
     /// - It isn't all-day. `CalendarService.todaysMeetings` filters these out too;
     ///   the check is repeated here so the rule survives being handed a list from
     ///   somewhere else, and so it's visible in one place with the others.
@@ -127,7 +150,7 @@ public enum MeetingSuggestionPlanner {
                 let occurrenceKey = MeetingSuggestion.occurrenceKey(
                     eventID: meeting.id, startDate: meeting.startDate)
                 guard !alreadyNotified.contains(occurrenceKey) else { return false }
-                guard meeting.id != recording.eventID else { return false }
+                guard occurrenceKey != recording.occurrenceKey else { return false }
                 guard meeting.endDate > meeting.startDate else { return false }
                 guard meeting.endDate > now else { return false }
                 guard meeting.startDate <= now.addingTimeInterval(lookahead) else { return false }

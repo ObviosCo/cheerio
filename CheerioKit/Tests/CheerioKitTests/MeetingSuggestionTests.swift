@@ -126,12 +126,40 @@ import Testing
     @Test func skipsTheEventLinkedToTheLastRecordingEvenOnceIdle() {
         // Stopping early — a call that ran short — shouldn't re-offer the meeting you
         // just recorded while its slot is still on the calendar.
-        let context = MeetingSuggestionPlanner.RecordingContext(isRecording: false, eventID: "being-recorded")
+        let recorded = event(id: "being-recorded", startsIn: -60)
+        let context = MeetingSuggestionPlanner.RecordingContext(
+            isRecording: false, eventID: recorded.id, occurrenceStart: recorded.startDate)
         let suggestions = plan(
-            [event(id: "being-recorded", startsIn: -60), event(id: "another", startsIn: 300)],
+            [recorded, event(id: "another", startsIn: 300)],
             recording: context
         )
         #expect(suggestions.map(\.eventID) == ["another"])
+    }
+
+    @Test func recordingOneOccurrenceOfARecurringEventDoesNotSuppressTheNextOne() {
+        // `EKEvent.eventIdentifier` repeats across every occurrence of a recurring
+        // event, so the just-finished recording's context has to be scoped to the
+        // exact occurrence it was tied to — otherwise recording today's standup
+        // would suppress tomorrow's for as long as `lastFinishedMeeting` persists,
+        // which in practice is until the *next* recording finishes.
+        let justRecorded = event(id: "standup", startsIn: -60)
+        let nextOccurrence = event(id: "standup", startsIn: 300)
+        let context = MeetingSuggestionPlanner.RecordingContext(
+            isRecording: false, eventID: justRecorded.id, occurrenceStart: justRecorded.startDate)
+        let suggestions = plan([justRecorded, nextOccurrence], recording: context)
+        #expect(suggestions.count == 1)
+        #expect(suggestions.first?.startDate == nextOccurrence.startDate)
+    }
+
+    @Test func withholdsTheVetoWhenTheOccurrenceIsUnknown() {
+        // A `RecordingContext` built with an event id but no occurrence start (the
+        // pre-fix shape) can't identify which occurrence was recorded, so it must
+        // not veto by bare event id either — that was the actual bug: comparing
+        // `eventID` alone suppressed every occurrence of a recurring event, not just
+        // the one just recorded.
+        let context = MeetingSuggestionPlanner.RecordingContext(isRecording: false, eventID: "standup")
+        let suggestions = plan([event(id: "standup", startsIn: 300)], recording: context)
+        #expect(suggestions.count == 1)
     }
 
     @Test func sortsBySoonestFirst() {

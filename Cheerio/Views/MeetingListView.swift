@@ -250,6 +250,7 @@ struct MeetingListView: View {
                 try await session.start(
                     title: event?.title ?? "Meeting \(Date.now.formatted(date: .abbreviated, time: .shortened))",
                     calendarEventID: event?.id,
+                    calendarEventOccurrenceStart: event?.startDate,
                     context: context
                 )
             } catch {

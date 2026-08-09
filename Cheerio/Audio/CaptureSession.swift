@@ -40,6 +40,19 @@ final class CaptureSession {
     /// The meeting from the last completed recording, kept after ``meeting`` is
     /// cleared so the UI can show its notes once we're idle again.
     private(set) var lastFinishedMeeting: Meeting?
+    /// The calendar occurrence's own start date for ``meeting``, if it was started
+    /// against one — distinct from `Meeting.startedAt`, which is when capture
+    /// actually began and so can't stand in for it. `NotificationService` pairs
+    /// this with `meeting.calendarEventID` to build the exact occurrence key it
+    /// vetoes, rather than the raw event id, which repeats across every occurrence
+    /// of a recurring event.
+    private(set) var calendarEventOccurrenceStart: Date?
+    /// The same pairing as ``calendarEventOccurrenceStart``, snapshotted alongside
+    /// ``lastFinishedMeeting`` at the moment it's set, for the same reason
+    /// ``lastFinishedMeeting`` itself exists: `NotificationService` still needs it
+    /// once ``meeting`` and ``calendarEventOccurrenceStart`` have both gone back to
+    /// nil.
+    private(set) var lastFinishedMeetingOccurrenceStart: Date?
 
     /// Live transcript lines for the UI. Volatile tail is replaced in place.
     private(set) var liveLines: [TranscriptionUpdate] = []
@@ -60,6 +73,7 @@ final class CaptureSession {
     func start(
         title: String,
         calendarEventID: String?,
+        calendarEventOccurrenceStart: Date? = nil,
         kind: MeetingKind = .meeting,
         context: ModelContext
     ) async throws {
@@ -67,7 +81,11 @@ final class CaptureSession {
         state = .preparingModel
         do {
             try await startCapturing(
-                title: title, calendarEventID: calendarEventID, kind: kind, context: context)
+                title: title,
+                calendarEventID: calendarEventID,
+                calendarEventOccurrenceStart: calendarEventOccurrenceStart,
+                kind: kind,
+                context: context)
         } catch {
             // Half-started is the worst state to leave: engines running, the recorder
             // holding open files, possibly a live microphone, an empty meeting in the
@@ -81,6 +99,7 @@ final class CaptureSession {
     private func startCapturing(
         title: String,
         calendarEventID: String?,
+        calendarEventOccurrenceStart: Date?,
         kind: MeetingKind,
         context: ModelContext
     ) async throws {
@@ -103,6 +122,7 @@ final class CaptureSession {
         }
         context.insert(meeting)
         self.meeting = meeting
+        self.calendarEventOccurrenceStart = calendarEventOccurrenceStart
         self.startedAt = .now
         self.liveLines = []
         self.roughNotes = ""
@@ -156,6 +176,12 @@ final class CaptureSession {
 
         state = .recording
         log.info("Recording started: \(title, privacy: .public)")
+        // Withdraws any pending "record it?" offer immediately, rather than leaving
+        // one sitting in the system's queue until `NotificationService`'s 5-minute
+        // reconcile loop happens to get to it — which, if a request is close enough
+        // to its fire time, can lose that race. See
+        // `NotificationService.recordingDidStart()` for the rest of the reasoning.
+        NotificationService.shared.recordingDidStart()
     }
 
     /// Waits for the transcript consumers to finish handing over their last updates.
@@ -204,6 +230,7 @@ final class CaptureSession {
         systemTap = nil
         recorder = nil
         meeting = nil
+        calendarEventOccurrenceStart = nil
         startedAt = nil
         liveLines = []
         volatileLine = nil
@@ -327,7 +354,9 @@ final class CaptureSession {
         systemTap = nil
         recorder = nil
         lastFinishedMeeting = meeting
+        lastFinishedMeetingOccurrenceStart = calendarEventOccurrenceStart
         meeting = nil
+        calendarEventOccurrenceStart = nil
         state = .idle
     }
 
