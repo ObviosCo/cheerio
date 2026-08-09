@@ -32,10 +32,11 @@ enum LaunchLocationCheck {
         let location = LaunchLocationClassifier.classify(
             bundlePath: bundleURL.path,
             isQuarantined: isQuarantined(bundleURL),
-            isOnReadOnlyVolume: isOnReadOnlyVolume(bundleURL)
+            isOnReadOnlyVolume: isOnReadOnlyVolume(bundleURL),
+            isInApplicationsDirectory: InstalledCopyScan.isInApplicationsDirectory(bundlePath: bundleURL.path)
         )
         let advisory = LaunchAdvisoryClassifier.advise(
-            location: location, installedBundlePath: InstalledCopyLocator.find()
+            location: location, installedBundlePath: InstalledCopyScan.find()
         )
 
         switch advisory {
@@ -65,7 +66,20 @@ enum LaunchLocationCheck {
         // Never silently relaunch anything — both buttons are a choice the
         // user made, and both end with this (unstable) copy gone.
         if alert.runModal() == .alertFirstButtonReturn {
-            ActivateInstalledCopy.activateAndCheckForUpdates(installedBundlePath: installedBundlePath)
+            switch ActivateInstalledCopy.activateAndCheckForUpdates(installedBundlePath: installedBundlePath) {
+            case .activated:
+                break
+            case .installedCopyTooOldForHandoff:
+                // The button just said "Check for Updates," so leaving without
+                // telling the user it didn't happen would read as a dead
+                // button rather than the back-compat gap it actually is.
+                let fallbackAlert = NSAlert()
+                fallbackAlert.messageText = "Check for Updates From Cheerio Itself"
+                fallbackAlert.informativeText =
+                    "The installed copy is old enough that it can't be asked automatically. In its menu bar, choose Cheerio → Check for Updates…"
+                fallbackAlert.addButton(withTitle: "OK")
+                fallbackAlert.runModal()
+            }
         }
         exit(0)
     }

@@ -29,18 +29,37 @@ public enum LaunchLocationClassifier {
     ///     resolved by the caller — this only ever does string matching on it.
     ///   - isQuarantined: whether `com.apple.quarantine` (or the equivalent
     ///     `URLResourceValues.quarantineProperties`) is set on the bundle.
+    ///     Copying a bundle in Finder preserves extended attributes, so a
+    ///     Gatekeeper-approved app dragged into `/Applications` routinely
+    ///     keeps this flag forever — approval clears the *prompt*, not the
+    ///     xattr. Treated as unstable everywhere except
+    ///     `isInApplicationsDirectory`, below, for exactly that reason: without
+    ///     that carve-out, a completely normal installed launch misclassifies
+    ///     as `.downloaded`, `InstalledCopyLocator` then finds that same
+    ///     bundle as "the installed copy," and the already-installed panel
+    ///     appears on every single launch of the one true copy.
     ///   - isOnReadOnlyVolume: whether the volume containing `bundlePath` is
     ///     mounted read-only. A necessary condition for "sitting on a DMG,"
     ///     but not sufficient on its own — see `hasPrefix("/Volumes/")` below,
     ///     which rules out the boot volume's own read-only system snapshot.
-    public static func classify(bundlePath: String, isQuarantined: Bool, isOnReadOnlyVolume: Bool)
-        -> LaunchLocation
-    {
-        if isQuarantined || isTranslocated(bundlePath: bundlePath) {
+    ///   - isInApplicationsDirectory: whether `bundlePath` is under
+    ///     `/Applications` or `~/Applications` — the caller's
+    ///     `InstalledCopyLocator` scan is the source of truth for exactly
+    ///     which directories those are. Only suppresses the quarantine
+    ///     signal; translocation and a DMG mount are unstable regardless of
+    ///     where the path happens to land, though in practice neither ever
+    ///     resolves to an Applications directory in the first place.
+    public static func classify(
+        bundlePath: String, isQuarantined: Bool, isOnReadOnlyVolume: Bool, isInApplicationsDirectory: Bool
+    ) -> LaunchLocation {
+        if isTranslocated(bundlePath: bundlePath) {
             return .downloaded
         }
         if isOnReadOnlyVolume && bundlePath.hasPrefix("/Volumes/") {
             return .dmg
+        }
+        if isQuarantined && !isInApplicationsDirectory {
+            return .downloaded
         }
         return .normal
     }
