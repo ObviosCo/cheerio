@@ -377,7 +377,12 @@ struct ContentView: View {
     @ViewBuilder private var detail: some View {
         if let selectedMeeting {
             VStack(spacing: 0) {
-                if enrolledSpeakers.isEmpty {
+                // Gates the padding and the divider too, not just the prompt
+                // inside them — `VoiceEnrollmentPrompt` already renders nothing
+                // once dismissed, but leaving this condition on `enrolledSpeakers`
+                // alone would still stack that empty padding and a stray divider
+                // above the transcript for the rest of the session.
+                if enrolledSpeakers.isEmpty, !enrollmentPromptDismissed {
                     VoiceEnrollmentPrompt(
                         isDismissed: enrollmentPromptDismissed,
                         onDismiss: { enrollmentPromptDismissed = true }

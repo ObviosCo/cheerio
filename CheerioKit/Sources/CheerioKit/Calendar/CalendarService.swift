@@ -102,11 +102,24 @@ public actor CalendarService {
     /// stat rows" section into a scroll of its own.
     public func upcomingMeetings(now: Date = .now, horizon: TimeInterval = 7 * 86_400, limit: Int = 5) -> [CalendarMeeting] {
         guard hasAccess else { return [] }
-        return
-            events(from: now, to: now.addingTimeInterval(horizon))
+        return Self.filterUpcoming(events(from: now, to: now.addingTimeInterval(horizon)), now: now, limit: limit)
+    }
+
+    /// The filtering and ordering behind ``upcomingMeetings(now:horizon:limit:)``,
+    /// pulled out as a pure function — like ``MeetingSuggestionPlanner``, this is the
+    /// half of the decision worth testing directly, without an `EKEventStore` behind
+    /// it.
+    ///
+    /// A negative `limit` is clamped to zero rather than trapping: `Array.prefix(_:)`
+    /// requires a non-negative count, and this is a query API a caller can hand any
+    /// `Int`, not a private helper where every call site is already known to be safe.
+    /// Zero reads the same as "no upcoming meetings," which is a coherent answer to
+    /// "show me at most a negative number of them," not a crash.
+    static func filterUpcoming(_ meetings: [CalendarMeeting], now: Date, limit: Int) -> [CalendarMeeting] {
+        meetings
             .filter { !$0.isDeclined && $0.startDate >= now }
             .sorted { $0.startDate < $1.startDate }
-            .prefix(limit)
+            .prefix(max(0, limit))
             .map { $0 }
     }
 

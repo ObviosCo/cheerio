@@ -135,8 +135,9 @@ The CI pass shoots a different, overlapping set: `library`, `library-transcript`
 `library-empty-state`, all six Settings tabs and `onboarding-welcome` — one test per
 surface in `CheerioScreenshotTests`. It also shoots `library-empty-state-no-enrollment`
 against a second seeded store (`seed-store.sh --skip-enrollment`) — meetings exist, but
-nobody's enrolled, so issue #125's voice-enrollment prompt is what's on screen instead
-of the tip. `capture.sh` doesn't reproduce that one locally; it would mean seeding and
+nobody's enrolled, so issue #125's voice-enrollment prompt is on screen too, on top of
+the rest of the dashboard rather than in place of any part of it. `capture.sh` doesn't
+reproduce that one locally; it would mean seeding and
 launching against a second scratch home for a single shot the CI path already covers.
 It doesn't walk the whole walkthrough (seven launches to show what one screen already
 tells a reviewer), and it labels nothing `-2x`: a GitHub runner's display is 1x, so

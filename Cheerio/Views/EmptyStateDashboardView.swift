@@ -56,6 +56,14 @@ struct EmptyStateDashboardView: View {
             .frame(maxWidth: .infinity, alignment: .center)
         }
         .task {
+            // `hasAccess` starts false on a fresh launch, and `ContentView`'s own
+            // refresh is a separate `.task` racing this one — without refreshing
+            // here too, a dashboard that renders before that one lands reads "no
+            // access" and never asks again, showing an empty section forever even
+            // once access is actually granted. `refreshAccessStatus()` never
+            // prompts, so calling it again here costs nothing when the other
+            // `.task` already won the race.
+            await CalendarService.shared.refreshAccessStatus()
             upcoming = await CalendarService.shared.upcomingMeetings()
         }
     }
