@@ -28,6 +28,13 @@ struct CheerioApp: App {
             // A local store we can't open leaves nothing to fall back to.
             fatalError("Couldn't open the local store: \(error)")
         }
+
+        // Here rather than in a `.task`, because this has to happen before the launch
+        // finishes: the notification delegate and its action categories must exist by
+        // then, or a click that *caused* the launch is delivered to nobody. This
+        // prompts for nothing — notification permission is asked for lazily, at the
+        // first moment something would actually be posted.
+        NotificationService.shared.start(session: session, container: container)
     }
 
     var body: some Scene {
@@ -64,10 +71,21 @@ struct CheerioApp: App {
 
         // Start and stop without surfacing the window — the state you need mid-call
         // is "is it recording", and that belongs in the menu bar.
-        MenuBarExtra("Cheerio", systemImage: captureSession.state.menuBarSymbol) {
+        //
+        // Custom label, not `systemImage:` — the glyph is the copper-ring brand
+        // mark (see Views/MenuBarIcon.swift), not a stock SF Symbol. There's no
+        // `MenuBarExtra` initializer that takes an `NSImage` directly, so the
+        // label closure form is what makes `Image(nsImage:)` work here.
+        MenuBarExtra {
             MenuBarView()
                 .environment(captureSession)
                 .environment(updater)
+        } label: {
+            Image(nsImage: captureSession.state.menuBarIcon)
+                // `NSImage.accessibilityDescription` doesn't propagate through
+                // SwiftUI's `Image(nsImage:)` — VoiceOver needs the label on the
+                // SwiftUI view itself, and it must track the state.
+                .accessibilityLabel(captureSession.state.menuBarAccessibilityLabel)
         }
         .modelContainer(container)
 
@@ -105,6 +123,8 @@ struct ContentView: View {
     /// pushing onto a stack inside the sidebar only ever filled the sidebar.
     @State private var selectedMeeting: Meeting?
 
+    private let notifications = NotificationService.shared
+
     var body: some View {
         NavigationSplitView {
             MeetingListView(selection: $selectedMeeting)
@@ -129,6 +149,17 @@ struct ContentView: View {
                 break
             }
         }
+        // The "Open" action on a notes-ready notification lands on the service, which
+        // isn't a view and so has no way to open a window or select anything. It
+        // leaves the request here instead. Both hooks are needed: `onChange` for a
+        // notification handled while this view is already up, and `onAppear` for the
+        // click that opened the window in the first place, where the request was set
+        // before this view existed.
+        .onChange(of: notifications.meetingToOpen) { _, _ in openRequestedMeeting() }
+        .onAppear {
+            notifications.registerMainWindowOpener { openWindow(id: MenuBarView.mainWindowID) }
+            openRequestedMeeting()
+        }
         .task {
             // No-op unless the screenshot harness passed its launch arguments; see
             // `ScreenshotMode`. Here because it's the first point at which this
@@ -147,6 +178,23 @@ struct ContentView: View {
             await CalendarService.shared.refreshAccessStatus()
             // Audio that aged out while the app was closed.
             _ = try? AudioRetentionService.purge(retention: .current, context: context)
+        }
+    }
+
+    /// Selects the meeting a notification asked to open, and clears the request.
+    ///
+    /// Fetches everything and matches in memory rather than building a `#Predicate`
+    /// over the optional `uuid`: the sidebar's `@Query` already holds every meeting
+    /// this user has, so the rows are in the context either way, and this runs at
+    /// most once per notification click. A request naming a meeting that no longer
+    /// exists (deleted since the banner appeared) is dropped — the window is already
+    /// coming forward, which is the useful half of the action.
+    private func openRequestedMeeting() {
+        guard let id = notifications.meetingToOpen else { return }
+        notifications.meetingToOpen = nil
+        let meetings = (try? context.fetch(FetchDescriptor<Meeting>())) ?? []
+        if let match = meetings.first(where: { $0.uuid == id }) {
+            selectedMeeting = match
         }
     }
 

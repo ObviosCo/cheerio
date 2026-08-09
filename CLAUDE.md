@@ -121,6 +121,7 @@ update them alongside Build whenever the commands change.
   submission can't cover both.
 - Bundle prefix `app.cheerio` is a placeholder (`project.yml` TODO).
 - New user-facing features decide whether the first-run walkthrough (`Cheerio/Views/Onboarding/`) needs to teach them — most won't, but a new permission or something as easy to miss as voice enrollment used to be, does.
+- **The README describes the shipped app.** A PR that changes user-facing behavior updates the README's claims in the same PR — features added, limitations removed, status changed. Stale README claims are review-blocking, same as failing lint.
 
 ## Reference
 

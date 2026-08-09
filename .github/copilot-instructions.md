@@ -46,6 +46,15 @@ If the diff changes what the user sees (views, copy, icons, first-run flow):
 (`.github/instructions/ui-changes.instructions.md` also applies this check specifically to
 `Cheerio/Views/**` diffs.)
 
+## Every behavior-changing PR
+
+Not just UI: new MCP tools, callback semantics, capture behavior, settings — anything a user
+or their agent can observe.
+
+- Ask whether this PR changes behavior the README describes or should describe. Flag PRs that
+  add or remove user-facing capability without touching `README.md` — a stale README claim is
+  the same class of problem as a missing screenshot update, just easier to miss.
+
 ## Mechanics
 
 - **`.xcodeproj` is generated, not source.** `project.yml` is the source of truth for the

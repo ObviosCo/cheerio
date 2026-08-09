@@ -11,7 +11,7 @@ struct OnboardingFinishStepView: View {
             symbol: "flag.checkered",
             title: "You're all set",
             subtitle:
-                "Cheerio lives in the menu bar from here on — click the waveform icon any time to start or stop. Let's put it to work."
+                "Cheerio lives in the menu bar from here on — click the ring icon any time to start or stop. Let's put it to work."
         ) {
             EmptyView()
         } footer: {

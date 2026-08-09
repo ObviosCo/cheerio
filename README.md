@@ -32,9 +32,9 @@ workflow already exists — it's just manual, and a chat box is the wrong contai
 boxes are size-limited and easy to overrun; a transcript is naturally long-form, which is
 exactly what makes it a good prompt. Cheerio's job is to make that loop first-class: produce the
 transcript locally, and let the agents already on your machine pick it up instead of you
-copying and pasting it in. (The agent-facing surfaces for this — a bundled MCP server, a
-transcript-ready callback, a directive-capture mode — are on the [roadmap](#roadmap), not built
-yet; see [tracking epic #22](https://github.com/ObviosCo/cheerio/issues/22).)
+copying and pasting it in. The agent-facing surfaces for this all shipped in v26.8.9: a
+bundled MCP server (Settings → Agents), a transcript-ready callback (Settings → Callback),
+and a directive-capture mode ("Give Direction…" in the menu bar).
 
 ## What it does
 
@@ -54,10 +54,22 @@ yet; see [tracking epic #22](https://github.com/ObviosCo/cheerio/issues/22).)
 - **Rough notes are first-class.** A scratchpad sits next to the live transcript during the
   meeting. What you bothered to type is the strongest signal about what mattered.
 - **Enhance locally.** Afterwards the on-device Foundation Model merges your rough notes with
-  the transcript into a summary, key points, decisions, and action items. Long meetings are
-  handled map-reduce style to fit the model's ~4k-token context window.
+  the transcript into a summary, key points, decisions, and action items — attributed to
+  whoever committed to them where the transcript supports it, and never promoted past the
+  evidence: anything unattributed or disputed lands as a follow-up rather than something an
+  agent might act on. Long meetings are handled map-reduce style to fit the model's ~4k-token context
+  window.
+- **Ready for the agents already on your machine.** A bundled MCP server, a transcript-ready
+  callback, and a directive-capture mode from the menu bar turn a finished meeting into
+  something an agent can act on without you copying and pasting — see
+  [Use with Claude Desktop, Claude Code, or any MCP client](#use-with-claude-desktop-claude-code-or-any-mcp-client)
+  below.
 - **Calendar-aware, optionally.** EventKit supplies the current event to title a recording and
   link it back. Denying calendar access costs you only the convenience.
+- **Nothing to configure before your first recording.** First launch walks through the microphone,
+  system-audio, and calendar permissions and enrolling your voice. Recordings title themselves — from the
+  calendar event, or generated from the transcript when there wasn't one — and any title is
+  yours to change by hand.
 - **Library, search, and export.** Browse past meetings, search across titles, notes,
   transcripts, and speaker names, and export any meeting as Markdown.
 - **Audio retention you control.** Raw audio is written to disk per channel so a transcription
@@ -293,12 +305,14 @@ cheerio/
 │       ├── Summarization/    # Foundation Models wrapper, @Generable output
 │       ├── Callback/         # Transcript-ready callback payload + settings
 │       ├── MCP/              # Read-only store access, tools, JSON-RPC responder
+│       ├── Onboarding/       # First-run state, portable
 │       └── Calendar/         # EventKit wrapper
 ├── Cheerio/          # macOS app target
 │   ├── Audio/        # Mic capture, Core Audio process tap, capture session
+│   ├── Callback/     # Runs the transcript-ready callback command
 │   ├── Resources/    # Models/ — fetched, never committed
 │   ├── Updates/      # Sparkle: the app's only network access
-│   └── Views/        # SwiftUI
+│   └── Views/        # SwiftUI, incl. Onboarding/ (first-run walkthrough)
 ├── CheerioScreenshotTests/  # UI tests that photograph the app; CI posts the result to the PR
 └── CheerioMCP/       # cheerio-mcp — stdio MCP server, bundled inside the app
 ```
@@ -318,15 +332,11 @@ Near-term: acoustic echo cancellation on the mic, verification against a live vi
 recording mode (solo / in-person / video call) to drive echo cancellation, an in-room vs.
 remote toggle per participant, and playback of retained audio.
 
-Also near-term, the actionable-transcripts work ([tracking epic
-#22](https://github.com/ObviosCo/cheerio/issues/22)): owner-attributed action items (who
-committed to what, and whether it's the owner's to act on or someone else's to follow up on), a
-transcript-ready callback that hands the finished export to an agent CLI, a directive-capture
-mode for talking instructions at the app instead of narrating a meeting, and a bundled MCP
-server so local agents can query the library directly. None of this exists yet — it's the plan,
-not the app.
+The actionable-transcripts work ([epic #22](https://github.com/ObviosCo/cheerio/issues/22))
+shipped in v26.8.9: owner-attributed action items, the transcript-ready callback, directive
+mode, and the bundled MCP server are all in the app today.
 
-Both capture channels stay on in every mode, including directive mode once it lands. An earlier
+Both capture channels stay on in every mode, including directive mode. An earlier
 plan had modes skip the system tap for solo and in-person recording, on the assumption that
 nothing worth capturing comes out of the machine — but input and output can be different
 devices, and someone recording alone through AirPods still has system audio worth keeping.
