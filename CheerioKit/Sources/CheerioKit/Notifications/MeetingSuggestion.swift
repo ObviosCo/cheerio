@@ -169,6 +169,38 @@ public enum MeetingSuggestionPlanner {
                 )
             }
     }
+
+    /// The pure diff between what's currently pending with the system and what's
+    /// currently a candidate, both keyed by occurrence — the shape reconciliation
+    /// actually needs.
+    ///
+    /// `NotificationService` is the only caller, and the only thing it does with the
+    /// result is turn `toRemove` into a `removePendingNotificationRequests` call and
+    /// `toAdd` into a batch of `schedule` calls — no `UNUserNotificationCenter`
+    /// dependency belongs in the decision itself, so it's kept here, next to
+    /// ``suggestions(for:now:alreadyNotified:recording:)``, where it can be tested
+    /// directly.
+    ///
+    /// `pending` minus `candidates` is what to withdraw: an occurrence that was
+    /// offered but no longer qualifies, because the event was cancelled, deleted,
+    /// moved to a different start (which is a different occurrence key entirely —
+    /// see ``MeetingSuggestion/occurrenceKey``), or declined since the offer went
+    /// out. `candidates` minus `pending` is what's newly worth offering. An empty
+    /// `candidates` set — the suggestion toggle just went off, or a recording just
+    /// started — reduces to "withdraw everything pending," which is exactly the
+    /// cleanup both of those cases need; nothing bespoke required.
+    ///
+    /// Deliberately takes and returns bare occurrence keys rather than
+    /// `MeetingSuggestion`s or `UNNotificationRequest`s: the caller holds the
+    /// mapping from key back to whichever richer value it needs on each side
+    /// (already-pending identifiers on the remove side, full suggestions with a
+    /// title and dates on the add side), and duplicating that mapping in here would
+    /// just be a second place for it to drift from the caller's.
+    public static func reconcile(
+        pending: Set<String>, candidates: Set<String>
+    ) -> (toRemove: Set<String>, toAdd: Set<String>) {
+        (pending.subtracting(candidates), candidates.subtracting(pending))
+    }
 }
 
 /// Which occurrences have already been offered, so none is ever offered twice.

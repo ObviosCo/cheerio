@@ -157,8 +157,9 @@ final class NotificationService {
 
     // MARK: Calendar suggestions
 
-    /// Re-reads today's events and queues an offer for anything newly worth
-    /// suggesting. Every gate that means "not now" returns quietly — there is no
+    /// Re-reads today's events and reconciles the system's pending "record it?"
+    /// offers against them: withdraws whatever no longer qualifies, queues whatever
+    /// newly does. Every gate that means "not now" returns quietly — there is no
     /// state here that a user is waiting on.
     private func reconcileCalendarSuggestions() async {
         // The walkthrough owns the permission sequence on a first run, and it does
@@ -181,63 +182,127 @@ final class NotificationService {
         // `refreshAccessStatus` is the read that never prompts.
         guard await CalendarService.shared.refreshAccessStatus() else { return }
 
-        let now = Date.now
-        ledger.prune(now: now)
-
-        // Both fields read the session, not the meeting's kind, and that's deliberate:
-        // a directive (#33) occupies the microphone exactly as a meeting does, so
-        // `isRecording` has to suppress offers during one — while its
-        // `calendarEventID` is always nil, since a directive is never started against
-        // an event, so nothing gets withdrawn on its account.
-        //
-        // `occurrenceStart` is paired with whichever of `meeting`/`lastFinishedMeeting`
-        // won above — never `meeting.startedAt`, which is when capture actually began
-        // and can drift seconds from the calendar occurrence's own start, which is
-        // what `MeetingSuggestion.occurrenceKey` is keyed on downstream. Getting that
-        // pairing wrong is exactly the bug this exists to avoid: a mismatch would
-        // either fail to withhold the offer for the occurrence just recorded, or
-        // (worse) suppress a *different* occurrence of the same recurring event.
-        let occurrenceStart =
-            session.meeting != nil
-            ? session.calendarEventOccurrenceStart : session.lastFinishedMeetingOccurrenceStart
-        let recording = MeetingSuggestionPlanner.RecordingContext(
-            isRecording: session.state != .idle,
-            eventID: (session.meeting ?? session.lastFinishedMeeting)?.calendarEventID,
-            occurrenceStart: occurrenceStart
-        )
-
-        // A recording that started for an event we'd already queued an offer for
-        // makes that offer wrong — withdraw it rather than let it fire mid-meeting.
-        // The request identifier is keyed by occurrence, not by the raw event id, so
-        // withdrawing means matching every occurrence's request by prefix rather
-        // than knowing one exact identifier to remove.
-        if let eventID = recording.eventID {
-            await removePendingSuggestionRequests(withPrefix: "\(Self.suggestionRequestPrefix)\(eventID)#")
+        // First diff pass, against whatever's true right now. Withdrawing a request
+        // that no longer qualifies — its event was cancelled, deleted, moved, or
+        // declined since it was offered, or a recording is now in the way — never
+        // needs authorization, so it isn't gated on getting any: this runs every
+        // tick regardless of whether anything new is worth adding. What it hands
+        // back is only the candidates still needing a request.
+        let toSchedule = await reconcilePendingSuggestionRequests(now: .now, session: session)
+        guard !toSchedule.isEmpty else {
+            ledger.save()
+            return
         }
 
-        let suggestions = MeetingSuggestionPlanner.suggestions(
-            for: await CalendarService.shared.todaysMeetings(now: now),
-            now: now,
-            alreadyNotified: ledger.occurrenceKeys,
-            recording: recording
-        )
-        guard !suggestions.isEmpty else { return }
+        // Only worth risking the system's permission prompt once there's actually
+        // something to offer — this pre-auth pass exists purely to make that
+        // decision, never to schedule anything itself.
         guard await ensureAuthorization() else { return }
 
         // `ensureAuthorization()` can sit open on the system's permission prompt for
-        // as long as the user takes to answer it, so `now` from above is stale by the
-        // time scheduling actually happens. Re-reading it here keeps `schedule`'s
-        // nil-trigger check correct for a suggestion that crossed from "starting
-        // soon" to "already started" while the prompt was up, and the `where` clause
-        // is what drops one that crossed all the way past `grace`: scheduling that
-        // one would either silently do nothing (a calendar trigger for a date that's
-        // already gone) or offer to record a meeting that's long since started.
+        // as long as the user takes to answer it, so everything read above — the
+        // setting, the recording context, the calendar candidates, the ledger — is
+        // stale by the time it returns: a recording may have started, the toggle may
+        // have flipped, or the calendar may have changed while the prompt was up.
+        // Re-check the setting explicitly (a `false` here still means "clear
+        // whatever's pending," same as the guard above), then redo the diff from
+        // scratch — nothing computed before the `await` above is trusted for what
+        // actually gets scheduled below.
+        guard NotificationSettings.suggestsRecording else {
+            await removePendingSuggestionRequests(withPrefix: Self.suggestionRequestPrefix)
+            return
+        }
         let scheduledAt = Date.now
-        for suggestion in suggestions
+        let freshToSchedule = await reconcilePendingSuggestionRequests(now: scheduledAt, session: session)
+
+        // The `where` clause is what drops a suggestion that crossed all the way
+        // past `grace` while the prompt was up: scheduling that one would either
+        // silently do nothing (a calendar trigger for a date that's already gone) or
+        // offer to record a meeting that's long since started.
+        for suggestion in freshToSchedule
         where suggestion.startDate.addingTimeInterval(MeetingSuggestionPlanner.grace) > scheduledAt {
             await schedule(suggestion, now: scheduledAt)
         }
         ledger.save()
+    }
+
+    /// The recording context read live off `session`, for planning purposes.
+    ///
+    /// Both fields read the session, not the meeting's kind, and that's deliberate:
+    /// a directive (#33) occupies the microphone exactly as a meeting does, so
+    /// `isRecording` has to suppress offers during one — while its
+    /// `calendarEventID` is always nil, since a directive is never started against
+    /// an event, so nothing gets withdrawn on its account.
+    ///
+    /// `occurrenceStart` is paired with whichever of `meeting`/`lastFinishedMeeting`
+    /// won above — never `meeting.startedAt`, which is when capture actually began
+    /// and can drift seconds from the calendar occurrence's own start, which is
+    /// what `MeetingSuggestion.occurrenceKey` is keyed on downstream. Getting that
+    /// pairing wrong is exactly the bug this exists to avoid: a mismatch would
+    /// either fail to withhold the offer for the occurrence just recorded, or
+    /// (worse) suppress a *different* occurrence of the same recurring event.
+    ///
+    /// `session` is a class, so every read here is automatically live — there is no
+    /// separate "re-fetch" step for staleness across a suspension to worry about,
+    /// only calling this again after one to get today's answer instead of an
+    /// earlier one.
+    private func recordingContext(for session: CaptureSession) -> MeetingSuggestionPlanner.RecordingContext {
+        let occurrenceStart =
+            session.meeting != nil
+            ? session.calendarEventOccurrenceStart : session.lastFinishedMeetingOccurrenceStart
+        return MeetingSuggestionPlanner.RecordingContext(
+            isRecording: session.state != .idle,
+            eventID: (session.meeting ?? session.lastFinishedMeeting)?.calendarEventID,
+            occurrenceStart: occurrenceStart
+        )
+    }
+
+    /// Reconciles the system's pending suggestion requests against today's
+    /// calendar, read fresh as of `now`: withdraws every pending request whose
+    /// occurrence no longer qualifies, and returns the candidates that still need
+    /// one, soonest first.
+    ///
+    /// Plans with `alreadyNotified: []` rather than the ledger's occurrence keys —
+    /// deliberately, because a pending request's occurrence is *already* in the
+    /// ledger (that's what got it scheduled in the first place), so filtering
+    /// candidates by the ledger here would make every currently-pending occurrence
+    /// look like it no longer qualifies and withdraw it on the spot. The ledger
+    /// check happens only on the add side below, via `MeetingSuggestionPlanner
+    /// .reconcile(pending:candidates:)`'s `toAdd`, which is where "never offer the
+    /// same occurrence twice" actually belongs — `toAdd` is already "not currently
+    /// pending," and the ledger narrows that to "and never was."
+    ///
+    /// An event that moved produces two effects here, not one that cancels the
+    /// other: its old occurrence key drops out of the candidate set (a different
+    /// start date means a different key — see `MeetingSuggestion.occurrenceKey`)
+    /// and gets withdrawn, while its new occurrence key is a fresh candidate and
+    /// gets added, in the same pass.
+    private func reconcilePendingSuggestionRequests(
+        now: Date, session: CaptureSession
+    ) async -> [MeetingSuggestion] {
+        ledger.prune(now: now)
+        let candidates = MeetingSuggestionPlanner.suggestions(
+            for: await CalendarService.shared.todaysMeetings(now: now),
+            now: now,
+            alreadyNotified: [],
+            recording: recordingContext(for: session)
+        )
+
+        let pendingKeys = Set(
+            await center.pendingNotificationRequests()
+                .map(\.identifier)
+                .filter { $0.hasPrefix(Self.suggestionRequestPrefix) }
+                .map { String($0.dropFirst(Self.suggestionRequestPrefix.count)) }
+        )
+        let candidateKeys = Set(candidates.map(\.occurrenceKey))
+        let diff = MeetingSuggestionPlanner.reconcile(pending: pendingKeys, candidates: candidateKeys)
+
+        if !diff.toRemove.isEmpty {
+            center.removePendingNotificationRequests(
+                withIdentifiers: diff.toRemove.map(Self.suggestionRequestID(occurrenceKey:)))
+        }
+
+        return candidates.filter { diff.toAdd.contains($0.occurrenceKey) && !ledger.contains($0.occurrenceKey) }
     }
 
     private func schedule(_ suggestion: MeetingSuggestion, now: Date) async {

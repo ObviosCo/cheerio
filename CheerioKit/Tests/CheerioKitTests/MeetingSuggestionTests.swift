@@ -168,6 +168,50 @@ import Testing
     }
 }
 
+/// The pure diff behind reconciliation: pending minus candidates is what to
+/// withdraw, candidates minus pending is what's newly worth offering. Everything
+/// `NotificationService` layers on top — reading `pendingNotificationRequests()`,
+/// stripping the request-identifier prefix, mapping keys back to full
+/// `UNNotificationRequest`/`MeetingSuggestion` values — is exercised nowhere near
+/// this suite; this is only the set arithmetic.
+@Suite struct ReconciliationDiffTests {
+    @Test func removesPendingNoLongerACandidateAndAddsCandidatesNotYetPending() {
+        let diff = MeetingSuggestionPlanner.reconcile(pending: ["a", "b"], candidates: ["b", "c"])
+        #expect(diff.toRemove == ["a"])
+        #expect(diff.toAdd == ["c"])
+    }
+
+    @Test func emptyCandidatesWithdrawsEverythingPending() {
+        // The shape both the toggle-going-off and a recording-just-started cleanups
+        // need, for free: nothing qualifies, so everything pending is stale.
+        let diff = MeetingSuggestionPlanner.reconcile(pending: ["a", "b"], candidates: [])
+        #expect(diff.toRemove == ["a", "b"])
+        #expect(diff.toAdd.isEmpty)
+    }
+
+    @Test func noOverlapMeansNothingToRemoveOrAdd() {
+        let diff = MeetingSuggestionPlanner.reconcile(pending: ["a"], candidates: ["a"])
+        #expect(diff.toRemove.isEmpty)
+        #expect(diff.toAdd.isEmpty)
+    }
+
+    @Test func emptyPendingAddsEveryCandidate() {
+        let diff = MeetingSuggestionPlanner.reconcile(pending: [], candidates: ["a", "b"])
+        #expect(diff.toRemove.isEmpty)
+        #expect(diff.toAdd == ["a", "b"])
+    }
+
+    @Test func movedOccurrenceIsARemovalAndAnAdditionAtOnce() {
+        // A moved event keeps its raw event id but gets a new occurrence key (see
+        // `MeetingSuggestion.occurrenceKey`) — the old key is no longer a candidate,
+        // the new one is, and neither cancels the other out.
+        let diff = MeetingSuggestionPlanner.reconcile(
+            pending: ["standup#2026-01-01T09:00:00Z"], candidates: ["standup#2026-01-01T10:00:00Z"])
+        #expect(diff.toRemove == ["standup#2026-01-01T09:00:00Z"])
+        #expect(diff.toAdd == ["standup#2026-01-01T10:00:00Z"])
+    }
+}
+
 @Suite struct SuggestionLedgerTests {
     private let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
 
