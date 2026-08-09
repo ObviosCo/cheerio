@@ -313,6 +313,7 @@ cheerio/
 │   ├── Resources/    # Models/ — fetched, never committed
 │   ├── Updates/      # Sparkle: the app's only network access
 │   └── Views/        # SwiftUI, incl. Onboarding/ (first-run walkthrough)
+├── CheerioScreenshotTests/  # UI tests that photograph the app; CI posts the result to the PR
 └── CheerioMCP/       # cheerio-mcp — stdio MCP server, bundled inside the app
 ```
 
@@ -357,7 +358,7 @@ CI runs `swift format lint --strict` (config in [`.swift-format`](.swift-format)
 tests, and an app build on every PR. Format locally before pushing:
 
 ```sh
-swift format --in-place --recursive Cheerio CheerioMCP CheerioKit/Sources CheerioKit/Tests
+swift format --in-place --recursive Cheerio CheerioMCP CheerioScreenshotTests CheerioKit/Sources CheerioKit/Tests
 ```
 
 ## License

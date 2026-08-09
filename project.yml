@@ -41,6 +41,20 @@ schemes:
       config: Debug
     archive:
       config: Release
+  # The screenshot capture pass, kept out of the Cheerio scheme on purpose: it
+  # launches the app, so `xcodebuild test -scheme Cheerio` would start driving a
+  # GUI in the middle of an ordinary test run. CI builds it with
+  # `build-for-testing` (which compiles the bundle and launches nothing) and runs
+  # it with `test-without-building`. See .github/workflows/screenshots.yml.
+  CheerioScreenshots:
+    build:
+      targets:
+        CheerioScreenshotTests: [test]
+    test:
+      config: Debug
+      gatherCoverageData: false
+      targets:
+        - CheerioScreenshotTests
 targets:
   Cheerio:
     type: application
@@ -91,6 +105,28 @@ targets:
         CODE_SIGN_ENTITLEMENTS: Cheerio/Cheerio.entitlements
         ENABLE_HARDENED_RUNTIME: true
         GENERATE_INFOPLIST_FILE: false
+
+  # Photographs the app's screens for the PR previews (issue #61). A UI-testing
+  # bundle rather than a script driving the GUI, because a GitHub runner has
+  # nobody to grant Screen Recording to and `screencapture -l` needs it; a test
+  # host's own screenshot API doesn't. Nothing else in the repo depends on this
+  # target, and it ships in no product — it exists to be run by
+  # .github/workflows/screenshots.yml.
+  CheerioScreenshotTests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - path: CheerioScreenshotTests
+    dependencies:
+      - target: Cheerio
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.cheerio.mac.screenshots
+        GENERATE_INFOPLIST_FILE: true
+        # Set explicitly rather than left to the app-target dependency above:
+        # it's what tells XCUIApplication() which app to launch, and a UI test
+        # bundle that can't resolve it fails at runtime, not at build time.
+        TEST_TARGET_NAME: Cheerio
 
   # Read-only MCP server over stdio, so local agents can query meeting history.
   # A separate process, not a mode of the app: an MCP client owns its lifetime and
