@@ -263,11 +263,23 @@ macros.
 ### Before you run it
 
 - **Building your own fork or a distributable of your own?** Change the bundle
-  identifier. The effective one is `PRODUCT_BUNDLE_IDENTIFIER` in `project.yml`, now
-  the project's real identifier (`co.obvios.cheerio.mac`), not a placeholder — note
-  that it overrides `options.bundleIdPrefix`, so changing the prefix alone leaves you
-  building under Obvios's. An ordinary local Debug build doesn't need this: Xcode
-  signs it ad hoc under whatever identifier is there.
+  identifier in two places, not one. `PRODUCT_BUNDLE_IDENTIFIER` in `project.yml` is
+  what the built app actually is — now the project's real identifier
+  (`co.obvios.cheerio.mac`), not a placeholder; note it overrides
+  `options.bundleIdPrefix`, so changing the prefix alone leaves you building under
+  Obvios's. But `AudioStorage.appBundleIdentifier` in
+  `CheerioKit/Sources/CheerioKit/Audio/AudioStorage.swift` is the one CheerioKit
+  actually trusts as "the app's identifier," and it doesn't follow `project.yml`
+  automatically: the bundled MCP helper resolves its store against that constant
+  rather than `Bundle.main` (see its doc comment for why), and the bundle-identifier
+  migration and the DMG launch-location handoff's legacy-install match both gate on
+  whether the running identifier equals it. Leave it as `co.obvios.cheerio.mac` and
+  your fork's helper looks for the *official* Cheerio's store, not yours; change
+  `project.yml` alone and you get exactly that fork. There's no shared-config system
+  deriving one from the other — change both by hand. An ordinary local Debug build
+  needs neither change: Xcode signs it ad hoc under whatever identifier is there, and
+  the migration machinery above only runs at all when the running identifier already
+  matches the official one, so it stays out of a fork's way regardless.
 - **Grant microphone access on first record.** Prompted once; if you deny it, macOS won't ask
   again and you'll need System Settings → Privacy & Security.
 - **First launch downloads a speech model.** macOS fetches the `SpeechTranscriber` assets for

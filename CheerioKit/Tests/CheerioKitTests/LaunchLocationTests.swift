@@ -310,4 +310,43 @@ import Testing
 
         #expect(path == "/Applications/Cheerio.app")
     }
+
+    @Test func canonicalIdentifierAlsoAcceptsTheLegacyOne() {
+        let identifiers = InstalledCopyLocator.acceptableBundleIdentifiers(
+            runningAs: "co.obvios.cheerio.mac", legacyBundleIdentifier: "app.cheerio.mac"
+        )
+
+        #expect(identifiers == ["co.obvios.cheerio.mac", "app.cheerio.mac"])
+    }
+
+    /// The fork-correctness fix: a fork built under its own identifier must not
+    /// get the legacy identifier added to its acceptable set. It never shipped
+    /// under `app.cheerio.mac`, so an unrelated app that happens to use that
+    /// identifier is not "itself, already installed."
+    @Test func forkIdentifierMatchesOnlyItself() {
+        let identifiers = InstalledCopyLocator.acceptableBundleIdentifiers(
+            runningAs: "com.example.myfork.cheerio", legacyBundleIdentifier: "app.cheerio.mac"
+        )
+
+        #expect(identifiers == ["com.example.myfork.cheerio"])
+    }
+
+    /// End-to-end version of the bug the fix addresses: a fork's own
+    /// `InstalledCopyScan.find()` composes `acceptableBundleIdentifiers(runningAs:)`
+    /// with `find(among:acceptableBundleIdentifiers:preferredName:)` exactly this
+    /// way. Without the gate, this would return the legacy candidate's path — the
+    /// fork would treat an unrelated, independently-installed `app.cheerio.mac`
+    /// copy as itself, hand off to it, and quit.
+    @Test func aForksScanNeverMatchesAnUnrelatedLegacyInstall() {
+        let candidates = [Candidate(path: "/Applications/Cheerio.app", bundleIdentifier: "app.cheerio.mac")]
+        let forkIdentifiers = InstalledCopyLocator.acceptableBundleIdentifiers(
+            runningAs: "com.example.myfork.cheerio", legacyBundleIdentifier: "app.cheerio.mac"
+        )
+
+        let path = InstalledCopyLocator.find(
+            among: candidates, acceptableBundleIdentifiers: forkIdentifiers, preferredName: "Cheerio.app"
+        )
+
+        #expect(path == nil)
+    }
 }

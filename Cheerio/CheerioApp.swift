@@ -28,17 +28,27 @@ struct CheerioApp: App {
         // directory out from under an already-open SQLite file corrupts it, and
         // reading meeting audio against the wrong container looks like data loss.
         // See BundleIdentifierMigration's doc comment for the full ordering argument.
-        if BundleIdentifierMigration.migrateIfNeeded() == .failed {
-            // The old container is still there and the new one isn't: keep every
-            // path in this launch resolving against the old identifier rather than
-            // open an empty new container and present that as the library. The next
-            // launch retries the move on its own.
-            AudioStorage.setContainerOverride(AudioStorage.legacyBundleIdentifier)
+        //
+        // Gated on running as Cheerio's own canonical build: a fork built under its
+        // own identifier never shipped under `AudioStorage.legacyBundleIdentifier`,
+        // so there is no legacy container or legacy defaults domain of *its own* to
+        // adopt — and an unrelated app that happens to use that old identifier isn't
+        // this one's data to move or read. A fork should neither migrate the official
+        // container nor have its own container mistaken for it; leaving this ungated
+        // would risk both.
+        if AudioStorage.isRunningAsCanonicalIdentifier() {
+            if BundleIdentifierMigration.migrateIfNeeded() == .failed {
+                // The old container is still there and the new one isn't: keep every
+                // path in this launch resolving against the old identifier rather than
+                // open an empty new container and present that as the library. The next
+                // launch retries the move on its own.
+                AudioStorage.setContainerOverride(AudioStorage.legacyBundleIdentifier)
+            }
+            // Independent of the above: the defaults domain follows Bundle.main's own
+            // identifier automatically, so this always targets the domain the app is
+            // actually running under, whichever container it ended up open against.
+            UserDefaultsMigration.migrateIfNeeded()
         }
-        // Independent of the above: the defaults domain follows Bundle.main's own
-        // identifier automatically, so this always targets the domain the app is
-        // actually running under, whichever container it ended up open against.
-        UserDefaultsMigration.migrateIfNeeded()
 
         let session = CaptureSession()
         _captureSession = State(initialValue: session)

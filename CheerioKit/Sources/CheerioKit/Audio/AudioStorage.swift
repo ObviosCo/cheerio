@@ -30,6 +30,31 @@ public enum AudioStorage {
     /// who runs the helper before ever launching the new app.
     public static let legacyBundleIdentifier = "app.cheerio.mac"
 
+    /// Whether the running process is Cheerio's own canonical build —
+    /// ``appBundleIdentifier`` — rather than a fork built under its own
+    /// identifier.
+    ///
+    /// Everything that assumes a pre-existing ``legacyBundleIdentifier`` install
+    /// belongs to *this app* gates on this: `BundleIdentifierMigration` and
+    /// `UserDefaultsMigration` (a fork never shipped under the old identifier, so
+    /// there's nothing of its own to adopt there, and an unrelated app that happens
+    /// to use it isn't this one's data to touch), and the DMG launch-location
+    /// handoff's transitional identifier match (see
+    /// `InstalledCopyLocator.acceptableBundleIdentifiers(runningAs:)`). Without this
+    /// gate, a fork launched from a DMG could find an unrelated, independently
+    /// installed `app.cheerio.mac` copy, mistake it for itself already installed,
+    /// hand off to it, and quit.
+    ///
+    /// A fork that changes ``appBundleIdentifier``'s value (see that property's doc
+    /// comment, and README.md's "Building your own fork" section) makes this true
+    /// for its own identifier and false for Cheerio's — exactly the swap a fork needs,
+    /// with no separate config system to keep in sync.
+    public static func isRunningAsCanonicalIdentifier(
+        _ bundleIdentifier: String? = Bundle.main.bundleIdentifier
+    ) -> Bool {
+        bundleIdentifier == appBundleIdentifier
+    }
+
     /// Overrides which identifier ``applicationSupport()`` resolves to, for the rest
     /// of the process's lifetime. `nil` (the default) means "use
     /// `Bundle.main.bundleIdentifier`, as always."
