@@ -86,13 +86,13 @@ public enum MeetingListGrouping {
     /// `dayStart` against the caller-supplied `startOfNow` with
     /// `dateComponents(_:from:to:)` is the same idea, made deterministic.
     ///
-    /// "Today"/"Yesterday" go through `String(localized:)` rather than
-    /// `RelativeDateTimeFormatter`: that formatter *can* take an explicit reference
-    /// date instead of reading the live clock, which is why it looked like the right
-    /// tool here, but for a same-day difference it renders "now," not "Today" — there
-    /// turns out to be no Foundation API that turns an arbitrary reference date into
-    /// "Today" the way `Calendar.isDateInToday` does for the real one. Weekday names
-    /// and absolute dates go through `Date.FormatStyle`, which has no such gap.
+    /// "Today"/"Yesterday" come from `RelativeDateTimeFormatter` fed *day
+    /// components*, not dates: handed two Dates it renders a same-day difference as
+    /// "now", but `DateComponents(day: 0)`/`(day: -1)` with the named style yield
+    /// exactly the localized "Today"/"Yesterday" — and the day arithmetic already
+    /// happened above against the caller-supplied `startOfNow`, so the formatter
+    /// never touches the live clock. Weekday names and absolute dates go through
+    /// `Date.FormatStyle`.
     private static func title(for dayStart: Date, startOfNow: Date, calendar: Calendar) -> String {
         let locale = calendar.locale ?? .autoupdatingCurrent
         let daysBeforeNow = calendar.dateComponents([.day], from: dayStart, to: startOfNow).day ?? 0
@@ -101,13 +101,13 @@ public enum MeetingListGrouping {
             // Not `String(localized:)`: this package ships no string catalogs, so that
             // lookup always misses and non-English users would get English "Today"
             // beside a localized weekday header. `RelativeDateTimeFormatter`'s named
-            // style carries the system's own translations, and `.standalone` gives
-            // header capitalization ("Today", not the mid-sentence "today").
+            // style carries the system's own translations, and `.beginningOfSentence`
+            // gives header capitalization ("Today" — `.standalone` stays lowercase).
             let formatter = RelativeDateTimeFormatter()
             formatter.locale = locale
             formatter.calendar = calendar
             formatter.dateTimeStyle = .named
-            formatter.formattingContext = .standalone
+            formatter.formattingContext = .beginningOfSentence
             return formatter.localizedString(from: DateComponents(day: -daysBeforeNow))
         }
 
