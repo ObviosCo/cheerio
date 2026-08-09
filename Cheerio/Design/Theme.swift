@@ -66,6 +66,10 @@ public enum Theme {
         /// The menu-bar template image. Single-colour by definition, so the
         /// ring's fill state has to read unmistakably at this size.
         public static let menuBarGlyph: CGFloat = 18
+        /// The speakers panel's talk-time strip. Thin enough to read as a
+        /// texture under the panel header, not another control competing with
+        /// the rows below it.
+        public static let speakerTimelineHeight: CGFloat = 5
     }
 }
 
