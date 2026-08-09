@@ -23,6 +23,15 @@ struct VoiceEnrollmentRecorder: View {
     @State private var pendingName = ""
     @State private var pendingPath: String?
     @State private var elapsed: TimeInterval = 0
+    @State private var level: AudioLevel = .silence
+    /// Set once a sample is saved; replaces the form with an acknowledgment
+    /// instead of silently resetting to the same empty fields (issue #128).
+    /// "Add another voice" below clears it back to the empty form.
+    ///
+    /// Seeded from `ScreenshotMode` rather than nil: nothing in the screenshot
+    /// harness can reach this state by actually saving a sample, so without this
+    /// the confirmation this view exists to add would never appear in a capture.
+    @State private var savedSpeakerName: String? = ScreenshotMode.showsVoiceEnrollmentConfirmation ? "Jackson" : nil
     @State private var errorMessage: String?
     /// Guards the `recorder.finish()` transition. `finish()` suspends, and while it's
     /// suspended `recorder` is still non-nil — so `isRecording` still reads true and
@@ -58,8 +67,23 @@ struct VoiceEnrollmentRecorder: View {
     /// already created before returning.
     @State private var isStarting = false
     @State private var startTask: Task<Void, Never>?
+    /// The mirror image of `isStarting`, for arming the mic-check-only capture
+    /// instead of a recording one. Kept separate rather than reusing `isStarting`
+    /// because the two states are mutually exclusive at the UI level (the Record
+    /// button doesn't even show while checking the mic) but are guarded here the
+    /// same way, for the same reason: `armMicCheck()` suspends at the permission
+    /// prompt, during which `capture` is still nil.
+    @State private var isArmingMicCheck = false
+    @State private var micCheckStartTask: Task<Void, Never>?
 
     private var isRecording: Bool { recorder != nil }
+    /// Armed for level-only monitoring: a capture is running but nothing is being
+    /// written anywhere. The pre-flight "Mic check" state (issue #127), distinct
+    /// from actually recording a sample.
+    private var isCheckingMic: Bool { capture != nil && recorder == nil }
+    /// True whenever a capture is running at all, recording or not — the level
+    /// meter reads from whichever one this is.
+    private var isMicArmed: Bool { capture != nil }
     private var isSampleLongEnough: Bool { elapsed >= EnrolledSpeaker.recommendedDuration }
 
     private var recordingHint: String {
@@ -71,54 +95,108 @@ struct VoiceEnrollmentRecorder: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            TextField(markAsMe ? "Your name" : "Name", text: $pendingName)
-                .textFieldStyle(.roundedBorder)
-                .disabled(isRecording)
-
-            if isRecording {
-                HStack {
-                    Image(systemName: "record.circle.fill").foregroundStyle(.red)
-                    Text(elapsed.formatted(.number.precision(.fractionLength(0))) + "s")
-                        .monospacedDigit()
-                    Spacer()
-                    // Naming the early exit "Save anyway" makes stopping short a
-                    // choice rather than the obvious thing to do.
-                    Button(isSampleLongEnough ? "Stop and save" : "Save anyway") {
-                        Task { await stopRecording() }
-                    }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(isFinalizing)
-                }
-                ProgressView(value: min(elapsed / EnrolledSpeaker.recommendedDuration, 1))
-                Text(recordingHint)
-                    .font(.caption)
-                    .foregroundStyle(isSampleLongEnough ? .green : .secondary)
+            if let savedSpeakerName {
+                StatusLabel(.success, EnrolledSpeaker.confirmationMessage(forName: savedSpeakerName))
+                Button("Add another voice") { self.savedSpeakerName = nil }
+                    .buttonStyle(.borderless)
             } else {
-                // Encouraging, not scary: this used to warn about voices getting
-                // mistaken for each other, which read as a threat rather than an
-                // invitation. The reason still matters, it's just not the headline.
-                Text(
-                    "Talk naturally for about \(Int(EnrolledSpeaker.recommendedDuration)) seconds — read something aloud, tell a quick story, anything works. The fuller the sample, the more confidently Cheerio can pick \(markAsMe ? "you" : "them") out of a meeting."
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                Button("Record voice sample") {
-                    // Check-and-set `isStarting` synchronously, before the `Task`
-                    // (or anything else) runs, so a second click sees it already
-                    // set and no-ops instead of racing this one — see the comment
-                    // on `isStarting`.
-                    guard !isStarting else { return }
-                    isStarting = true
-                    startTask = Task {
-                        await startRecording()
-                        isStarting = false
-                        startTask = nil
+                TextField(markAsMe ? "Your name" : "Name", text: $pendingName)
+                    .textFieldStyle(.roundedBorder)
+                    .disabled(isRecording)
+
+                if isRecording {
+                    LevelMeterView(level: level)
+                    HStack {
+                        Image(systemName: "record.circle.fill").foregroundStyle(.red)
+                        Text(elapsed.formatted(.number.precision(.fractionLength(0))) + "s")
+                            .monospacedDigit()
+                        Spacer()
+                        // Naming the early exit "Save anyway" makes stopping short a
+                        // choice rather than the obvious thing to do.
+                        Button(isSampleLongEnough ? "Stop and save" : "Save anyway") {
+                            Task { await stopRecording() }
+                        }
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(isFinalizing)
+                    }
+                    ProgressView(value: min(elapsed / EnrolledSpeaker.recommendedDuration, 1))
+                    Text(recordingHint)
+                        .font(.caption)
+                        .foregroundStyle(isSampleLongEnough ? .green : .secondary)
+                } else if isCheckingMic {
+                    LevelMeterView(level: level)
+                    HStack {
+                        // "Check one, two" rather than a status sentence — the bar
+                        // itself is the answer to "can it hear me", so the caption
+                        // only needs to say what to do, not what it found.
+                        Text("Check one, two.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Open Sound Settings") { openSoundSettings() }
+                            .buttonStyle(.borderless)
+                            .font(.caption)
+                        Button("Stop checking") { stopMicCheck() }
+                            .buttonStyle(.borderless)
+                    }
+                } else {
+                    // Encouraging, not scary: this used to warn about voices getting
+                    // mistaken for each other, which read as a threat rather than an
+                    // invitation. The reason still matters, it's just not the headline.
+                    Text(
+                        "Talk naturally for about \(Int(EnrolledSpeaker.recommendedDuration)) seconds — read something aloud, tell a quick story, anything works. The fuller the sample, the more confidently Cheerio can pick \(markAsMe ? "you" : "them") out of a meeting."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    HStack {
+                        Button("Record voice sample") {
+                            // Check-and-set `isStarting` synchronously, before the `Task`
+                            // (or anything else) runs, so a second click sees it already
+                            // set and no-ops instead of racing this one — see the comment
+                            // on `isStarting`.
+                            guard !isStarting else { return }
+                            isStarting = true
+                            startTask = Task {
+                                await startRecording()
+                                isStarting = false
+                                startTask = nil
+                            }
+                        }
+                        // Both buttons are visible until whichever one is pressed
+                        // finishes arming its own capture (`isRecording`/`isCheckingMic`
+                        // only flip once that capture is published), so each is
+                        // disabled by the *other's* in-flight start too — otherwise a
+                        // click here while a mic check is still arming would spin up a
+                        // second `MicrophoneCapture` before the first ever reaches
+                        // `self.capture`, and whichever assignment lands second orphans
+                        // the other's engine, still running, with nothing left pointing
+                        // at it to stop.
+                        .disabled(
+                            isStarting || isArmingMicCheck
+                                || pendingName.trimmingCharacters(in: .whitespaces).isEmpty
+                        )
+                        // A pre-flight state, separate from actually recording: hearing
+                        // that the mic works before committing to a 30-second take is
+                        // cheaper than discovering it didn't at the end of one.
+                        Button("Mic check") {
+                            guard !isArmingMicCheck else { return }
+                            isArmingMicCheck = true
+                            micCheckStartTask = Task {
+                                await armMicCheck()
+                                isArmingMicCheck = false
+                                micCheckStartTask = nil
+                            }
+                        }
+                        .disabled(isArmingMicCheck || isStarting)
                     }
                 }
-                .disabled(isStarting || pendingName.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
-        .alert("Couldn't record the sample", isPresented: $errorMessage.presented()) {
+        // One alert title for both failure paths this view has (recording a sample,
+        // checking the mic) rather than a second alert: both boil down to "the
+        // microphone didn't cooperate," and the message text underneath already
+        // says which one it was.
+        .alert("Couldn't reach the microphone", isPresented: $errorMessage.presented()) {
             Button("OK") { errorMessage = nil }
         } message: {
             Text(errorMessage ?? "")
@@ -132,6 +210,12 @@ struct VoiceEnrollmentRecorder: View {
             // unwinding anything it had already created; see its cancellation checks.
             if isStarting {
                 startTask?.cancel()
+            }
+            if isArmingMicCheck {
+                micCheckStartTask?.cancel()
+            }
+            if isCheckingMic {
+                stopMicCheck()
             }
 
             // Closing the enclosing sheet/window/tab mid-recording left the
@@ -160,6 +244,16 @@ struct VoiceEnrollmentRecorder: View {
             while isRecording, !Task.isCancelled {
                 elapsed = await recorder?.duration ?? 0
                 try? await Task.sleep(for: .milliseconds(200))
+            }
+        }
+        .task(id: isMicArmed) {
+            // Pushed, not polled, unlike `elapsed` above: the tap already hands off
+            // one `AudioLevel` per buffer on its own, so there's a value waiting
+            // every time this loop wakes rather than a duration to sample.
+            guard let capture else { return }
+            for await measured in capture.levels {
+                if Task.isCancelled { return }
+                level = measured
             }
         }
     }
@@ -227,6 +321,7 @@ struct VoiceEnrollmentRecorder: View {
         capture = nil
         let duration = await recorder?.finish()
         recorder = nil
+        level = .silence
 
         guard let duration, let relativePath = pendingPath else {
             errorMessage = "No audio was captured."
@@ -270,9 +365,10 @@ struct VoiceEnrollmentRecorder: View {
             return
         }
 
-        pendingName = ""
         pendingPath = nil
         elapsed = 0
+        pendingName = ""
+        savedSpeakerName = name
         onSaved(speaker)
     }
 
@@ -282,10 +378,51 @@ struct VoiceEnrollmentRecorder: View {
         capture = nil
         await recorder?.finish()
         recorder = nil
+        level = .silence
         if let pendingPath {
             try? AudioStorage.removeFile(atRelativePath: pendingPath)
         }
         pendingPath = nil
         elapsed = 0
+    }
+
+    private func armMicCheck() async {
+        guard await MicrophoneCapture.permission() == .granted else {
+            errorMessage = "Microphone access is required. Turn it on in System Settings → Privacy & Security → Microphone."
+            return
+        }
+        // Mirrors the cancellation guard in `startRecording()`: `onDisappear` may
+        // have run while this was suspended at the permission prompt, and nothing
+        // has been created yet, so returning here is a plain no-op.
+        guard !Task.isCancelled else { return }
+
+        let candidate = MicrophoneCapture { _ in }
+        do {
+            // Same rationale as `startRecording()`: a close-mic'd single voice with
+            // no far-end signal to cancel, and a mic check that altered what it
+            // measured to fight an echo that isn't there would defeat the point.
+            try candidate.start(mode: .inPerson)
+        } catch {
+            errorMessage = error.localizedDescription
+            return
+        }
+        guard !Task.isCancelled else {
+            candidate.stop()
+            return
+        }
+        capture = candidate
+    }
+
+    private func stopMicCheck() {
+        capture?.stop()
+        capture = nil
+        level = .silence
+    }
+
+    /// The mic-check row's escape hatch for "it's silent because the wrong
+    /// device is selected" — the one case level metering alone can't fix.
+    private func openSoundSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.sound?input") else { return }
+        NSWorkspace.shared.open(url)
     }
 }

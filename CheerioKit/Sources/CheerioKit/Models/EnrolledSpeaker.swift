@@ -35,4 +35,12 @@ public final class EnrolledSpeaker {
     public var hasEnoughAudio: Bool {
         duration >= Self.recommendedDuration
     }
+
+    /// The acknowledgment shown once a sample is saved. Lives here rather than
+    /// in the recorder view so the walkthrough and Settings → Participants —
+    /// which share one recorder component — can't drift into two different
+    /// confirmations by editing the copy in only one place.
+    public static func confirmationMessage(forName name: String) -> String {
+        "Thanks, \(name.trimmingCharacters(in: .whitespaces)). You're all set."
+    }
 }

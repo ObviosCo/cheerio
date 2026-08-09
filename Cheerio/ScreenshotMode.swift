@@ -63,6 +63,20 @@ enum ScreenshotMode {
         UserDefaults.standard.bool(forKey: "screenshotExpandTranscript")
     }
 
+    /// Shows `VoiceEnrollmentRecorder`'s post-save acknowledgment (issue #128)
+    /// instead of its empty form.
+    ///
+    /// Nothing else in this harness can reach that state: every other hook here
+    /// opens to a screen a launch argument can select, but a saved sample only
+    /// exists after 30 seconds of real audio and a write to the store, and
+    /// "Permissions and recordings" above is explicit that this harness presses
+    /// no button that starts one. Without this the walkthrough's voice-enrollment
+    /// capture could only ever show the empty form, never the confirmation the
+    /// issue added.
+    static var showsVoiceEnrollmentConfirmation: Bool {
+        UserDefaults.standard.bool(forKey: "screenshotVoiceEnrollmentConfirmed")
+    }
+
     /// The main window's size in points, as "1440x900". Absent leaves the window
     /// wherever macOS put it.
     static var windowSize: CGSize? {

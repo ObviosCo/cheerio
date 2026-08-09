@@ -15,6 +15,7 @@ Cheerio/
       SpeakerChip.swift            the chip and the rail label
       RecordingIndicator.swift     the three-signal rule, enforced
       StatusLabel.swift            semantic state + symbol + label
+      LevelMeterView.swift         live mic-level bar, pre-recording and during
   Resources/
     Assets.xcassets/               36 Color Sets, light + dark
 ```

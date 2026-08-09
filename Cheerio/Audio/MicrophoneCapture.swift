@@ -10,8 +10,17 @@ final class MicrophoneCapture: @unchecked Sendable {
     private let onBuffer: @Sendable (sending AVAudioPCMBuffer) -> Void
     private static let log = Logger(subsystem: "co.obvios.cheerio.mac", category: "MicrophoneCapture")
 
+    /// One reading per tap buffer — a live mic-level meter that can be armed
+    /// before recording starts (the enrollment flow's "Mic check") or watched
+    /// alongside an actual recording, from the same tap. `AudioLevel.measuring`
+    /// is cheap enough to run on the buffer directly inside the tap closure, so
+    /// only the resulting scalar crosses into this stream — never the buffer.
+    let levels: AsyncStream<AudioLevel>
+    private let levelsContinuation: AsyncStream<AudioLevel>.Continuation
+
     init(onBuffer: @escaping @Sendable (sending AVAudioPCMBuffer) -> Void) {
         self.onBuffer = onBuffer
+        (levels, levelsContinuation) = AsyncStream.makeStream()
     }
 
     enum Permission {
@@ -49,7 +58,11 @@ final class MicrophoneCapture: @unchecked Sendable {
             enableEchoCancellation(on: input)
         }
         let format = input.outputFormat(forBus: 0)
-        input.installTap(onBus: 0, bufferSize: 4096, format: format) { [onBuffer] buffer, _ in
+        input.installTap(onBus: 0, bufferSize: 4096, format: format) { [onBuffer, levelsContinuation] buffer, _ in
+            // Measured on the tap's own buffer, before the copy below — reading
+            // samples that are already resident costs nothing a level meter
+            // couldn't also cost by way of a bigger copy handed downstream.
+            levelsContinuation.yield(AudioLevel.measuring(buffer))
             // The tap recycles `buffer` after this returns; the transcription
             // engine outlives the callback, so hand it a copy it owns.
             guard let copy = buffer.detachedCopy() else { return }
@@ -102,5 +115,6 @@ final class MicrophoneCapture: @unchecked Sendable {
     func stop() {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
+        levelsContinuation.finish()
     }
 }
