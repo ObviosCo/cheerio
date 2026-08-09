@@ -46,7 +46,19 @@ import Testing
         // reproduce the scenario exactly.
         #expect(!AudioStorage.isRunningAsOfficialBuild(forksChosenIdentifier))
     }
+}
 
+/// `AudioStorage.setContainerOverride` is a process-global `Mutex`, by design (see
+/// its own doc comment) — which makes it the one piece of `AudioStorage` state a
+/// test can't touch the way the rest of this file does. `.serialized` because
+/// Swift Testing otherwise runs every suite's tests concurrently by default, and
+/// this suite's own test setting the override races any *other* test reading
+/// `AudioStorage.applicationSupport()` (directly, or through anything built on
+/// it) while that override is live — `CallbackPayloadTests`' equivalent test lives
+/// here rather than there for exactly that reason, since it makes two separate
+/// calls through `applicationSupport()` and compares them, which only holds if
+/// the override can't change in between.
+@Suite(.serialized) struct ContainerOverrideTests {
     /// What `BundleIdentifierMigration.Outcome.storeStrandedInSibling` depends
     /// on: `setContainerOverride` takes any directory name, not specifically a
     /// bundle identifier, and everything built on `applicationSupport()` —
@@ -67,5 +79,18 @@ import Testing
 
         #expect(store.deletingLastPathComponent().lastPathComponent == siblingName)
         #expect(store.lastPathComponent == AudioStorage.storeFileName)
+    }
+
+    /// Moved from `CallbackPayloadTests`: this makes two independent calls
+    /// through `AudioStorage.applicationSupport()` (one via
+    /// `CallbackPayload.defaultDirectory()`, one directly) and compares them,
+    /// which is only sound if the container override can't change between the
+    /// two — true within this serialized suite, not guaranteed against a test
+    /// anywhere else in the target setting it concurrently.
+    @Test func defaultDirectoryLivesUnderApplicationSupport() throws {
+        let directory = try CallbackPayload.defaultDirectory()
+        let applicationSupport = try AudioStorage.applicationSupport()
+        #expect(directory.path.hasPrefix(applicationSupport.path))
+        #expect(directory.lastPathComponent == "Callbacks")
     }
 }

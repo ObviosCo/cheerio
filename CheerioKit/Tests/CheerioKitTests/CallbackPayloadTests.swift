@@ -95,10 +95,9 @@ import Testing
         #expect(first.environment["CHEERIO_MEETING_ID"] == second.environment["CHEERIO_MEETING_ID"])
     }
 
-    @Test func defaultDirectoryLivesUnderApplicationSupport() throws {
-        let directory = try CallbackPayload.defaultDirectory()
-        let applicationSupport = try AudioStorage.applicationSupport()
-        #expect(directory.path.hasPrefix(applicationSupport.path))
-        #expect(directory.lastPathComponent == "Callbacks")
-    }
+    // `defaultDirectoryLivesUnderApplicationSupport` lives in
+    // `ContainerOverrideTests` (AudioStorageTests.swift), not here: it makes two
+    // separate calls through `AudioStorage.applicationSupport()` and compares
+    // them, which is only sound where the container override is guaranteed not
+    // to change in between — true in that `.serialized` suite, not in this one.
 }
