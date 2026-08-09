@@ -7,7 +7,7 @@ import SwiftData
 //     swift run SeedDemoStore --container <dir>
 //
 // `<dir>` is the app's Application Support container inside a scratch HOME — i.e.
-// `<scratch>/Library/Application Support/app.cheerio.mac`. The store file, and the
+// `<scratch>/Library/Application Support/co.obvios.cheerio.mac`. The store file, and the
 // per-meeting audio folders the detail view's buttons key off, are written into it.
 //
 // Everything below is invented. None of it comes from anyone's real store, and it

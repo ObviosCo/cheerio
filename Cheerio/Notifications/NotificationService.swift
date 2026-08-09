@@ -39,10 +39,10 @@ final class NotificationService {
     // Categories are what carry the action buttons, and they're registered once at
     // launch. The action identifiers travel back in the response.
 
-    private static let suggestionCategoryID = "app.cheerio.notification.meeting-suggestion"
-    private static let notesReadyCategoryID = "app.cheerio.notification.notes-ready"
-    private static let startRecordingActionID = "app.cheerio.notification.action.start-recording"
-    private static let openMeetingActionID = "app.cheerio.notification.action.open-meeting"
+    private static let suggestionCategoryID = "co.obvios.cheerio.notification.meeting-suggestion"
+    private static let notesReadyCategoryID = "co.obvios.cheerio.notification.notes-ready"
+    private static let startRecordingActionID = "co.obvios.cheerio.notification.action.start-recording"
+    private static let openMeetingActionID = "co.obvios.cheerio.notification.action.open-meeting"
 
     /// How often the day's events are re-read and the pending offers reconciled.
     ///
@@ -58,7 +58,7 @@ final class NotificationService {
     /// two hours ago shouldn't file a fresh recording under a meeting that's over.
     private static let staleActionWindow: TimeInterval = 15 * 60
 
-    private let log = Logger(subsystem: "app.cheerio.mac", category: "Notifications")
+    private let log = Logger(subsystem: "co.obvios.cheerio.mac", category: "Notifications")
     private let center = UNUserNotificationCenter.current()
     /// `UNUserNotificationCenter.delegate` is weak, so this has to be held here.
     private let delegate = NotificationDelegate()

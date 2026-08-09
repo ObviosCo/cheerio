@@ -9,7 +9,7 @@ import OSLog
 /// Buffers arrive from a realtime callback and are drained onto the actor, so no
 /// file I/O happens on the audio thread.
 public actor VoiceSampleRecorder {
-    private let log = Logger(subsystem: "app.cheerio.mac", category: "VoiceSampleRecorder")
+    private let log = Logger(subsystem: "co.obvios.cheerio.mac", category: "VoiceSampleRecorder")
     private let destination: URL
 
     private var file: AVAudioFile?

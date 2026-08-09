@@ -52,7 +52,7 @@ public actor SpeakerAttributionService {
     public static let maximumSpeakers = 4
 
     private let modelURL: URL
-    private let log = Logger(subsystem: "app.cheerio.mac", category: "SpeakerAttribution")
+    private let log = Logger(subsystem: "co.obvios.cheerio.mac", category: "SpeakerAttribution")
 
     public init(modelURL: URL) {
         self.modelURL = modelURL

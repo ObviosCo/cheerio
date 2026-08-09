@@ -15,7 +15,7 @@ public actor MeetingAudioRecorder {
         let buffer: UnsafeTransfer<AVAudioPCMBuffer>
     }
 
-    private let log = Logger(subsystem: "app.cheerio.mac", category: "MeetingAudioRecorder")
+    private let log = Logger(subsystem: "co.obvios.cheerio.mac", category: "MeetingAudioRecorder")
     private let directory: URL
 
     private var files: [SpeakerChannel: AVAudioFile] = [:]

@@ -8,7 +8,10 @@
          Measured on identical code: peak=0.0 sandboxed vs -1.8 dBFS unsandboxed.
          This rules out Mac App Store distribution. Hardened runtime stays on.
          Note the data location moves with this flag: sandboxed builds live under
-         ~/Library/Containers/app.cheerio.mac/Data/, unsandboxed under ~/Library.
+         ~/Library/Containers/co.obvios.cheerio.mac/Data/, unsandboxed under ~/Library.
+         (Containers/app.cheerio.mac/Data/ before the co.obvios rename — see
+         BundleIdentifierMigration in CheerioKit, which only ever moves the
+         unsandboxed location, since the sandbox has never shipped on.)
          Also required by Hardened Runtime for microphone access: -->
     <key>com.apple.security.device.audio-input</key>
     <true/>

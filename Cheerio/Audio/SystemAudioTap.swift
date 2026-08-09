@@ -63,7 +63,7 @@ final class SystemAudioTap: @unchecked Sendable {
         case formatUnavailable
     }
 
-    private let log = Logger(subsystem: "app.cheerio.mac", category: "SystemAudioTap")
+    private let log = Logger(subsystem: "co.obvios.cheerio.mac", category: "SystemAudioTap")
     private let onBuffer: @Sendable (sending AVAudioPCMBuffer) -> Void
 
     private var tapID = AudioObjectID(kAudioObjectUnknown)

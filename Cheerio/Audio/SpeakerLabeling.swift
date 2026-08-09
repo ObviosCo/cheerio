@@ -11,7 +11,7 @@ import SwiftData
 /// disk until the retention policy purges it.
 @MainActor
 enum SpeakerLabeling {
-    private static let log = Logger(subsystem: "app.cheerio.mac", category: "SpeakerLabeling")
+    private static let log = Logger(subsystem: "co.obvios.cheerio.mac", category: "SpeakerLabeling")
 
     enum LabelingError: LocalizedError {
         case modelMissing

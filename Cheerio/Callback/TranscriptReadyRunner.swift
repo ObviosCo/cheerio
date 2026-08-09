@@ -14,7 +14,7 @@ import Synchronization
 /// file — this only runs it. `CallbackProcess` next door handles the launch, and
 /// explains why it isn't `Foundation.Process`.
 enum TranscriptReadyRunner {
-    private static let log = Logger(subsystem: "app.cheerio.mac", category: "TranscriptReadyRunner")
+    private static let log = Logger(subsystem: "co.obvios.cheerio.mac", category: "TranscriptReadyRunner")
 
     /// How long a callback gets before it's terminated. Generous on purpose: the
     /// command might be `claude -p` or similar doing real agentic work against the
@@ -432,7 +432,7 @@ private final class StderrTailReader: Sendable {
             window.finish()
             return
         }
-        let queue = DispatchQueue(label: "app.cheerio.mac.callback-stderr", qos: .utility)
+        let queue = DispatchQueue(label: "co.obvios.cheerio.mac.callback-stderr", qos: .utility)
         // The cleanup handler is the descriptor's only close: it runs once the channel
         // is closed *and* every operation queued against it has finished, which is the
         // one moment at which nothing can still be reading from it.

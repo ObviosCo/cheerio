@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// Locates recorded meeting audio inside the app's Application Support directory.
 ///
@@ -16,7 +17,52 @@ public enum AudioStorage {
     /// its `Bundle.main` is the helper's own directory and its identifier is either
     /// nil or the helper's — never Cheerio's. The app still prefers its live value
     /// (see ``applicationSupport()``) and falls back to this.
-    public static let appBundleIdentifier = "app.cheerio.mac"
+    public static let appBundleIdentifier = "co.obvios.cheerio.mac"
+
+    /// Cheerio's bundle identifier before the `co.obvios` rename (see the tracking
+    /// epic, #22, and `BundleIdentifierMigration`).
+    ///
+    /// Kept as a named constant, not folded away once the migration ships, because
+    /// three things still read it after every existing install has moved forward:
+    /// ``BundleIdentifierMigration`` (to find the directory to move), the one-time
+    /// `UserDefaultsMigration` (to find the preferences domain to copy), and the
+    /// bundled MCP helper's ``containerURL(bundleIdentifier:)`` fallback for a user
+    /// who runs the helper before ever launching the new app.
+    public static let legacyBundleIdentifier = "app.cheerio.mac"
+
+    /// Overrides which identifier ``applicationSupport()`` resolves to, for the rest
+    /// of the process's lifetime. `nil` (the default) means "use
+    /// `Bundle.main.bundleIdentifier`, as always."
+    ///
+    /// Exists for exactly one caller: `CheerioApp.init()`, when
+    /// `BundleIdentifierMigration.migrateIfNeeded()` fails to move the old container
+    /// forward. Redirecting only the SwiftData store to the old location would not be
+    /// enough on its own — every meeting's audio and every enrolled speaker's sample
+    /// is a path *relative to this container*, resolved through
+    /// ``applicationSupport()`` by every caller in this file, `MeetingAudioRecorder`,
+    /// and `AudioRetention`. Leaving those pointed at the (empty) new container while
+    /// only the store falls back would reproduce the exact "empty library" problem
+    /// this migration exists to prevent — just moved from the store into the audio
+    /// lookups. Overriding here, once, keeps every caller consistent for the launch.
+    ///
+    /// A `Mutex`, not a plain `var`: this is written at most once, from
+    /// `CheerioApp.init()`, before `CaptureSession`, `AppUpdater`, or the
+    /// `ModelContainer` exist to read it — but Swift 6 has no way to know that from
+    /// the call site, and a bare global `var` would be a real, not just theoretical,
+    /// data race under strict concurrency. The lock is what makes this genuinely
+    /// `Sendable`, not an `@unchecked` promise standing in for one.
+    private static let containerOverride = Mutex<String?>(nil)
+
+    /// Sets the override described above. Safe to call more than once — a second
+    /// launch after a failed migration calls it again with the same value — but never
+    /// call it after any code below has already read ``applicationSupport()``.
+    public static func setContainerOverride(_ bundleIdentifier: String?) {
+        containerOverride.withLock { $0 = bundleIdentifier }
+    }
+
+    private static func resolvedBundleIdentifier() -> String {
+        containerOverride.withLock { $0 } ?? Bundle.main.bundleIdentifier ?? appBundleIdentifier
+    }
 
     /// The shared, user-level Application Support directory — NOT where we write.
     /// Only used to migrate data written there before this was fixed.
@@ -53,7 +99,7 @@ public enum AudioStorage {
     /// unsandboxed app has to namespace itself.
     public static func applicationSupport() throws -> URL {
         let container = try sharedApplicationSupport()
-            .appending(path: Bundle.main.bundleIdentifier ?? appBundleIdentifier, directoryHint: .isDirectory)
+            .appending(path: resolvedBundleIdentifier(), directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
         return container
     }

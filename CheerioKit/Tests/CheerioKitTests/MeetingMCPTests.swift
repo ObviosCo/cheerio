@@ -501,10 +501,48 @@ import Testing
             try MeetingStore.resolveStoreURL(environment: [MeetingStore.storePathEnvironmentKey: override])
                 .path(percentEncoded: false) == override)
         // Blank is not an override — an MCP client config with an empty `env` value
-        // should fall back to the real store, not to the filesystem root.
-        let fallback = try MeetingStore.resolveStoreURL(environment: [MeetingStore.storePathEnvironmentKey: "  "])
+        // should fall back to the real store, not to the filesystem root. Nothing on
+        // disk (real or stubbed) exists here, so this is the plain "no override, no
+        // migrated container yet either" case: the current identifier's path, unread.
+        let fallback = try MeetingStore.resolveStoreURL(
+            environment: [MeetingStore.storePathEnvironmentKey: "  "],
+            fileManager: StubFileManager(existingPaths: [])
+        )
         #expect(fallback.lastPathComponent == AudioStorage.storeFileName)
         #expect(fallback.deletingLastPathComponent().lastPathComponent == AudioStorage.appBundleIdentifier)
+    }
+
+    /// The `co.obvios` rename (issue #22's stack): a user who hasn't launched the
+    /// rebuilt app yet, so nothing has moved the container forward, still gets their
+    /// real history from a client that only ever runs the helper.
+    @Test func fallsBackToTheLegacyContainerWhenTheNewOneDoesntExistYet() throws {
+        let legacyStore = try AudioStorage.containerURL(bundleIdentifier: AudioStorage.legacyBundleIdentifier)
+            .appending(path: AudioStorage.storeFileName)
+
+        let resolved = try MeetingStore.resolveStoreURL(
+            environment: [:],
+            fileManager: StubFileManager(existingPaths: [legacyStore.path(percentEncoded: false)])
+        )
+
+        #expect(resolved == legacyStore)
+    }
+
+    /// Once the app has run at least once and `BundleIdentifierMigration` has moved
+    /// the container, the helper never looks at the old one again — even if it's
+    /// still there (a move failure left both, or the app hasn't cleaned it up yet).
+    @Test func prefersTheCurrentContainerOnceItExists() throws {
+        let currentStore = try AudioStorage.containerURL().appending(path: AudioStorage.storeFileName)
+        let legacyStore = try AudioStorage.containerURL(bundleIdentifier: AudioStorage.legacyBundleIdentifier)
+            .appending(path: AudioStorage.storeFileName)
+
+        let resolved = try MeetingStore.resolveStoreURL(
+            environment: [:],
+            fileManager: StubFileManager(existingPaths: [
+                currentStore.path(percentEncoded: false), legacyStore.path(percentEncoded: false),
+            ])
+        )
+
+        #expect(resolved == currentStore)
     }
 
     // MARK: - Client setup snippets
@@ -543,5 +581,22 @@ import Testing
         let message = MeetingStore.Failure.unreadable(path: "/tmp/default.store", detail: "boom").description
         #expect(message.contains("schema"))
         #expect(message.contains("launch the matching version of Cheerio"))
+    }
+}
+
+/// Claims exactly the paths it's told to, so `resolveStoreURL`'s new/legacy fallback
+/// can be tested without ever touching the real `~/Library/Application Support` —
+/// which, on a developer's own Mac, may hold a real store this suite must not read,
+/// let alone depend on the presence or absence of.
+private final class StubFileManager: FileManager {
+    private let existingPaths: Set<String>
+
+    init(existingPaths: Set<String>) {
+        self.existingPaths = existingPaths
+        super.init()
+    }
+
+    override func fileExists(atPath path: String) -> Bool {
+        existingPaths.contains(path)
     }
 }

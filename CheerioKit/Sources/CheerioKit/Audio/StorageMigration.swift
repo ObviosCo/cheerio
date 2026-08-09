@@ -20,7 +20,7 @@ import SwiftData
 /// container path regardless. The one store it was written for has long since moved,
 /// so the whole thing was risk with nothing left to gain.
 public enum StorageMigration {
-    private static let log = Logger(subsystem: "app.cheerio.mac", category: "StorageMigration")
+    private static let log = Logger(subsystem: "co.obvios.cheerio.mac", category: "StorageMigration")
 
     /// Relocates each meeting's audio directory.
     ///
