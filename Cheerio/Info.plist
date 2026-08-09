@@ -18,6 +18,21 @@
 	     other build (local, CI, workflow_dispatch dry runs) ships it as-is. -->
 	<key>CFBundleShortVersionString</key>
 	<string>0.0.0</string>
+	<!-- Not a general-purpose deep-link surface — the one thing Cheerio does with
+	     it is CheckForUpdatesRequest.url, so a different, DMG-or-translocated
+	     launch of this same app can hand off "check for updates" to a copy
+	     that's already stable (see Launch/ActivateInstalledCopy.swift). -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>app.cheerio.mac.checkForUpdates</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>cheerio</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>

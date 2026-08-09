@@ -178,6 +178,11 @@ translocation, a read-only mount from which Cheerio can't update itself. Builds 
 a Developer ID certificate and notarized by Apple, so Gatekeeper opens them without warnings or
 right-click ceremony. Requires macOS 26 or later on Apple Silicon.
 
+If you do launch it straight from the DMG or a translocated path, Cheerio notices and offers to
+move itself to `/Applications` on the spot — or, if a copy is already installed there, points you
+at that one instead of letting two copies collide. A dev build run from a build directory is
+unaffected; the check only fires for a launch location Sparkle couldn't have updated anyway.
+
 The `.zip` on the same release is the identical app; it's what the updater downloads, and
 Sparkle prefers that format. Either one works if you install it to `/Applications`.
 
