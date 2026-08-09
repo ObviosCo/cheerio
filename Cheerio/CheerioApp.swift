@@ -249,7 +249,16 @@ struct ContentView: View {
                 // got recorded against a calendar event.
                 .navigationSplitViewColumnWidth(min: 280, ideal: 340, max: 460)
         } detail: {
+            // The sidebar keeps NavigationSplitView's own translucent sidebar
+            // material — Theme's usage rule prefers system materials there over a
+            // painted-on token — so this is the one side worth touching: an
+            // explicit `Surface/Raised` reads as the elevated, primary pane next to
+            // the sidebar's recessed one, instead of both sides sharing the plain
+            // window background and competing for attention. `.frame` first because
+            // none of the three branches below claims the full column on its own.
             detail
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Theme.Colors.surfaceRaised)
         }
         .onChange(of: session.state) { previous, state in
             switch state {
