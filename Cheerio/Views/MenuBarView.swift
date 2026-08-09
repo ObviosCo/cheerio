@@ -78,6 +78,7 @@ struct MenuBarView: View {
                 try await session.start(
                     title: event?.title ?? Self.autoTitle(for: kind),
                     calendarEventID: event?.id,
+                    calendarEventOccurrenceStart: event?.startDate,
                     kind: kind,
                     context: context
                 )

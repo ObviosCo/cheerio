@@ -46,6 +46,15 @@ If the diff changes what the user sees (views, copy, icons, first-run flow):
 (`.github/instructions/ui-changes.instructions.md` also applies this check specifically to
 `Cheerio/Views/**` diffs.)
 
+## Every behavior-changing PR
+
+Not just UI: new MCP tools, callback semantics, capture behavior, settings — anything a user
+or their agent can observe.
+
+- Ask whether this PR changes behavior the README describes or should describe. Flag PRs that
+  add or remove user-facing capability without touching `README.md` — a stale README claim is
+  the same class of problem as a missing screenshot update, just easier to miss.
+
 ## Mechanics
 
 - **`.xcodeproj` is generated, not source.** `project.yml` is the source of truth for the
@@ -53,7 +62,7 @@ If the diff changes what the user sees (views, copy, icons, first-run flow):
   `./Scripts/bootstrap.sh`) to be picked up. Never treat a hand-edited `.xcodeproj` diff as
   authoritative, and don't ask for one to be committed.
 - **`.swift-format` at the repo root is the formatting authority.** CI runs
-  `swift format lint --recursive --strict Cheerio CheerioKit/Sources CheerioKit/Tests` — don't
+  `swift format lint --recursive --strict Cheerio CheerioMCP CheerioScreenshotTests CheerioKit/Sources CheerioKit/Tests` — don't
   request stylistic changes that would conflict with it.
 - **Tasks live in GitHub issues, never in `CLAUDE.md`.** Flag any PR that adds a to-do/backlog
   section to `CLAUDE.md` instead of opening or linking an issue.

@@ -1,0 +1,194 @@
+# Photographs the app's screens on a PR that changes them. Uploads the pictures.
+# Publishes nothing.
+#
+# Copilot's review instructions already ask whether the site's screenshots need
+# updating; this is what makes that answerable without a reviewer building the branch.
+#
+# ## The trust boundary — read this before adding a permission here
+#
+# This workflow is triggered by `pull_request`, so everything it runs is code from the
+# pull request: `bootstrap.sh`, `seed-store.sh`, the test bundle, the scripts under
+# `Scripts/screenshots/`, and this file itself. None of it has been reviewed — that's
+# what the pull request is for. A token that could write to the repository would
+# therefore be a token any contributor could spend by editing one of those files, so
+# this workflow has `contents: read` and nothing else, and it hands its output on as an
+# artifact instead of publishing it.
+#
+# The publishing half is `.github/workflows/screenshots-publish.yml`: triggered by
+# `workflow_run`, running the *base branch's* scripts with the write token, treating
+# this artifact as hostile input. **Do not move a step across that line** — if a step
+# here needs `GITHUB_TOKEN` to write anything, it belongs over there.
+#
+# ## The mechanism, and why it's this one
+#
+# Capture runs inside `xcodebuild test` as `CheerioScreenshotTests`, a UI-testing
+# bundle. The local harness (`Scripts/screenshots/capture.sh`) shoots windows with
+# `screencapture -l`, which is gated by Screen Recording — a permission a runner has
+# nobody to grant, and which fails by handing back a black frame rather than an error.
+# A test host's own screenshot API isn't reaching into another process's window, so it
+# isn't gated the same way. Everything else is shared with the local harness: the same
+# seeded demo store, the same `ScreenshotMode` launch arguments.
+name: Screen previews
+
+on:
+  pull_request:
+    paths:
+      - "Cheerio/Views/**"
+      - "Cheerio/*.swift"
+      - "site/**"
+      - "CheerioScreenshotTests/**"
+      - "Scripts/screenshots/**"
+      - ".github/workflows/screenshots.yml"
+  # For refreshing the site's imagery from main without opening a PR to do it.
+  workflow_dispatch:
+
+# Read-only, deliberately, and the reason is the trust boundary above rather than
+# frugality: this job executes unreviewed code. The publish workflow holds the write
+# token.
+permissions:
+  contents: read
+
+concurrency:
+  group: screenshots-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  capture:
+    name: Capture screens
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      # Both halves of the harness agree on this path — it's also the fallback
+      # baked into CheerioScreenshotTests for when the TEST_RUNNER_ forwarding
+      # below doesn't reach the test process.
+      SCREENSHOT_HOME: /tmp/cheerio-screenshots-home
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Cache diarization model
+        uses: actions/cache@v6
+        with:
+          path: Cheerio/Resources/Models
+          key: model-${{ hashFiles('Scripts/fetch-models.sh') }}
+
+      - name: Cache SwiftPM (xcodebuild)
+        uses: actions/cache@v6
+        with:
+          path: SourcePackages
+          key: spm-app-${{ runner.os }}-${{ hashFiles('CheerioKit/Package.swift', 'project.yml') }}
+          restore-keys: |
+            spm-app-${{ runner.os }}-
+
+      # The seeder is its own SwiftPM package depending on CheerioKit by path, so it
+      # resolves and builds FluidAudio all over again if this misses.
+      - name: Cache SwiftPM (demo store seeder)
+        uses: actions/cache@v6
+        with:
+          path: Scripts/screenshots/SeedDemoStore/.build
+          key: spm-seed-${{ runner.os }}-${{ hashFiles('CheerioKit/Package.swift', 'Scripts/screenshots/SeedDemoStore/Package.swift') }}
+          restore-keys: |
+            spm-seed-${{ runner.os }}-
+
+      - name: Bootstrap (fetch model, generate project)
+        run: ./Scripts/bootstrap.sh
+
+      # Compiles the app and the test bundle and launches neither, which is what
+      # keeps the slow half of this job out of the part that has to hold a GUI.
+      - name: Build for testing
+        run: |
+          set -o pipefail
+          xcodebuild build-for-testing \
+            -project Cheerio.xcodeproj \
+            -scheme CheerioScreenshots \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath build/screenshots \
+            -clonedSourcePackagesDirPath SourcePackages \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcbeautify --renderer github-actions
+
+      # The same seeder the local harness runs. Nothing in the store came from a real
+      # meeting, which is the condition on publishing these at all.
+      - name: Seed the demo store
+        run: ./Scripts/screenshots/seed-store.sh --home "$SCREENSHOT_HOME"
+
+      # `continue-on-error` because a surface that fails to photograph shouldn't cost
+      # the reviewer the ones that worked: the steps below still extract, upload and
+      # publish whatever came out. The gate at the end of the job is what turns that
+      # into a red check, so "partial" doesn't get reported as "fine".
+      - name: Capture
+        id: capture
+        continue-on-error: true
+        env:
+          # xcodebuild forwards TEST_RUNNER_-prefixed variables to the test runner
+          # with the prefix stripped, which is the only channel into a UI test's
+          # process.
+          TEST_RUNNER_CHEERIO_SCREENSHOT_HOME: ${{ env.SCREENSHOT_HOME }}
+        run: |
+          set -o pipefail
+          xcodebuild test-without-building \
+            -project Cheerio.xcodeproj \
+            -scheme CheerioScreenshots \
+            -destination 'platform=macOS' \
+            -derivedDataPath build/screenshots \
+            -clonedSourcePackagesDirPath SourcePackages \
+            -resultBundlePath "$RUNNER_TEMP/screenshots.xcresult" \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcbeautify --renderer github-actions
+
+      - name: Extract the captures
+        run: |
+          ./Scripts/screenshots/ci/extract-screenshots.sh \
+            --xcresult "$RUNNER_TEMP/screenshots.xcresult" \
+            --out "$RUNNER_TEMP/screenshots"
+
+      # What the publisher cross-checks against its own `workflow_run` payload. It's a
+      # claim, not a credential: the publisher believes the PR number only after the
+      # payload (or the API) says the same commit belongs to it.
+      - name: Describe the run for the publisher
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+        run: |
+          jq -n \
+            --arg event "$EVENT" \
+            --arg pr "$PR_NUMBER" \
+            --arg head_sha "$HEAD_SHA" \
+            --arg head_repo "$HEAD_REPO" \
+            '{event: $event, pr: $pr, head_sha: $head_sha, head_repo: $head_repo}' \
+            > "$RUNNER_TEMP/screenshots/metadata.json"
+          cat "$RUNNER_TEMP/screenshots/metadata.json"
+
+      # The one output of this job. `screens` is a fixed name because
+      # screenshots-publish.yml downloads it by name from the run that produced it.
+      - name: Upload the captures
+        uses: actions/upload-artifact@v7
+        with:
+          name: screens
+          path: ${{ runner.temp }}/screenshots
+          if-no-files-found: error
+
+      # The truthful bit. Capture is allowed to fail without stopping the job, so
+      # something has to fail it afterwards or a half-photographed run reports green.
+      # `always()` so this also has its say when an earlier step blew up.
+      - name: Did every surface come out?
+        if: always()
+        env:
+          CAPTURE_OUTCOME: ${{ steps.capture.outcome }}
+        run: |
+          set -o pipefail
+          ./Scripts/screenshots/ci/check-captures.sh \
+            --dir "$RUNNER_TEMP/screenshots" \
+            --expected-from CheerioScreenshotTests/ScreenshotCaptureTests.swift \
+            --capture-outcome "$CAPTURE_OUTCOME" \
+            | tee -a "$GITHUB_STEP_SUMMARY"

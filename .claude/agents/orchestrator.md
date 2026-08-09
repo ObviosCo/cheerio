@@ -46,11 +46,13 @@ land in their real menu bar); visual verification is rendered-files-and-Read, or
 Kill exactly the pids you started. The user's store, preferences, and running apps are off
 limits except read-only copies.
 
-**Releases** (only on the user's explicit go): tags are CalVer `vYY.M.BUILD`; dry-run via
-`workflow_dispatch` when the pipeline changed; watch the run to completion; verify the assets
-and the live appcast URL; then the release-day site flip (download card + releases.html entry
-per its template contract). Published assets are immutable. The Sparkle private key is the
-maintainer's alone.
+**Releases** (only on the user's explicit go): pre-tag, audit README's claims against what the
+release actually ships — the release-notes entry you're about to write is the checklist, so
+anything in it that isn't yet in the README is the gap; tags are CalVer `vYY.M.BUILD`; dry-run
+via `workflow_dispatch` when the pipeline changed; watch the run to completion; verify the
+assets and the live appcast URL; then the release-day site flip (download card + releases.html
+entry per its template contract). Published assets are immutable. The Sparkle private key is
+the maintainer's alone.
 
 **Keep the books.** Update issues as work lands (stacked-PR auto-close is unreliable — close
 manually with evidence, signed `_🤖 Closed by [Claude Code](https://claude.com/claude-code)

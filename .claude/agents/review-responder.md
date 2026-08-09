@@ -38,7 +38,7 @@ split), and those two files are the source of truth for all of them.
 `Cheerio/Resources/Models` or `Cheerio.xcodeproj` is missing (fresh checkout/worktree), run
 `./Scripts/bootstrap.sh` — the model must exist before the project can generate. Then —
 `swift format --in-place --recursive
-Cheerio CheerioMCP CheerioKit/Sources CheerioKit/Tests` (drop `CheerioMCP` if absent), then
+Cheerio CheerioMCP CheerioScreenshotTests CheerioKit/Sources CheerioKit/Tests` (drop `CheerioMCP` if absent), then
 `swift format lint --recursive --strict` the same paths, `swift test --package-path
 CheerioKit`, `xcodegen generate` if files were added/removed, then `xcodebuild build -project
 Cheerio.xcodeproj -scheme Cheerio -configuration Debug -destination 'platform=macOS'

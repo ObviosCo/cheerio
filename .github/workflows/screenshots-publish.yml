@@ -1,0 +1,175 @@
+# Publishes what `.github/workflows/screenshots.yml` photographed: the PNGs onto the
+# orphan `screenshots` branch, and one sticky comment on the pull request.
+#
+# ## The trust boundary — the whole reason this is a second workflow
+#
+# The capture half runs on `pull_request`, which means it executes unreviewed code from
+# the pull request, so it holds a read-only token and can't publish. This half holds
+# the write token. `workflow_run` is what makes that safe: it runs in the **base
+# repository's** context, from the **default branch's** checkout, so every script it
+# executes is code that has already been reviewed and merged. Nothing from the pull
+# request runs here.
+#
+# What does cross the line is one artifact of PNGs plus a `metadata.json`, and that is
+# treated as hostile input, because a pull request wrote it:
+#
+# - `ci/verify-handoff.sh` rejects anything that isn't a flat, plausibly-named PNG,
+#   caps the count and the total bytes, and copies only what passed into a clean
+#   staging directory — the publish scripts never read the downloaded tree directly;
+# - the PR number and head SHA come from `github.event.workflow_run`, never from the
+#   artifact. `metadata.json` can only *agree* with the payload (and, at most, pick
+#   among the PR numbers GitHub itself associates with that commit); disagreeing fails
+#   the job.
+#
+# Two rules for anyone editing this file. Nothing from the pull request may be
+# executed, sourced, or interpolated into a `run:` block — untrusted values go through
+# `env:` so the shell sees data instead of syntax. And a fork's captures stay an
+# artifact: this workflow *could* publish them now that the token no longer depends on
+# the trigger, but the images themselves were rendered by unreviewed code, and putting
+# those in the repository's own branch and comments on sight is not a thing worth
+# having.
+#
+# One wart, worth knowing: a `workflow_run` job's status doesn't appear as a check on
+# the pull request. The PR's check is "Screen previews"; this job's evidence is the
+# comment it posts.
+name: Publish screen previews
+
+on:
+  workflow_run:
+    workflows: ["Screen previews"]
+    types: [completed]
+
+# The write token lives here and only here. `actions: read` is for downloading the
+# triggering run's artifact.
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+
+# Not `cancel-in-progress`: these runs push to a shared branch, and cancelling one
+# mid-push is worse than waiting for it. Losing the race is already handled — see
+# publish-branch.sh.
+concurrency:
+  group: screenshots-publish-${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish captures
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      MARKER: "<!-- screenshot-previews -->"
+      # The artifact as downloaded — untrusted — and the validated copy the publish
+      # scripts are pointed at.
+      DOWNLOADED: ${{ runner.temp }}/downloaded
+      STAGING: ${{ runner.temp }}/screens
+    steps:
+      # No `ref:`, on purpose: for `workflow_run`, GITHUB_SHA is the tip of the default
+      # branch, so this is the reviewed copy of the scripts below. Checking out the
+      # pull request's head here would hand it the write token and undo the split.
+      - uses: actions/checkout@v7
+
+      - name: Download the captures
+        id: download
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          mkdir -p "$DOWNLOADED"
+          # A cancelled run, or one that never got as far as the upload, leaves no
+          # artifact. That's not a failure of *this* job — the capture run's own check
+          # is where that shows up.
+          if gh run download "$RUN_ID" --repo "$REPO" --name screens --dir "$DOWNLOADED"; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify the handoff
+        id: handoff
+        if: steps.download.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
+          # The pull requests GitHub itself attached to the triggering run. Passed as
+          # JSON so an empty or absent list is the script's problem, not the
+          # expression's.
+          PR_CANDIDATES: ${{ toJSON(github.event.workflow_run.pull_requests) }}
+        run: |
+          ./Scripts/screenshots/ci/verify-handoff.sh \
+            --dir "$DOWNLOADED" \
+            --staging "$STAGING" \
+            --repo "$REPO" \
+            --event "$RUN_EVENT" \
+            --head-sha "$HEAD_SHA" \
+            --head-repo "$HEAD_REPO" \
+            --pr-candidates-json "$PR_CANDIDATES" \
+            >> "$GITHUB_OUTPUT"
+
+      - name: Publish to the screenshots branch
+        if: steps.handoff.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PREFIX: ${{ steps.handoff.outputs.prefix }}
+        run: |
+          ./Scripts/screenshots/ci/publish-branch.sh \
+            --dir "$STAGING" \
+            --prefix "$PREFIX" \
+            --prune-repo "$REPO"
+
+      - name: Comment on the pull request
+        if: steps.handoff.outputs.comment == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PREFIX: ${{ steps.handoff.outputs.prefix }}
+          PR: ${{ steps.handoff.outputs.pr }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          ./Scripts/screenshots/ci/render-comment.sh \
+            --dir "$STAGING" \
+            --raw-base "https://raw.githubusercontent.com/${REPO}/screenshots/${PREFIX}" \
+            --sha "$HEAD_SHA" \
+            --marker "$MARKER" \
+            --run-url "$RUN_URL" \
+            > "$RUNNER_TEMP/comment.md"
+          ./Scripts/screenshots/ci/post-comment.sh \
+            --repo "$REPO" \
+            --pr "$PR" \
+            --marker "$MARKER" \
+            --body-file "$RUNNER_TEMP/comment.md"
+
+      - name: Summary
+        if: always()
+        env:
+          FOUND: ${{ steps.download.outputs.found }}
+          PUBLISH: ${{ steps.handoff.outputs.publish }}
+          PREFIX: ${{ steps.handoff.outputs.prefix }}
+          REASON: ${{ steps.handoff.outputs.reason }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          # `${REASON:-…}` with the fallback inline would be a bash syntax error the
+          # moment the fallback contained an apostrophe, so it gets its own line.
+          if [ -z "$REASON" ]; then
+            REASON="the handoff did not verify"
+          fi
+          {
+            echo "### Screen previews"
+            echo
+            echo "- From [the capture run](${RUN_URL})."
+            if [ "$FOUND" != "true" ]; then
+              echo "- That run left no \`screens\` artifact, so there was nothing to publish."
+            elif [ "$PUBLISH" = "true" ]; then
+              echo "- Published under \`${PREFIX}\` on the \`screenshots\` branch."
+            else
+              echo "- Not published: ${REASON}. The captures are attached to the capture run"
+              echo "  as an artifact instead."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
