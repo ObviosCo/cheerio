@@ -221,10 +221,13 @@ struct MeetingListView: View {
             // Disabled rather than hidden: a meeting that's mid-recording is still
             // the one you're most likely to right-click (it's at the top of the
             // list), and a missing item there reads as a bug rather than a rule.
+            // `canDelete` also covers a relabel pass in flight from the detail
+            // view — this row has no view of that on its own, so it has to defer
+            // to the shared session state. See `CaptureSession.canDelete(_:)`.
             Button("Delete", role: .destructive) {
                 deletingMeeting = meeting
             }
-            .disabled(meeting == session.meeting)
+            .disabled(!session.canDelete(meeting))
         }
     }
 

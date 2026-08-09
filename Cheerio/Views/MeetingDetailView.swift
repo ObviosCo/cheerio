@@ -103,12 +103,16 @@ struct MeetingDetailView: View {
                 // mid-call replaces the live view with this one) — `.disabled`
                 // rather than omitted, matching the library list's context menu, so
                 // the control doesn't appear to vanish depending on state.
+                // `canDelete` also covers this view's own "Re-identify speakers"
+                // pass: it mutates `meeting.segments` across an `await`, and a
+                // delete racing that would resume the pass against an already-
+                // deleted model. See `CaptureSession.canDelete(_:)`.
                 Button(role: .destructive) {
                     isDeleteConfirming = true
                 } label: {
                     Label("Delete", systemImage: "trash")
                 }
-                .disabled(session.meeting == meeting)
+                .disabled(!session.canDelete(meeting))
             }
         }
     }
@@ -258,7 +262,14 @@ struct MeetingDetailView: View {
     /// enrolled, and the audio stays on disk until retention purges it.
     private func relabel() async {
         isRelabeling = true
-        defer { isRelabeling = false }
+        // Before the first `await` below, so nothing can observe this meeting as
+        // deletable between that call starting and this line running. Cleared in
+        // the `defer`, which runs on the error path too — see `CaptureSession`.
+        session.beginProcessing(meeting)
+        defer {
+            isRelabeling = false
+            session.endProcessing(meeting)
+        }
         do {
             try await SpeakerLabeling.label(meeting: meeting, context: context)
             let ownerNames = SpeakerLabeling.ownerNames(context: context)
