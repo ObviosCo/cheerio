@@ -20,7 +20,16 @@ struct MeetingDetailView: View {
     /// in full alongside everything else, which read as too much at once. No
     /// persistence — collapsed every time is the intended behavior, not a stand-in
     /// for remembering the last state.
-    @State private var isTranscriptExpanded = false
+    ///
+    /// `ScreenshotMode.expandsTranscript` is false in a real launch, so this is
+    /// `false` there too — it exists only so the harness's one capture that needs
+    /// the transcript visible doesn't have to simulate a click. The initializer
+    /// alone isn't enough to keep this collapsed, though: SwiftUI reuses this
+    /// view's state across a sidebar selection change rather than recreating it,
+    /// so the meeting-keyed `.task` below resets this on every switch — without
+    /// that, expanding one meeting's transcript and then selecting another would
+    /// open the next one already expanded.
+    @State private var isTranscriptExpanded = ScreenshotMode.expandsTranscript
     /// Seeds and opens the shared rename alert (``renameMeetingAlert``) — the same
     /// flow the library list's "Rename" context menu drives, triggered here by the
     /// pencil button next to the title instead of a right click.
@@ -78,6 +87,10 @@ struct MeetingDetailView: View {
         // one resolved. Re-keyed per meeting so switching in the sidebar re-runs it,
         // and a no-op for one that already has every current speaker slotted.
         .task(id: meeting.persistentModelID) {
+            // See ``isTranscriptExpanded``: this view is reused across a sidebar
+            // selection change, so the state has to be put back to collapsed here
+            // rather than trusting the property initializer to have covered it.
+            isTranscriptExpanded = ScreenshotMode.expandsTranscript
             meeting.resolveSpeakerSlots(ownerNames: SpeakerLabeling.ownerNames(context: context))
             try? context.save()
         }
@@ -147,7 +160,12 @@ struct MeetingDetailView: View {
                     renameText = meeting.title
                     renamingMeeting = meeting
                 } label: {
-                    Image(systemName: "pencil")
+                    // `.iconOnly` keeps the glyph-only look but leaves the label's
+                    // text as what VoiceOver announces — a bare `Image` would
+                    // otherwise read out the SF Symbol's name ("pencil") rather
+                    // than what the button does.
+                    Label("Rename meeting", systemImage: "pencil")
+                        .labelStyle(.iconOnly)
                 }
                 .buttonStyle(.borderless)
                 .foregroundStyle(.secondary)
@@ -206,15 +224,19 @@ struct MeetingDetailView: View {
         VStack(alignment: .leading, spacing: Theme.Space.x1) {
             Text("Rough notes")
                 .font(.headline)
+            // A direct write to `meeting.roughNotes`, same as the header's title
+            // binding — no explicit `context.save()` per keystroke, which would be
+            // a synchronous SwiftData write on every character typed. This
+            // environment's `ModelContext` autosaves by default (unlike
+            // `MeetingQueryService`'s read-only one), so the plain write is picked
+            // up the same way any other field-level edit in this view is.
             TextEditor(text: Binding(get: { meeting.roughNotes }, set: { meeting.roughNotes = $0 }))
                 .font(.body)
                 .frame(minHeight: 80)
                 .scrollContentBackground(.hidden)
                 .padding(Theme.Space.x1)
                 .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: Theme.Radius.md))
-                .onChange(of: meeting.roughNotes) {
-                    try? context.save()
-                }
+                .accessibilityLabel("Rough notes")
             Text("Notes added here stay with the meeting, but the summary above reflects your notes as of when the meeting ended.")
                 .font(.caption)
                 .foregroundStyle(.secondary)

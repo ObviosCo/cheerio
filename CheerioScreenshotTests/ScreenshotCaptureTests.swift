@@ -76,7 +76,13 @@ final class ScreenshotCaptureTests: XCTestCase {
     }
 
     func testLibraryTranscript() throws {
-        let app = try launchSeeded(Self.libraryArguments + ["-screenshotSelectMeeting", "2"])
+        // The transcript disclosure collapses by default (#104); this capture's
+        // whole point is showing transcript lines, so it opts back in via the same
+        // kind of launch-argument hook the other `ScreenshotMode` states use,
+        // rather than simulating a click on the disclosure triangle.
+        let app = try launchSeeded(
+            Self.libraryArguments + ["-screenshotSelectMeeting", "2", "-screenshotExpandTranscript", "YES"]
+        )
         capture(soleWindow(of: app), named: "library-transcript")
     }
 

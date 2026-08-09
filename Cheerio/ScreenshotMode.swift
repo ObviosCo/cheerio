@@ -53,6 +53,16 @@ enum ScreenshotMode {
         value(forKey: "screenshotOnboardingStep").map { UserDefaults.standard.integer(forKey: $0) }
     }
 
+    /// Forces the meeting detail view's transcript disclosure open at launch.
+    ///
+    /// A real launch always starts collapsed (#104) — this exists only for the
+    /// `library-transcript` capture, whose entire point is showing transcript
+    /// lines under the notes. Same shape as the other hooks here: an argument the
+    /// harness passes rather than a simulated click on the disclosure triangle.
+    static var expandsTranscript: Bool {
+        UserDefaults.standard.bool(forKey: "screenshotExpandTranscript")
+    }
+
     /// The main window's size in points, as "1440x900". Absent leaves the window
     /// wherever macOS put it.
     static var windowSize: CGSize? {
