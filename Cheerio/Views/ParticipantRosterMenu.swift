@@ -52,11 +52,18 @@ struct ParticipantRosterMenu: View {
                 // already separates you from them.
                 Button("Nobody — all remote") { setRoster([]) }
             } label: {
-                Label(summary, systemImage: isOverCap ? "exclamationmark.triangle" : "person.2")
+                Label(summary, systemImage: summaryIcon)
             }
             .fixedSize()
             .help(helpText)
         }
+    }
+
+    /// `person` for exactly one primed voice, `person.2` otherwise — including
+    /// zero, where there's no single participant to be specific about.
+    private var summaryIcon: String {
+        if isOverCap { return "exclamationmark.triangle" }
+        return usableSelectedNames.count == 1 ? "person" : "person.2"
     }
 
     private var summary: String {

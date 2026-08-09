@@ -327,7 +327,10 @@ struct MeetingListView: View {
             } label: {
                 Label {
                     VStack(alignment: .leading) {
+                        // Matches "Start recording"'s weight above — the label
+                        // carries the meaning here, not the icon (#133).
                         Text("Stop recording")
+                            .font(.body.weight(.medium))
                         if let startedAt = session.startedAt {
                             Text(startedAt, style: .timer)
                                 .font(.caption.monospacedDigit())
@@ -335,13 +338,35 @@ struct MeetingListView: View {
                         }
                     }
                 } icon: {
-                    Image(systemName: "stop.circle.fill")
+                    // A plain square, not the ring `stop.circle.fill` drew — the
+                    // ring, in the same copper the brand mark uses, read as
+                    // Cheerio's own logo rather than a control (maintainer
+                    // feedback, #133). Dropping the ring is enough to tell them
+                    // apart without giving up a conventional stop glyph.
+                    Image(systemName: "stop.fill")
                 }
             }
             // Copper, not red — red means failure, and this button appears
             // because a recording is healthy and in progress, not because
             // anything went wrong.
             .tint(Theme.Colors.recording)
+
+            // The event that would have been offered in `.idle` above doesn't
+            // disappear once capture starts — same row, just quiet and
+            // unclickable now that starting is no longer the decision on the
+            // table (#132). Shown whenever an event is current, not only when
+            // this recording was started against it, matching the offer
+            // above, which never checked that either.
+            if let currentEvent {
+                Label {
+                    Text(currentEvent.title)
+                        .lineLimit(2)
+                } icon: {
+                    Image(systemName: "calendar")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
 
             // Reading an earlier meeting mid-call replaces the live view, so there has
             // to be a way back to it.
