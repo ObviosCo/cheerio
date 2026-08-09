@@ -17,13 +17,15 @@ import OSLog
 /// migration leaves as current — that one runs later, inside a `.task`, once a
 /// `ModelContext` exists, and is unaffected by this one.
 ///
-/// The common case is a single same-volume `FileManager.moveItem` — a rename,
-/// atomic, landing whole or not at all. When the new identifier's directory
+/// The whole move is a single same-volume `FileManager.moveItem` — a rename,
+/// atomic, landing whole or not at all — even when the new identifier's directory
 /// already exists without a store of its own (issue #126: the bundled MCP helper
-/// can resolve, and thereby create a bare parent for, the new container's path
-/// before the app has ever launched), a whole-directory rename can't land on top
-/// of it, so this instead moves the old container's contents into the existing
-/// one item by item — see ``migrate(sharedApplicationSupport:oldBundleIdentifier:newBundleIdentifier:fileManager:)``.
+/// can leave exactly that behind by resolving the new container's path before the
+/// app has ever launched). A store-less directory at the new location isn't a
+/// library by definition, so it's moved aside first rather than merged into item
+/// by item — see ``migrate(sharedApplicationSupport:oldBundleIdentifier:newBundleIdentifier:fileManager:)``
+/// for why a destination-level merge can't make the same all-or-nothing guarantee
+/// this rename can.
 public enum BundleIdentifierMigration {
     private static let log = Logger(subsystem: AudioStorage.appBundleIdentifier, category: "BundleIdentifierMigration")
 
@@ -36,10 +38,11 @@ public enum BundleIdentifierMigration {
         /// directory (there's nothing left to distinguish the two cases by, and
         /// nothing that needs to).
         case freshInstall
-        /// The old directory's contents were moved into the new location — either by
-        /// renaming the whole directory (the new one didn't exist yet) or by moving
-        /// its contents in item by item (the new one already existed, empty or not,
-        /// but held no store of its own — see ``migrate(sharedApplicationSupport:oldBundleIdentifier:newBundleIdentifier:fileManager:)``).
+        /// The old directory became the new container by a single atomic rename —
+        /// after moving a store-less directory that already occupied the new
+        /// location out of the way first, if there was one. `.migrated` always
+        /// means the *entire* old container is now at the new location: nothing
+        /// from `old` was left behind, skipped, or partially merged.
         case migrated
         /// Both containers hold a SwiftData store already. Neither is touched: the
         /// new one holds data written since the identifier changed (a second
@@ -47,15 +50,15 @@ public enum BundleIdentifierMigration {
         /// the old one is not this migration's to discard. The caller opens the new
         /// container, as it always does.
         case bothExist
-        /// The old directory exists, the new one holds no store, and the move
-        /// failed — permissions or some other I/O error, or a partial item-by-item
-        /// merge that stopped partway through. A same-volume move doesn't fail for
-        /// being cross-volume. The caller should keep operating against the *old*
-        /// identifier for this launch (see ``AudioStorage/setContainerOverride(_:)``)
-        /// rather than open an empty (or partially-filled) new container and present
-        /// that as the library. Idempotent either way: the next launch resumes,
-        /// since an item already moved into the new location is skipped, not
-        /// re-moved, next time.
+        /// The move failed — permissions or some other I/O error, either setting a
+        /// pre-existing store-less directory aside or performing the rename itself.
+        /// Either way `old` has not been touched: both are attempted before
+        /// anything is taken out of `old`, so a failure at either point leaves it
+        /// exactly as it was, and the caller can safely keep operating against the
+        /// *old* identifier for this launch (see
+        /// ``AudioStorage/setContainerOverride(_:)``) rather than open an empty or
+        /// partially-set-up new container and present that as the library. The next
+        /// launch simply retries the whole thing.
         case failed
     }
 
@@ -72,10 +75,33 @@ public enum BundleIdentifierMigration {
     /// ever run (issue #126): `MeetingStore.resolveStoreURL` reads
     /// ``AudioStorage/containerURL(bundleIdentifier:)`` for the current identifier
     /// before falling back to the old one, and that read alone left an empty
-    /// directory sitting at `new` for this function to trip over. When that's the
-    /// situation, the old container's contents still belong here, so this migrates
-    /// them in rather than walking away and stranding a whole library under the old
-    /// identifier next to an app that now presents as empty.
+    /// directory sitting at `new` for this function to trip over.
+    ///
+    /// When that's the situation, this doesn't merge `old`'s items into the
+    /// existing `new` directory one at a time. An item-by-item merge can only ever
+    /// report success or failure for the *whole* merge by inspecting what it did
+    /// after the fact — and a destination-name collision (the new directory already
+    /// has, say, a `Meetings` folder of its own) has no safe resolution at that
+    /// level: skip the colliding item and the old data behind it becomes
+    /// unreachable through the container `.migrated` says is now current, but
+    /// clobber it and something the new directory already owned is gone instead.
+    /// Worse, a real half-moved failure (some items relocated, then an error) can
+    /// leave `default.store` already moved to `new` while its own `Meetings`
+    /// folder is still sitting in `old` — at which point falling back to the *old*
+    /// identifier on `.failed`, as this type has always done, would be actively
+    /// wrong, since the store that fallback expects to be there just left.
+    ///
+    /// Instead, a store-less `new` is moved aside to a sibling directory first —
+    /// out of the way entirely, not merged from — so the proven whole-directory
+    /// rename can run unchanged, exactly as it would against a `new` that never
+    /// existed. `.migrated` then keeps meaning what it always meant: the entire
+    /// former `old` is now at `new`. Only after that rename has *fully* succeeded
+    /// does anything look at the set-aside directory again, to opportunistically
+    /// merge back whatever in it doesn't collide with what just landed — at most
+    /// helper-created crumbs, per the scenario above, never anything the rename
+    /// itself depended on. Whatever's left in the set-aside directory after that
+    /// (a genuine collision, most plausibly) is left on disk rather than deleted,
+    /// named for what it is, for manual inspection.
     @discardableResult
     public static func migrate(
         sharedApplicationSupport: URL,
@@ -95,32 +121,37 @@ public enum BundleIdentifierMigration {
             return .bothExist
         }
 
+        // Set aside before touching `old` at all — a store-less `new` might not
+        // even be there (the common case), but when it is, this has to happen
+        // first: nothing below may take anything out of `old` until the rename's
+        // destination is provably clear, or a failure partway through would no
+        // longer leave `old` untouched.
+        var setAside: URL?
         do {
-            // The plain rename is preferred whenever it's available — one atomic
-            // step, same as before — and only falls back to an item-by-item merge
-            // when something already occupies `new`, since a rename can't land a
-            // directory on top of one that's already there.
             if fileManager.fileExists(atPath: new.path) {
-                try mergeContents(of: old, into: new, fileManager: fileManager)
-            } else {
-                try fileManager.moveItem(at: old, to: new)
+                let destination = sharedApplicationSupport.appending(
+                    path: "\(newBundleIdentifier).pre-migration-\(UUID().uuidString)",
+                    directoryHint: .isDirectory
+                )
+                try fileManager.moveItem(at: new, to: destination)
+                setAside = destination
             }
-            log.notice(
-                "Moved the Application Support container from \(oldBundleIdentifier, privacy: .public) to \(newBundleIdentifier, privacy: .public)."
-            )
-            return .migrated
+
+            try fileManager.moveItem(at: old, to: new)
         } catch {
             // Nothing prevents two Cheerio processes launching at once — this doc
-            // comment already says so — so the guards above and the move itself are
-            // not one atomic step: another launch can win the identical migration in
-            // the gap between them. When that's what happened, `old` is gone and
-            // `new` now holds a store; misreading that as `.failed` would set the
-            // caller's container override back to the identifier that no longer has
-            // anything at it, and `applicationSupport()` would silently recreate an
-            // empty directory there instead of using the container the other launch
-            // just finished populating. Only when `old` is *still* there — a genuine
-            // failure, or a merge that stopped partway through — does this report
-            // `.failed`.
+            // comment already says so — so the guards above and the moves
+            // themselves are not one atomic step: another launch can win the
+            // identical migration in the gap between them. When that's what
+            // happened, `old` is gone and `new` now holds a store; misreading that
+            // as `.failed` would set the caller's container override back to the
+            // identifier that no longer has anything at it, and
+            // `applicationSupport()` would silently recreate an empty directory
+            // there instead of using the container the other launch just finished
+            // populating. Only when `old` is *still* there — a genuine failure —
+            // does this report `.failed`. `old` is guaranteed to be exactly that
+            // (untouched) in every other failure mode: setting `new` aside throwing
+            // never reaches the rename, and the rename itself is one atomic step.
             if !fileManager.fileExists(atPath: old.path), fileManager.fileExists(atPath: newStore.path) {
                 log.notice(
                     "Lost the migration race to another launch; \(newBundleIdentifier, privacy: .public) is already the current container."
@@ -132,38 +163,44 @@ public enum BundleIdentifierMigration {
             )
             return .failed
         }
+
+        log.notice(
+            "Moved the Application Support container from \(oldBundleIdentifier, privacy: .public) to \(newBundleIdentifier, privacy: .public)."
+        )
+        if let setAside {
+            mergeSetAsideRemnants(setAside, into: new, fileManager: fileManager)
+        }
+        return .migrated
     }
 
-    /// Moves every item directly inside `old` into `new`, one item at a time,
-    /// for when a whole-directory rename isn't available because `new` already
-    /// exists — empty, holding an unrelated file, or (per ``migrate`` above)
-    /// anything short of a store, since a store there would already have
-    /// returned ``Outcome/bothExist`` before this is ever called.
+    /// Opportunistically folds whatever was set aside back into the now-migrated
+    /// `new`, once the rename that made `new` the real container has already
+    /// fully succeeded — this can only ever improve on leaving those items
+    /// quarantined, never break anything the rename already landed, since it
+    /// never overwrites a name that's already there.
     ///
-    /// Never overwrites anything already at the destination: an item with a name
-    /// already present in `new` is left in `old` untouched rather than moved, on
-    /// the chance it's either another launch's concurrent progress on this same
-    /// merge or simply not this migration's to touch. `old` is removed only once
-    /// it's been fully emptied — leaving a colliding item behind keeps it around
-    /// for the situation to be resolved by hand or by a later, non-colliding
-    /// launch, rather than silently discarding data that didn't make it across.
-    ///
-    /// A single item's move failing partway through aborts the whole merge and
-    /// throws, exactly like a whole-directory rename failing — the caller's
-    /// `catch` reports `.failed` and leaves `old` as the source of truth for this
-    /// launch. That's safe to retry: an item already moved into `new` is skipped,
-    /// not re-moved, the next time this runs.
-    private static func mergeContents(of old: URL, into new: URL, fileManager: FileManager) throws {
-        if !fileManager.fileExists(atPath: new.path) {
-            try fileManager.createDirectory(at: new, withIntermediateDirectories: true)
-        }
-        for name in try fileManager.contentsOfDirectory(atPath: old.path) {
+    /// Best-effort throughout: nothing here throws, because by the time this
+    /// runs the migration itself already succeeded and reporting `.failed` for a
+    /// leftover crumb that didn't make it back would be wrong. Whatever doesn't
+    /// merge — a genuine name collision, most plausibly, since anything here was
+    /// at most helper-created before the rename ran — stays in the set-aside
+    /// directory, which is left on disk rather than deleted, for someone to
+    /// look at by hand.
+    private static func mergeSetAsideRemnants(_ setAside: URL, into new: URL, fileManager: FileManager) {
+        guard let items = try? fileManager.contentsOfDirectory(atPath: setAside.path) else { return }
+        for name in items {
             let destination = new.appending(path: name)
             guard !fileManager.fileExists(atPath: destination.path) else { continue }
-            try fileManager.moveItem(at: old.appending(path: name), to: destination)
+            try? fileManager.moveItem(at: setAside.appending(path: name), to: destination)
         }
-        if let remaining = try? fileManager.contentsOfDirectory(atPath: old.path), remaining.isEmpty {
-            try? fileManager.removeItem(at: old)
+
+        guard let remaining = try? fileManager.contentsOfDirectory(atPath: setAside.path) else { return }
+        if remaining.isEmpty {
+            try? fileManager.removeItem(at: setAside)
+        } else {
+            log.notice(
+                "\(remaining.count, privacy: .public) item(s) set aside during migration couldn't be merged back — left at \(setAside.path, privacy: .public) for manual review."
+            )
         }
     }
 

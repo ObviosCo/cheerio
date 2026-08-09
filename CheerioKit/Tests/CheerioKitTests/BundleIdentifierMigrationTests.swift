@@ -71,13 +71,23 @@ import Testing
         )
     }
 
+    /// Every sibling of `new` this suite's scenarios can leave behind on purpose —
+    /// the set-aside directory a store-less `new` gets moved to before the rename —
+    /// carries this prefix, so a test can assert none (or exactly one) exists
+    /// without hardcoding the UUID `migrate` mints for it.
+    private func setAsideSiblings(of shared: URL, newBundleIdentifier: String) throws -> [URL] {
+        try FileManager.default.contentsOfDirectory(at: shared, includingPropertiesForKeys: nil)
+            .filter { $0.lastPathComponent.hasPrefix("\(newBundleIdentifier).pre-migration-") }
+    }
+
     /// The production incident (#126): an MCP client resolved the helper's store
     /// path — creating nothing but a bare parent directory along the way, in the
     /// version of the helper running that morning — before the rebuilt app had ever
     /// launched to migrate anything. The old guard read that empty directory as
     /// "already migrated" and walked away, stranding the whole library under the
-    /// old identifier. The fix: a new directory with no store in it still gets the
-    /// old container's contents moved in.
+    /// old identifier. The fix: a new directory with no store in it is moved aside
+    /// so the old container can still land at `new` by a single atomic rename, same
+    /// as if the bare directory had never existed.
     @Test func bareNewDirectoryMigratesTheOldContentsIn() throws {
         let shared = try scratchDirectory()
         defer { try? FileManager.default.removeItem(at: shared) }
@@ -99,12 +109,17 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: old.path))
         #expect(FileManager.default.fileExists(atPath: new.appending(path: "default.store").path))
         #expect(FileManager.default.fileExists(atPath: new.appending(path: "Meetings/abc").path))
+        // Nothing was ever in the bare directory this set aside, so the set-aside
+        // sibling itself is empty afterward and gets cleaned up rather than left
+        // behind as permanent clutter next to every fresh migration.
+        #expect(try setAsideSiblings(of: shared, newBundleIdentifier: newID).isEmpty)
     }
 
     /// A new directory that exists for a reason with nothing to do with migration —
     /// here standing in for a stray file dropped by something else entirely — must
-    /// keep that file exactly as it was: the merge only ever moves *old*'s items,
-    /// and skips anything whose name already exists at the destination.
+    /// keep that file exactly as it was. It doesn't collide with anything `old`
+    /// owns, so it's merged straight back into the now-migrated `new` once the
+    /// rename lands, rather than staying quarantined in the set-aside directory.
     @Test func newDirectoryWithUnrelatedFileButNoStoreMigratesWithoutClobberingIt() throws {
         let shared = try scratchDirectory()
         defer { try? FileManager.default.removeItem(at: shared) }
@@ -122,7 +137,130 @@ import Testing
         #expect(outcome == .migrated)
         #expect(!FileManager.default.fileExists(atPath: old.path))
         #expect(FileManager.default.fileExists(atPath: new.appending(path: "default.store").path))
+        // Preserved by ending up merged back into `new`, not by having been left
+        // untouched in place — `new`'s original directory was moved aside and a
+        // fresh one took its place via the rename from `old`.
         #expect(try Data(contentsOf: new.appending(path: "widget.json")) == Data("unrelated".utf8))
+        #expect(try setAsideSiblings(of: shared, newBundleIdentifier: newID).isEmpty)
+    }
+
+    /// The active review finding this exists to close: a destination-name
+    /// collision must never be silently skipped while still reporting
+    /// `.migrated` — that would leave `default.store` moved to `new` with its own
+    /// `Meetings` folder still behind it in whatever the colliding item swallowed,
+    /// making those recordings unreachable through the container that's now
+    /// current. Setting `new` aside wholesale before the rename means the
+    /// collision is discovered *after* `old`'s entire tree — `Meetings` included —
+    /// is already sitting at `new`; only the leftover crumb from the old `new` is
+    /// at risk of not making it back, and it's quarantined, not dropped.
+    @Test func newDirectoryWithACollidingSubdirectoryIsQuarantinedNotDropped() throws {
+        let shared = try scratchDirectory()
+        defer { try? FileManager.default.removeItem(at: shared) }
+        let old = shared.appending(path: oldID, directoryHint: .isDirectory)
+        let new = shared.appending(path: newID, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(
+            at: old.appending(path: "Meetings/abc", directoryHint: .isDirectory),
+            withIntermediateDirectories: true
+        )
+        try Data("store".utf8).write(to: old.appending(path: "default.store"))
+        // A `Meetings` directory of its own, colliding by name with `old`'s —
+        // exactly the shape Copilot's review flagged as silently stranding data.
+        try FileManager.default.createDirectory(
+            at: new.appending(path: "Meetings", directoryHint: .isDirectory),
+            withIntermediateDirectories: true
+        )
+        try Data("stray".utf8).write(to: new.appending(path: "Meetings/xyz.caf"))
+
+        let outcome = BundleIdentifierMigration.migrate(
+            sharedApplicationSupport: shared, oldBundleIdentifier: oldID, newBundleIdentifier: newID
+        )
+
+        #expect(outcome == .migrated)
+        #expect(!FileManager.default.fileExists(atPath: old.path))
+        // The whole point: `old`'s own `Meetings` tree is reachable at `new`
+        // regardless of what the colliding directory held — nothing from `old`
+        // was ever at risk, because the collision was resolved before the rename
+        // touched `old` at all, not by picking a winner between the two trees.
+        #expect(FileManager.default.fileExists(atPath: new.appending(path: "default.store").path))
+        #expect(FileManager.default.fileExists(atPath: new.appending(path: "Meetings/abc").path))
+        // The stray file that collided is neither silently gone nor clobbering
+        // what `old` owned — it's quarantined in the set-aside sibling.
+        #expect(!FileManager.default.fileExists(atPath: new.appending(path: "Meetings/xyz.caf").path))
+        let siblings = try setAsideSiblings(of: shared, newBundleIdentifier: newID)
+        #expect(siblings.count == 1)
+        let sibling = try #require(siblings.first)
+        #expect(
+            try Data(contentsOf: sibling.appending(path: "Meetings/xyz.caf")) == Data("stray".utf8)
+        )
+    }
+
+    /// The suppressed review finding this exists to close: an item-by-item merge
+    /// makes a partial failure indistinguishable from "safe to fall back to the
+    /// old identifier," because some of `old`'s items — possibly `default.store`
+    /// itself, since directory-enumeration order isn't guaranteed — could already
+    /// be gone from `old` by the time the error surfaces. Reclaiming atomicity
+    /// closes that: nothing is ever taken out of `old` until the rename step,
+    /// which is one atomic `moveItem`, so a failure setting `new` aside can only
+    /// ever happen *before* `old` is touched.
+    @Test func settingAsideFailureLeavesBothContainersUntouched() throws {
+        guard getuid() != 0 else { return }
+
+        let shared = try scratchDirectory()
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: shared.path)
+            try? FileManager.default.removeItem(at: shared)
+        }
+        let old = shared.appending(path: oldID, directoryHint: .isDirectory)
+        let new = shared.appending(path: newID, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: old, withIntermediateDirectories: true)
+        try Data("old-data".utf8).write(to: old.appending(path: "default.store"))
+        try FileManager.default.createDirectory(at: new, withIntermediateDirectories: true)
+
+        // A read-only parent can't have an entry removed from or added to it,
+        // which blocks the set-aside move (an entry leaving `new`'s parent) before
+        // the rename of `old` is ever attempted.
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: shared.path)
+
+        let outcome = BundleIdentifierMigration.migrate(
+            sharedApplicationSupport: shared, oldBundleIdentifier: oldID, newBundleIdentifier: newID
+        )
+
+        #expect(outcome == .failed)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: shared.path)
+        #expect(try Data(contentsOf: old.appending(path: "default.store")) == Data("old-data".utf8))
+        #expect(!FileManager.default.fileExists(atPath: new.appending(path: "default.store").path))
+    }
+
+    /// The other half of the same property: a failure on the rename itself, after
+    /// the set-aside step already succeeded, must still leave `old` exactly as it
+    /// was — not partially emptied by however far an item-by-item merge would
+    /// have gotten. `old` here is asserted intact by content, not just by
+    /// existence, since a corrupted-but-present `default.store` would pass a bare
+    /// `fileExists` check and still be exactly the split-brain state this design
+    /// exists to rule out.
+    @Test func renameFailureAfterSettingAsideLeavesOldCompletelyIntact() throws {
+        let shared = try scratchDirectory()
+        defer { try? FileManager.default.removeItem(at: shared) }
+        let old = shared.appending(path: oldID, directoryHint: .isDirectory)
+        let new = shared.appending(path: newID, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(
+            at: old.appending(path: "Meetings/abc", directoryHint: .isDirectory),
+            withIntermediateDirectories: true
+        )
+        try Data("old-data".utf8).write(to: old.appending(path: "default.store"))
+        try FileManager.default.createDirectory(at: new, withIntermediateDirectories: true)
+
+        let outcome = BundleIdentifierMigration.migrate(
+            sharedApplicationSupport: shared, oldBundleIdentifier: oldID, newBundleIdentifier: newID,
+            fileManager: FailsOnTheSecondMoveFileManager()
+        )
+
+        #expect(outcome == .failed)
+        #expect(try Data(contentsOf: old.appending(path: "default.store")) == Data("old-data".utf8))
+        #expect(FileManager.default.fileExists(atPath: old.appending(path: "Meetings/abc").path))
+        // `new`'s original bare directory was already relocated by the (successful)
+        // set-aside step; nothing else ever landed at `new` itself.
+        #expect(!FileManager.default.fileExists(atPath: new.appending(path: "default.store").path))
     }
 
     @Test func bothExistingNeverClobbersEither() throws {
@@ -219,6 +357,22 @@ private final class RaceSimulatingFileManager: FileManager {
         try super.moveItem(at: srcURL, to: dstURL)
         // The caller's own attempt, now racing against a source that's already
         // gone — exactly what a real second launch would produce.
+        try super.moveItem(at: srcURL, to: dstURL)
+    }
+}
+
+/// Lets the set-aside step succeed for real, then fails the very next
+/// `moveItem` — the old-to-new rename — without touching the filesystem, to
+/// prove the "old is untouched on any failure" guarantee holds even once the
+/// first of the two moves has already gone through.
+private final class FailsOnTheSecondMoveFileManager: FileManager {
+    private var moveCount = 0
+
+    override func moveItem(at srcURL: URL, to dstURL: URL) throws {
+        moveCount += 1
+        guard moveCount == 1 else {
+            throw CocoaError(.fileWriteUnknown)
+        }
         try super.moveItem(at: srcURL, to: dstURL)
     }
 }
