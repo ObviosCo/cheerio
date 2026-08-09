@@ -87,6 +87,57 @@ import Testing
         #expect(reconstructed == text)
     }
 
+    // MARK: - Speaker prefix (PR #101 review)
+
+    /// `Meeting.transcriptText` labels every line `"[speaker] text"`, and `extract`
+    /// attributes action items by that per-line label. Before this, only the first
+    /// fragment of a split line kept it — a commitment landing in a later fragment
+    /// would silently lose attribution. Every fragment must carry the label now.
+    @Test func labeledOversizedLineCarriesLabelOnEveryFragment() async {
+        let label = "[Carter] "
+        let text = label + wordyLine(wordCount: 900)  // label + ~8_999 chars of body
+        #expect(text.count > engine.chunkCharacterBudget)
+
+        let chunks = await engine.chunked(text)
+        let substantive = chunks.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+        #expect(substantive.count > 1)
+        for chunk in chunks {
+            #expect(chunk.count <= engine.chunkCharacterBudget)
+        }
+        #expect(substantive.allSatisfy { $0.hasPrefix(label) })
+
+        // Strip the repeated label before comparing content — carrying it onto every
+        // fragment duplicates it in the reconstruction by design, so a plain
+        // `wordsPreserved` comparison against the original would fail here.
+        let reconstructedBody = substantive.map { String($0.dropFirst(label.count)) }.joined(separator: " ")
+        let originalBody = String(text.dropFirst(label.count))
+        #expect(
+            originalBody.split(whereSeparator: \.isWhitespace).elementsEqual(
+                reconstructedBody.split(whereSeparator: \.isWhitespace)
+            ))
+    }
+
+    /// A label wide enough to eat half the budget on its own can't be carried into
+    /// every fragment and still leave room for content — this is synthetic (real
+    /// speaker labels are short names), but the guard must still degrade safely:
+    /// bounded chunks, no infinite loop, nothing dropped.
+    @Test func pathologicallyLongPrefixFallsBackToHardWrapWithinBudget() async {
+        let hugeLabel = "[" + String(repeating: "L", count: engine.chunkCharacterBudget) + "] "
+        let text = hugeLabel + "some content that follows the oversized label"
+        #expect(text.count > engine.chunkCharacterBudget)
+
+        let chunks = await engine.chunked(text)
+
+        #expect(!chunks.isEmpty)
+        for chunk in chunks {
+            #expect(chunk.count <= engine.chunkCharacterBudget)
+            #expect(!chunk.isEmpty)
+        }
+        let reconstructed = chunks.joined().replacingOccurrences(of: "\n", with: "")
+        #expect(reconstructed == text)
+    }
+
     // MARK: - Empty lines
 
     @Test func emptyLinesMixedWithContentDoNotBreakChunking() async {

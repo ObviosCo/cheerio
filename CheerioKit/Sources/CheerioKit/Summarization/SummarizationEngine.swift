@@ -232,16 +232,50 @@ public actor SummarizationEngine {
 
     /// Splits a single line wider than the whole budget — previously passed through
     /// whole regardless of `chunkCharacterBudget` (issue #13) — into pieces that each
-    /// fit on their own. Breaks prefer the last space at or before the limit so words
-    /// survive intact; a stretch with no space in it (one token spanning the entire
-    /// budget) is hard-cut instead, since there's no better boundary to offer it.
+    /// fit on their own, with the line's `[speaker] ` prefix repeated on every one of
+    /// them (Copilot, #101): `extract` attributes action items by each line's label,
+    /// so a continuation fragment sent without one would silently lose attribution for
+    /// whatever it committed to. The prefix counts against each fragment's own share of
+    /// the budget rather than riding along for free.
     private func splitOversizedLine(_ line: String) -> [String] {
         guard line.count > chunkCharacterBudget else { return [line] }
+
+        let prefix = speakerPrefix(of: line)
+        // A prefix wide enough to eat half the budget leaves too little room to carry
+        // into every fragment, and if it ever reached the *whole* budget, carrying it
+        // anyway would stall the wrap below with no room left to make progress.
+        // Attribution is already moot at that width, so fall back to hard-wrapping the
+        // raw line instead of repeating a prefix that swallows it.
+        guard prefix.count * 2 < chunkCharacterBudget else {
+            return wordWrapped(line, limit: chunkCharacterBudget)
+        }
+
+        let body = line.dropFirst(prefix.count)
+        return wordWrapped(String(body), limit: chunkCharacterBudget - prefix.count).map { prefix + $0 }
+    }
+
+    /// The `[speaker] ` prefix `Meeting.transcriptText` puts on every line
+    /// (`"[\(label)] \(text)"`). Detected structurally off the line itself rather than
+    /// duplicating that format string, so anything that doesn't start with a bracketed
+    /// label — including a continuation fragment recursing back through here, which
+    /// can't happen today but would harmlessly no-op if it ever did — just gets an
+    /// empty prefix.
+    private func speakerPrefix(of line: String) -> String {
+        guard line.hasPrefix("["), let closingBracket = line.firstIndex(of: "]") else { return "" }
+        let afterBracket = line.index(after: closingBracket)
+        let prefixEnd = afterBracket < line.endIndex && line[afterBracket] == " " ? line.index(after: afterBracket) : afterBracket
+        return String(line[..<prefixEnd])
+    }
+
+    /// Greedy word-wrap: breaks at the last space at or before `limit`, hard-cutting
+    /// only when a stretch has no space to offer — one token spanning the whole limit,
+    /// with no better boundary available.
+    private func wordWrapped(_ text: String, limit: Int) -> [String] {
         var pieces: [String] = []
-        var remainder = Substring(line)
-        while remainder.count > chunkCharacterBudget {
-            let limit = remainder.index(remainder.startIndex, offsetBy: chunkCharacterBudget)
-            let breakPoint = remainder[..<limit].lastIndex(of: " ").map(remainder.index(after:)) ?? limit
+        var remainder = Substring(text)
+        while remainder.count > limit {
+            let cut = remainder.index(remainder.startIndex, offsetBy: limit)
+            let breakPoint = remainder[..<cut].lastIndex(of: " ").map(remainder.index(after:)) ?? cut
             pieces.append(String(remainder[..<breakPoint]))
             remainder = remainder[breakPoint...]
         }
