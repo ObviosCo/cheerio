@@ -503,16 +503,24 @@ import Testing
         #expect(try setAsideSiblings(of: shared, newBundleIdentifier: newID).isEmpty)
     }
 
-    /// The suppressed review finding on the restore itself: landing a
+    /// Two review findings on the restore itself, both closed here. Landing a
     /// stranded store at `new` is two moves — displacing whatever's currently
     /// there, then moving the sibling in — and if the second one fails after
     /// the first succeeded, this must not return with `new` simply absent and
     /// the real store still sitting, untouched, in its sibling. That's the
     /// exact stranding the restore exists to fix, just relocated one
-    /// directory over. The displaced directory is rolled back into `new`, so
-    /// a failed restore attempt leaves both `new` and the sibling exactly as
-    /// it found them.
-    @Test func failingToLandTheStrandedStoreRollsTheDisplacedDirectoryBack() throws {
+    /// directory over, so the displaced directory is rolled back into `new`.
+    /// But rolling `new` back to what it was — a store-less directory that
+    /// was never a real library to begin with — and then reporting whatever
+    /// ordinary outcome `resolveMigration` had already decided (`.freshInstall`
+    /// here) would reproduce the *exact same* stranding one level up: the
+    /// caller would open or create an empty container while the real store
+    /// sits, known and findable, one directory away. So this reports
+    /// `.storeStrandedInSibling(directoryName:)` instead, regardless of
+    /// whether the rollback itself succeeded — it's the second move (the one
+    /// that would have actually landed the real store) failing that decides
+    /// this, not what happened to the temporary displacement.
+    @Test func failingToLandTheStrandedStoreRollsBackAndReportsWhereItActuallyIs() throws {
         let shared = try scratchDirectory()
         defer { try? FileManager.default.removeItem(at: shared) }
         let new = shared.appending(path: newID, directoryHint: .isDirectory)
@@ -527,18 +535,17 @@ import Testing
         try Data("real-store".utf8).write(to: sibling.appending(path: "default.store"))
 
         // `old` is never created — this test is entirely about the restore's
-        // own transactionality, not about how a store ended up in a sibling
-        // in the first place, so `.freshInstall` (the ordinary verdict for no
-        // `old`) is the outcome absent a successful restore, and it's the
-        // *state on disk* this test actually cares about.
+        // own behavior, not about how a store ended up in a sibling in the
+        // first place.
         let outcome = BundleIdentifierMigration.migrate(
             sharedApplicationSupport: shared, oldBundleIdentifier: oldID, newBundleIdentifier: newID,
             fileManager: FailsRestoringTheStrandedStoreFileManager()
         )
 
-        #expect(outcome == .freshInstall)
+        #expect(outcome == .storeStrandedInSibling(directoryName: sibling.lastPathComponent))
         // `new` is back exactly where this attempt found it: bare, its own
-        // crumb intact, no store.
+        // crumb intact, no store — but that's not what the *outcome* reports,
+        // precisely because it isn't a real library.
         #expect(try Data(contentsOf: new.appending(path: "widget.json")) == Data("crumb".utf8))
         #expect(!FileManager.default.fileExists(atPath: new.appending(path: "default.store").path))
         // The real store was never touched by the failed restore — still

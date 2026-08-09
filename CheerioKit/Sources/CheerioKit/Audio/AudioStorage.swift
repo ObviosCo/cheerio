@@ -78,20 +78,27 @@ public enum AudioStorage {
         bundleIdentifier == officialBundleIdentifier
     }
 
-    /// Overrides which identifier ``applicationSupport()`` resolves to, for the rest
+    /// Overrides which directory ``applicationSupport()`` resolves to, for the rest
     /// of the process's lifetime. `nil` (the default) means "use
-    /// `Bundle.main.bundleIdentifier`, as always."
+    /// `Bundle.main.bundleIdentifier`, as always." Despite the name, this is not
+    /// restricted to values that are actually bundle identifiers — see
+    /// ``setContainerOverride(_:)``.
     ///
-    /// Exists for exactly one caller: `CheerioApp.init()`, when
-    /// `BundleIdentifierMigration.migrateIfNeeded()` fails to move the old container
-    /// forward. Redirecting only the SwiftData store to the old location would not be
-    /// enough on its own — every meeting's audio and every enrolled speaker's sample
-    /// is a path *relative to this container*, resolved through
-    /// ``applicationSupport()`` by every caller in this file, `MeetingAudioRecorder`,
-    /// and `AudioRetention`. Leaving those pointed at the (empty) new container while
-    /// only the store falls back would reproduce the exact "empty library" problem
-    /// this migration exists to prevent — just moved from the store into the audio
-    /// lookups. Overriding here, once, keeps every caller consistent for the launch.
+    /// Exists for exactly one caller, `CheerioApp.init()`, in two situations:
+    /// `BundleIdentifierMigration.migrateIfNeeded()` failing to move the old
+    /// container forward (the override is ``AudioStorage/legacyBundleIdentifier``),
+    /// and that same migration finding the real store displaced into a
+    /// `pre-migration-*` sibling it couldn't restore
+    /// (`BundleIdentifierMigration.Outcome.storeStrandedInSibling`, where the
+    /// override is that sibling's own directory name). Either way, redirecting only
+    /// the SwiftData store would not be enough on its own — every meeting's audio
+    /// and every enrolled speaker's sample is a path *relative to this container*,
+    /// resolved through ``applicationSupport()`` by every caller in this file,
+    /// `MeetingAudioRecorder`, and `AudioRetention`. Leaving those pointed at an
+    /// empty or wrong container while only the store falls back would reproduce the
+    /// exact "empty library" problem this migration exists to prevent — just moved
+    /// from the store into the audio lookups. Overriding here, once, keeps every
+    /// caller consistent for the launch.
     ///
     /// A `Mutex`, not a plain `var`: this is written at most once, from
     /// `CheerioApp.init()`, before `CaptureSession`, `AppUpdater`, or the
@@ -101,11 +108,19 @@ public enum AudioStorage {
     /// `Sendable`, not an `@unchecked` promise standing in for one.
     private static let containerOverride = Mutex<String?>(nil)
 
-    /// Sets the override described above. Safe to call more than once — a second
-    /// launch after a failed migration calls it again with the same value — but never
-    /// call it after any code below has already read ``applicationSupport()``.
-    public static func setContainerOverride(_ bundleIdentifier: String?) {
-        containerOverride.withLock { $0 = bundleIdentifier }
+    /// Sets the override described above.
+    ///
+    /// Takes a directory *name*, not a bundle identifier specifically — it's
+    /// resolved as a single path component against the shared Application Support
+    /// parent exactly the way a real bundle identifier is (see
+    /// ``applicationSupport()``), with no shape validation either way, which is what
+    /// lets `CheerioApp.init()` also pass a `pre-migration-*` sibling's own
+    /// directory name here when `BundleIdentifierMigration` reports
+    /// `.storeStrandedInSibling`. Safe to call more than once — a second launch
+    /// after a failed migration calls it again with the same value — but never call
+    /// it after any code below has already read ``applicationSupport()``.
+    public static func setContainerOverride(_ directoryName: String?) {
+        containerOverride.withLock { $0 = directoryName }
     }
 
     private static func resolvedBundleIdentifier() -> String {

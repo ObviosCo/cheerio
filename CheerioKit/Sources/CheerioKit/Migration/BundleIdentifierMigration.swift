@@ -85,6 +85,26 @@ public enum BundleIdentifierMigration {
         /// open an empty or partially-set-up new container and present that as the
         /// library. The next launch simply retries the whole thing from scratch.
         case failed
+        /// A `pre-migration-*` sibling was found holding the real store, but
+        /// restoring it to `new` itself failed (see
+        /// ``restoreStrandedStore(outcome:sharedApplicationSupport:new:newBundleIdentifier:fileManager:)``)
+        /// — recovering the *directory* isn't possible on this launch, but the
+        /// store's *location* is known, so this is neither `.freshInstall` nor
+        /// `.failed`: both of those would have the caller open or create an empty
+        /// container while a real store sits one directory over — `.freshInstall`
+        /// by letting `AudioStorage.applicationSupport()` create a blank `new`,
+        /// `.failed` by falling back to `old`, which may not even exist any more
+        /// (this shape is exactly what "another attempt's full migration already
+        /// completed" produces). The associated value is the sibling's directory
+        /// *name* — not a full `URL` — because that's what
+        /// ``AudioStorage/setContainerOverride(_:)`` already takes: a path
+        /// component resolved against the shared Application Support parent, the
+        /// same as a bundle identifier would be. The caller sets the override to
+        /// this name so the launch opens the real store where it actually is,
+        /// rather than trying to relocate it first; the next launch's own
+        /// stranded-store safety net gets another chance to restore the directory
+        /// itself.
+        case storeStrandedInSibling(directoryName: String)
     }
 
     /// The testable core: takes the shared Application Support directory and both
@@ -148,7 +168,13 @@ public enum BundleIdentifierMigration {
     ///   second attempt's freshly-migrated real container into its own sibling
     ///   by mistake — that sibling is restored to `new` before `migrate` returns
     ///   any outcome, turning what the retry loop alone would report as
-    ///   `.failed` into `.migrated` instead.
+    ///   `.failed` into `.migrated` instead. If the restore *itself* then fails
+    ///   (an I/O error moving a directory that's sitting right there — rare, but
+    ///   not impossible), the result is `.storeStrandedInSibling(directoryName:)`
+    ///   rather than silently falling back to `.freshInstall` or `.failed`: both
+    ///   of those would have the caller open or create an empty container while
+    ///   the real store sits one directory over, which is precisely the failure
+    ///   mode every mechanism above exists to rule out.
     @discardableResult
     public static func migrate(
         sharedApplicationSupport: URL,
@@ -403,6 +429,15 @@ public enum BundleIdentifierMigration {
     /// the second move, so a failure there always leaves it exactly as this
     /// function found it, for a retried call (or the next launch) to try
     /// again.
+    ///
+    /// Once a store-bearing sibling has been found, this never falls back to
+    /// the `outcome` it was handed: every remaining exit reports
+    /// ``Outcome/storeStrandedInSibling(directoryName:)`` instead. `outcome`
+    /// itself is only ever returned before that point — no qualifying sibling
+    /// exists, or the sibling listing couldn't be read at all — which is the
+    /// one case where falling back to whatever `resolveMigration` already
+    /// decided is actually correct, because nothing here found anything to
+    /// contradict it.
     private static func restoreStrandedStore(
         outcome: Outcome, sharedApplicationSupport: URL, new: URL, newBundleIdentifier: String,
         fileManager: FileManager
@@ -438,9 +473,9 @@ public enum BundleIdentifierMigration {
                     displaced = destination
                 } catch {
                     log.error(
-                        "Found a stranded store at \(sibling.path, privacy: .public) but couldn't clear \(new.path, privacy: .public) to restore it: \(error)"
+                        "Found a stranded store at \(sibling.path, privacy: .public) but couldn't clear \(new.path, privacy: .public) to restore it: \(error). Pointing this launch at the sibling directly."
                     )
-                    return outcome
+                    return .storeStrandedInSibling(directoryName: name)
                 }
             }
 
@@ -464,17 +499,18 @@ public enum BundleIdentifierMigration {
                         // this call or the next launch entirely — but `new`
                         // may now be in neither its original nor its restored
                         // state, so this is logged loudly rather than folded
-                        // into the quieter message below.
+                        // into the quieter message below. Either way, this
+                        // launch still knows exactly where the real store is.
                         log.error(
-                            "Couldn't restore the stranded store at \(sibling.path, privacy: .public), and couldn't roll back \(displaced.path, privacy: .public) to \(new.path, privacy: .public) either: \(error). The real store remains intact at \(sibling.path, privacy: .public); a later attempt's stranded-store check will find it there."
+                            "Couldn't restore the stranded store at \(sibling.path, privacy: .public), and couldn't roll back \(displaced.path, privacy: .public) to \(new.path, privacy: .public) either: \(error). The real store remains intact at \(sibling.path, privacy: .public); pointing this launch there directly."
                         )
-                        return outcome
+                        return .storeStrandedInSibling(directoryName: name)
                     }
                 }
                 log.error(
-                    "Found a stranded store at \(sibling.path, privacy: .public) but couldn't restore it: \(error)"
+                    "Found a stranded store at \(sibling.path, privacy: .public) but couldn't restore it: \(error). Pointing this launch at the sibling directly."
                 )
-                return outcome
+                return .storeStrandedInSibling(directoryName: name)
             }
 
             log.notice(
