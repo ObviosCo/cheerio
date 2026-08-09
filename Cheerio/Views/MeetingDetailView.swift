@@ -165,8 +165,9 @@ struct MeetingDetailView: View {
         Menu {
             ForEach(candidateLabels(for: segment), id: \.self) { label in
                 Button(label) {
+                    let prior = SegmentLabelState(segment)
                     segment.assignSpeaker(label)
-                    save()
+                    save(restoring: segment, to: prior)
                 }
             }
             if segment.isSpeakerLabelManual {
@@ -175,16 +176,18 @@ struct MeetingDetailView: View {
                 // line below — that label was never wrong, only unconfirmed.
                 Divider()
                 Button("Undo my change") {
+                    let prior = SegmentLabelState(segment)
                     segment.assignSpeaker(nil)
-                    save()
+                    save(restoring: segment, to: prior)
                 }
             } else if segment.isSpeakerLabelConfirmed {
                 // Non-destructive: the label stays, only the settled bit clears, so
                 // the ring comes back instead of the line reverting to Me/Them.
                 Divider()
                 Button("Unconfirm") {
+                    let prior = SegmentLabelState(segment)
                     segment.isSpeakerLabelConfirmed = false
-                    save()
+                    save(restoring: segment, to: prior)
                 }
             }
         } label: {
@@ -231,6 +234,24 @@ struct MeetingDetailView: View {
         }
     }
 
+    /// The same save, plus the rollback ``MeetingSpeakersSection/enroll(_:as:)`` and
+    /// ``MeetingSpeakersSection/confirm(_:)`` already get: a failed save must put a
+    /// mutated segment back, or a later autosave persists an edit the person was just
+    /// told had failed. All three of this menu's actions — rename, "Undo my change,"
+    /// "Unconfirm" — go through this, since all three mutate one segment's label state
+    /// and then save.
+    private func save(restoring segment: TranscriptSegment, to prior: SegmentLabelState) {
+        let ownerNames = SpeakerLabeling.ownerNames(context: context)
+        meeting.resolveSpeakerSlots(ownerNames: ownerNames)
+        meeting.reconcileActionItems(ownerNames: ownerNames)
+        do {
+            try context.save()
+        } catch {
+            prior.restore(to: segment)
+            relabelError = error.localizedDescription
+        }
+    }
+
     /// Re-runs diarization. Worth offering because labels improve as more voices get
     /// enrolled, and the audio stays on disk until retention purges it.
     private func relabel() async {
@@ -272,5 +293,25 @@ struct MeetingDetailView: View {
         if let notes = meeting.enhancedNotes { out += notes + "\n\n" }
         out += "## Transcript\n\(meeting.transcriptText)\n"
         return out
+    }
+}
+
+/// A snapshot of the three fields ``speakerMenu(for:)``'s actions can change on one
+/// segment, taken before the mutation so a failed save has something to put back.
+private struct SegmentLabelState {
+    let label: String?
+    let isManual: Bool
+    let isConfirmed: Bool
+
+    init(_ segment: TranscriptSegment) {
+        label = segment.speakerLabel
+        isManual = segment.isSpeakerLabelManual
+        isConfirmed = segment.isSpeakerLabelConfirmed
+    }
+
+    func restore(to segment: TranscriptSegment) {
+        segment.speakerLabel = label
+        segment.isSpeakerLabelManual = isManual
+        segment.isSpeakerLabelConfirmed = isConfirmed
     }
 }

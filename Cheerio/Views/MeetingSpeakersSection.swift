@@ -197,7 +197,7 @@ struct MeetingSpeakersSection: View {
         // context — so a later autosave could commit part of what the user was just
         // told had failed.
         let priorLabels = meeting.segments.map {
-            ($0, $0.speakerLabel, $0.isSpeakerLabelManual)
+            ($0, $0.speakerLabel, $0.isSpeakerLabelManual, $0.isSpeakerLabelConfirmed)
         }
         // The reconciliation below mutates trust state too; a failed save must put
         // it back, or a later autosave commits part of an operation the user was
@@ -237,9 +237,10 @@ struct MeetingSpeakersSection: View {
             try context.save()
         } catch {
             if let insertedSpeaker { context.delete(insertedSpeaker) }
-            for (segment, label, wasManual) in priorLabels {
+            for (segment, label, wasManual, wasConfirmed) in priorLabels {
                 segment.speakerLabel = label
                 segment.isSpeakerLabelManual = wasManual
+                segment.isSpeakerLabelConfirmed = wasConfirmed
             }
             meeting.actionItems = priorActionItems
             meeting.speakerSlotAssigner = priorSlotAssigner
