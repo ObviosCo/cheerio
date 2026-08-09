@@ -14,6 +14,10 @@ struct RecordingView: View {
     /// pressing "record" and the recording actually starting.
     @State private var showEnrollmentNudge = false
     @State private var showEnrollmentSheet = false
+    /// Whether the live transcript should keep following new lines. Suspended the
+    /// moment a scroll leaves the bottom edge, resumed only once one returns to
+    /// it — see ``liveTranscriptScroll``.
+    @State private var isPinnedToBottom = true
 
     var body: some View {
         @Bindable var session = session
@@ -124,6 +128,18 @@ struct RecordingView: View {
         .background(.yellow.opacity(0.15))
     }
 
+    /// The bottom-anchor id every scroll-to-latest call targets, whether or not a
+    /// volatile line currently exists — "volatile" alone would leave nothing to
+    /// scroll to the instant a segment finalizes and clears it (``CaptureSession/handle(_:context:)``
+    /// sets ``CaptureSession/volatileLine`` to nil in the same update that appends
+    /// the final line), which is exactly when a scroll is most needed.
+    private static let transcriptBottomAnchorID = "transcript-bottom"
+
+    /// How close to the bottom edge still counts as "there" — a user who scrolled up
+    /// half a line's height while a new one lands shouldn't have that read as
+    /// intentionally leaving the bottom.
+    private static let bottomFollowTolerance: CGFloat = 24
+
     @ViewBuilder private var recordingPanes: some View {
         @Bindable var session = session
 
@@ -147,6 +163,12 @@ struct RecordingView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "waveform")
                     Text("Live transcript")
+                    if let startedAt = session.startedAt {
+                        // Absolute and local, per #130 — the per-line stamps below
+                        // are all relative to this one instant.
+                        Text("· started \(startedAt.formatted(date: .omitted, time: .shortened))")
+                            .font(.caption.monospacedDigit())
+                    }
                     Spacer()
                     Text("\(session.liveLines.count) lines")
                         .foregroundStyle(.tertiary)
@@ -156,36 +178,101 @@ struct RecordingView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
 
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 8) {
-                            ForEach(Array(session.liveLines.enumerated()), id: \.offset) { _, line in
-                                transcriptLine(line)
-                            }
-                            if let volatile = session.volatileLine {
-                                transcriptLine(volatile).opacity(0.5).id("volatile")
-                            }
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 12)
-                    }
-                    .onChange(of: session.liveLines.count) {
-                        proxy.scrollTo("volatile", anchor: .bottom)
-                    }
-                }
+                liveTranscriptScroll
             }
             .frame(minHeight: 120, idealHeight: 180)
         }
     }
 
-    private func transcriptLine(_ line: TranscriptionUpdate) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Text(line.channel == .me ? "Me" : "Them")
-                .font(.caption.bold())
-                .foregroundStyle(line.channel == .me ? .blue : .secondary)
-                .frame(width: 44, alignment: .trailing)
-            Text(line.text)
-                .textSelection(.enabled)
+    private var liveTranscriptScroll: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    let marked = TranscriptTimestamp.markedIndices(startTimes: session.liveLines.map(\.startTime))
+                    ForEach(Array(session.liveLines.enumerated()), id: \.offset) { index, line in
+                        transcriptLine(line, showsTimestamp: marked.contains(index))
+                    }
+                    if let volatile = session.volatileLine {
+                        transcriptLine(volatile, showsTimestamp: false)
+                            .opacity(0.5)
+                    }
+                    // Zero-height and always last, so there's one stable id to
+                    // scroll to regardless of whether a volatile line exists right
+                    // now — see ``transcriptBottomAnchorID``.
+                    Color.clear.frame(height: 0).id(Self.transcriptBottomAnchorID)
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 12)
+            }
+            // `RecordingView` is recreated, not just re-shown, every time
+            // `CheerioApp`'s detail branch swaps back to it from a selected
+            // meeting (`if/else` between two different view types drops the old
+            // one's state) — with no scroll history to restore, a fresh scroll
+            // view otherwise opens at its content's top, on the oldest lines,
+            // which is the opposite of "pinned as promised" for a meeting already
+            // well underway. Anchoring the default here means a freshly-created
+            // scroll view's very first layout already sits at the bottom, with
+            // no `onChange` needing to have fired first.
+            .defaultScrollAnchor(.bottom)
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentOffset.y + geometry.containerSize.height
+                    >= geometry.contentSize.height - Self.bottomFollowTolerance
+            } action: { _, isAtBottom in
+                isPinnedToBottom = isAtBottom
+            }
+            .onChange(of: session.liveLines.count) {
+                guard isPinnedToBottom else { return }
+                proxy.scrollTo(Self.transcriptBottomAnchorID, anchor: .bottom)
+            }
+            .onChange(of: session.volatileLine?.text) {
+                guard isPinnedToBottom else { return }
+                proxy.scrollTo(Self.transcriptBottomAnchorID, anchor: .bottom)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if !isPinnedToBottom {
+                    jumpToLatestButton(proxy: proxy)
+                }
+            }
+        }
+    }
+
+    /// Quiet on purpose — a filled circle no louder than the recording indicator
+    /// elsewhere in this view, appearing only while following is suspended and
+    /// gone the instant it isn't.
+    private func jumpToLatestButton(proxy: ScrollViewProxy) -> some View {
+        Button {
+            isPinnedToBottom = true
+            withAnimation(.easeOut(duration: 0.2)) {
+                proxy.scrollTo(Self.transcriptBottomAnchorID, anchor: .bottom)
+            }
+        } label: {
+            Label("Jump to latest", systemImage: "arrow.down.circle.fill")
+                .labelStyle(.iconOnly)
+                .font(.title3)
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(.secondary)
+        .padding(6)
+        .background(.regularMaterial, in: Circle())
+        .padding(10)
+        .transition(.opacity)
+    }
+
+    private func transcriptLine(_ line: TranscriptionUpdate, showsTimestamp: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            if showsTimestamp {
+                Text(TranscriptTimestamp.format(line.startTime))
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.tertiary)
+            }
+            HStack(alignment: .top, spacing: 8) {
+                Text(line.channel == .me ? "Me" : "Them")
+                    .font(.caption.bold())
+                    .foregroundStyle(line.channel == .me ? .blue : .secondary)
+                    .frame(width: 44, alignment: .trailing)
+                Text(line.text)
+                    .textSelection(.enabled)
+            }
         }
     }
 }

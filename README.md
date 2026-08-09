@@ -48,8 +48,11 @@ its context menu or detail view).
   call, nothing needs a meeting bot or a per-app integration, and no app-specific API has to
   support it first.
 - **Transcribe on-device.** Each stream gets its own `SpeechTranscriber`, which is where the
-  `Me` / `Them` split comes from. Live volatile results drive the in-meeting transcript; final
-  results are persisted with timestamps.
+  `Me` / `Them` split comes from. Live volatile results drive the in-meeting transcript, which
+  follows new lines as they arrive and lets you scroll back without losing your place; final
+  results are persisted with timestamps, shown sparsely — once per elapsed minute — so a long
+  meeting stays a quiet transcript, not a column of numbers, and there's a place to jump into it
+  from.
 - **Tell people apart by name.** The channel split can't distinguish three people in one room,
   and `SpeechTranscriber` exposes no speaker information at all. So a Sortformer diarization
   pass runs over the recorded audio after the meeting. Enroll a voice once and it comes back

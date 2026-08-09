@@ -347,6 +347,13 @@ struct MeetingDetailView: View {
         }
     }
 
+    /// Which segment indices (into ``sortedSegments``) get a leading mm:ss stamp —
+    /// see ``TranscriptTimestamp/markedIndices(startTimes:)`` for why "one per
+    /// elapsed minute" is the density that stays quiet at any turn-taking pace.
+    private var timestampedIndices: Set<Int> {
+        TranscriptTimestamp.markedIndices(startTimes: sortedSegments.map(\.startTime))
+    }
+
     private var transcript: some View {
         DisclosureGroup(isExpanded: $isTranscriptExpanded) {
             if sortedSegments.isEmpty {
@@ -354,16 +361,40 @@ struct MeetingDetailView: View {
                     .foregroundStyle(.secondary)
                     .padding(.top, 6)
             } else {
-                // Lazy: a long meeting runs to hundreds of lines, and each one carries
-                // a menu now.
-                LazyVStack(alignment: .leading, spacing: 6) {
-                    ForEach(sortedSegments) { segment in
-                        HStack(alignment: .top, spacing: 8) {
-                            speakerMenu(for: segment)
-                            Text(segment.text)
-                                .font(.callout)
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                let marked = timestampedIndices
+                VStack(alignment: .leading, spacing: 6) {
+                    // Absolute, local time zone — the transcript's one wall-clock
+                    // anchor; every stamp below it is relative to this instant, not
+                    // to each other, so someone jumping in mid-meeting has one
+                    // fixed point to convert from.
+                    Text(meeting.startedAt.formatted(date: .abbreviated, time: .shortened))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+
+                    // Lazy: a long meeting runs to hundreds of lines, and each one
+                    // carries a menu now.
+                    LazyVStack(alignment: .leading, spacing: 6) {
+                        ForEach(Array(sortedSegments.enumerated()), id: \.element.persistentModelID) {
+                            index,
+                            segment in
+                            VStack(alignment: .leading, spacing: 2) {
+                                if marked.contains(index) {
+                                    // The anchor issue #123's tap-to-seek is meant to
+                                    // attach to — one per elapsed minute, not per
+                                    // segment, so the affordance stays as sparse as
+                                    // the stamp it sits next to.
+                                    Text(TranscriptTimestamp.format(segment.startTime))
+                                        .font(.caption2.monospacedDigit())
+                                        .foregroundStyle(.tertiary)
+                                }
+                                HStack(alignment: .top, spacing: 8) {
+                                    speakerMenu(for: segment)
+                                    Text(segment.text)
+                                        .font(.callout)
+                                        .textSelection(.enabled)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                            }
                         }
                     }
                 }
