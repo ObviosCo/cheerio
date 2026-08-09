@@ -40,6 +40,10 @@ struct MeetingListView: View {
     /// row layout should change while a delete is pending confirmation.
     @State private var deletingMeeting: Meeting?
     @State private var deleteError: String?
+    /// Set from `convertMeetingKind`'s return value — the "Convert to…"
+    /// context-menu item's own error, kept separate from ``deleteError`` so a
+    /// failed kind flip doesn't borrow Delete's wording.
+    @State private var convertError: String?
 
     /// Persisted default for every future recording, following ``AudioRetention``'s
     /// `@AppStorage` pattern — `CaptureSession` reads `RecordingMode.current` fresh at
@@ -145,11 +149,7 @@ struct MeetingListView: View {
         .onReceive(NotificationCenter.default.publisher(for: .NSSystemTimeZoneDidChange)) { _ in
             timeZoneID = TimeZone.current.identifier
         }
-        .alert("Rename meeting", isPresented: $renamingMeeting.presented()) {
-            TextField("Meeting name", text: $renameText)
-            Button("Cancel", role: .cancel) { renamingMeeting = nil }
-            Button("Save") { applyRename() }
-        }
+        .renameMeetingAlert(renamingMeeting: $renamingMeeting, text: $renameText, context: context)
         .confirmationDialog(
             DeleteMeetingConfirmation.title(for: deletingMeeting?.title ?? ""),
             isPresented: $deletingMeeting.presented(),
@@ -164,6 +164,11 @@ struct MeetingListView: View {
             Button("OK") { deleteError = nil }
         } message: {
             Text(deleteError ?? "")
+        }
+        .alert("Couldn't convert meeting", isPresented: $convertError.presented()) {
+            Button("OK") { convertError = nil }
+        } message: {
+            Text(convertError ?? "")
         }
         // Both alerts below read the session, not local state, so a recording started
         // from the menu bar can explain itself here.
@@ -219,11 +224,14 @@ struct MeetingListView: View {
                 renamingMeeting = meeting
             }
             // See `Meeting.toggleKind()` for what conversion does and deliberately
-            // doesn't do (issue #107). Guarded the same way as "Delete" below —
-            // this mutates the same model a live recording or an in-flight relabel
-            // pass could be touching underneath it.
+            // doesn't do (issue #107), and `convertMeetingKind` for why this and
+            // the detail view's toolbar button share one write instead of each
+            // routing through their own general-purpose save. Guarded the same
+            // way as "Delete" below — this mutates the same model a live
+            // recording or an in-flight relabel pass could be touching underneath
+            // it.
             Button(convertLabel(for: meeting)) {
-                convertKind(of: meeting)
+                convertError = convertMeetingKind(meeting, context: context)
             }
             .disabled(!session.canDelete(meeting))
             // Disabled rather than hidden: a meeting that's mid-recording is still
@@ -351,29 +359,10 @@ struct MeetingListView: View {
         )
     }
 
-    /// Commits the "Rename" context-menu flow. Plain SwiftData write, same as the
-    /// live rename in `RecordingView` and the detail view — the only thing specific
-    /// to this affordance is where the new text came from.
-    private func applyRename() {
-        defer { renamingMeeting = nil }
-        guard let renamingMeeting else { return }
-        let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        renamingMeeting.rename(to: trimmed)
-        try? context.save()
-    }
-
     /// What the "Convert to…" context-menu item offers — the kind the meeting isn't,
     /// since converting is always a toggle.
     private func convertLabel(for meeting: Meeting) -> String {
         meeting.kind == .directive ? "Convert to Meeting" : "Convert to Directive"
-    }
-
-    /// Commits the "Convert to…" context-menu flow. No confirmation, unlike Delete:
-    /// unlike a delete, this is trivially reversible by choosing the same item again.
-    private func convertKind(of meeting: Meeting) {
-        meeting.toggleKind()
-        try? context.save()
     }
 
     /// Commits the "Delete" context-menu flow, after confirmation. Clears

@@ -508,6 +508,23 @@ final class CaptureSession {
             if meeting.shouldAutoTitle {
                 await autoTitle(meeting: meeting, context: context)
             }
+            // Re-synced here, not just once above: the callback below builds its
+            // `MeetingExport` from `meeting` as saved by the line right after this
+            // one, and diarization and enhancement — both awaits — sit between the
+            // first copy and this point. Skipping this one would let the callback
+            // ship a `roughNotes` that's stale relative to the `enhancedNotes` next
+            // to it in the same payload, which read the live property directly a
+            // few lines up.
+            //
+            // This is the *last* copy that's needed, not just the second: from here
+            // to `meeting = nil` below, nothing in this function suspends —
+            // `fireTranscriptReadyCallback`, `notifyNotesReady`, and
+            // `AudioRetentionService.purge` are all synchronous, and `CaptureSession`
+            // is `@MainActor` — so nothing else can run a keystroke's binding setter
+            // in between. A copy repeated at the end would be dead code today. If a
+            // future `await` lands anywhere in that stretch, *that's* what needs a
+            // copy after it, not a blind one at the bottom.
+            meeting.roughNotes = roughNotes
             try? context.save()
 
             // The transcript is "ready" — issue #26's callback contract — right

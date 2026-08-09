@@ -59,7 +59,10 @@ its context menu or detail view).
   line by line — a re-identification pass leaves confirmed lines alone, the same as hand-named
   ones.
 - **Rough notes are first-class.** A scratchpad sits next to the live transcript during the
-  meeting. What you bothered to type is the strongest signal about what mattered.
+  meeting. What you bothered to type is the strongest signal about what mattered. Still editable
+  from the meeting's detail view afterward, for the follow-up thought that occurs to you once the
+  call ends — editing there doesn't re-run the enhancement pass below, which is stated outright
+  rather than left to be discovered.
 - **Enhance locally.** Afterwards the on-device Foundation Model merges your rough notes with
   the transcript into a summary, key points, decisions, and action items — attributed to
   whoever committed to them where the transcript supports it, and never promoted past the
