@@ -134,24 +134,45 @@ struct ContentView: View {
     private let notifications = NotificationService.shared
 
     var body: some View {
-        // This window's `.defaultLaunchBehavior` is unconditionally `.automatic` (see
-        // `CheerioApp`) because conditioning it on onboarding state doesn't reliably
-        // keep it from opening on a first run anyway — macOS 26, #63. So it embraces
-        // that: when onboarding isn't done, it renders nothing and hands off to the
-        // walkthrough instead of building the sidebar, running its `@Query`, and
-        // showing library UI a first-run user has no data for anyway.
+        // Read right here, in `body`, to choose which branch renders — `hasCompleted`
+        // backs a plain, non-observable `UserDefaults` flag, so this is the one place
+        // in this view guaranteed to see a fresh answer; the `onAppear` below only
+        // acts on whatever `body` already decided, it doesn't re-check.
         if OnboardingState.hasCompleted {
             library
         } else {
+            // This window's `.defaultLaunchBehavior` is unconditionally `.automatic`
+            // (see `CheerioApp`) because conditioning it on onboarding state doesn't
+            // reliably keep it from opening on a first run anyway — macOS 26, #63. So
+            // it renders nothing and hands off to the walkthrough instead of building
+            // the sidebar, running its `@Query`, and showing library UI a first-run
+            // user has no data for anyway. `dismiss()` runs before `openWindow`, not
+            // after, so the walkthrough is never presented alongside this window —
+            // only ever after it — and both happen in `onAppear` rather than `.task`,
+            // the earliest synchronous point in this view's lifecycle, to close the
+            // gap between this window's chrome appearing and this handoff firing as
+            // tightly as SwiftUI's public API allows. A momentary zero-window gap
+            // between the two calls is not a new state for this app — the menu bar
+            // is already the primary surface and recording never requires a window
+            // (see `docs/SPEC.md`) — so it isn't stranding anything that couldn't
+            // already happen from the menu bar alone.
+            //
+            // What this can't fix: `.automatic` puts this window's `NSWindow` on
+            // screen before any SwiftUI content code runs at all, so a first run can
+            // still flash this window's chrome, blank, for a moment — no public
+            // Window-scene API vetoes that from inside content. Documented as a known
+            // residual on #63 rather than chased further here: the alternative that
+            // would actually prevent it — suppressing both windows and deciding which
+            // one opens from the `MenuBarExtra` label's own eager view instead —
+            // replaces the launch mechanism this PR's CI run just confirmed works
+            // (every non-onboarding screenshot depends on `.automatic` reliably
+            // opening this window) with an unverified one, for every launch, to fix a
+            // one-time cosmetic flash — not a trade to make blind, with no way to run
+            // the app here to check it.
             Color.clear
-                .task {
-                    // Open-then-dismiss, not the other order: this mirrors
-                    // `OnboardingView.onDisappear`'s handoff back to this window, and
-                    // never leaves the app with zero windows and nothing that could
-                    // still open one — `MenuBarExtra`'s content is lazy, so it isn't a
-                    // reliable fallback for that.
-                    openWindow(id: OnboardingView.windowID)
+                .onAppear {
                     dismiss()
+                    openWindow(id: OnboardingView.windowID)
                 }
         }
     }

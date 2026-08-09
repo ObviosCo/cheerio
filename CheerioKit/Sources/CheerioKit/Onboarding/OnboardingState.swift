@@ -12,10 +12,13 @@ import Foundation
 /// (#63): both of `CheerioApp`'s windows now have fixed, unconditional launch
 /// behavior — the library window `.automatic`, the walkthrough `.suppressed` — so
 /// this flag no longer has to be readable before the container opens to pick a
-/// scene at launch. Instead `ContentView` reads it in its own `.task`, after the
-/// container is installed, and explicitly opens the walkthrough and dismisses
-/// itself when it's false; `OnboardingView.onDisappear` sets it true and hands the
-/// library window back once the walkthrough finishes.
+/// scene at launch. Instead `ContentView.body` reads it, every time `body` runs,
+/// to decide whether to render the library or hand off — worth calling out because
+/// this value is a plain `UserDefaults` flag, not something SwiftUI can observe, so
+/// *where* it's read is what decides whether a rebuild sees a stale answer. Only the
+/// handoff itself — opening the walkthrough and dismissing this window — runs in
+/// `onAppear`, once `body` has already decided it's needed. `OnboardingView.onDisappear`
+/// sets the flag true and hands the library window back once the walkthrough finishes.
 public enum OnboardingState {
     public static let hasCompletedKey = "onboardingHasCompleted"
     public static let hasShownEnrollmentNudgeKey = "onboardingHasShownEnrollmentNudge"
