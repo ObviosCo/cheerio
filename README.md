@@ -58,9 +58,11 @@ its context menu or detail view).
   pass runs over the recorded audio after the meeting. Enroll a voice once and it comes back
   named instead of "Speaker 2"; pick who was in a given meeting from a per-meeting roster; fix
   any label by hand, and your correction outranks the model. Once a model-matched name looks
-  right, confirm the whole speaker in one action from the speakers panel instead of retyping it
-  line by line — a re-identification pass leaves confirmed lines alone, the same as hand-named
-  ones.
+  right, confirm it in one action instead of retyping it line by line — a re-identification pass
+  leaves confirmed lines alone, the same as hand-named ones. Rename, confirm, and save a voice
+  sample all live behind a per-speaker menu now, so the panel's foreground is talk time (a
+  duration and a share of the meeting, per speaker) and a colour-coded timeline of who spoke
+  when, not the correction controls themselves.
 - **Rough notes are first-class.** A scratchpad sits next to the live transcript during the
   meeting. What you bothered to type is the strongest signal about what mattered. Still editable
   from the meeting's detail view afterward, for the follow-up thought that occurs to you once the

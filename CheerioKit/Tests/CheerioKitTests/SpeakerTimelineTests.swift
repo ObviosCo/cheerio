@@ -21,7 +21,7 @@ import Testing
             ("Speaker 1", .them, 12, 18),
         ])
         let talkTimes = m.speakerTalkTimes
-        // Glen: 6s of 24s total; the two "Speaker 1" lines merge into one 12s summary.
+        // Glen: 6s of 18s total; the two "Speaker 1" lines merge into one 12s summary.
         #expect(talkTimes.map(\.summary.label) == ["Speaker 1", "Glen"])
         #expect(talkTimes.map(\.proportion) == [12.0 / 18.0, 6.0 / 18.0])
         #expect(abs(talkTimes.reduce(0) { $0 + $1.proportion } - 1) < 0.0001)
@@ -75,5 +75,20 @@ import Testing
     @Test func timelineIsEmptyForAMeetingWithNoTranscript() {
         let m = Meeting(title: "Silent")
         #expect(m.speakerTimeline.isEmpty)
+    }
+
+    /// A real name merges across channels (unlike a diarizer-generated one, which
+    /// stays scoped per channel), so two segments from the same enrolled speaker on
+    /// different channels share a `speakerKey` — and can share a timestamp too, if
+    /// both channels happened to catch the same moment. Neither collision is a bug;
+    /// an `id` built only from those two fields would be.
+    @Test func timelineSpanIDsStayUniqueWhenSpeakerAndTimestampsCollideAcrossChannels() {
+        let m = meeting([
+            ("Glen", .me, 0, 4),
+            ("Glen", .them, 0, 4),
+        ])
+        let spans = m.speakerTimeline
+        #expect(spans.map(\.speakerKey) == ["Glen", "Glen"])
+        #expect(Set(spans.map(\.id)).count == spans.count)
     }
 }

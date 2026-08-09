@@ -27,6 +27,11 @@ public struct SpeakerTalkTime: Identifiable, Sendable, Equatable {
 /// reason `SpeakerSummary` does: a SwiftData model isn't `Sendable`, and a render
 /// pass over a meeting's whole transcript has no business holding one open.
 public struct SpeakerTimelineSpan: Identifiable, Sendable, Equatable {
+    /// The originating segment's position in ``Meeting/segments``, not derived from
+    /// speaker or time — those collide legitimately. Two channels talking over each
+    /// other can produce identical `speakerKey`s (a merged, cross-channel name) at
+    /// identical timestamps (simultaneous speech), and `ForEach` requires a unique
+    /// id regardless of whether the content it's keying happens to match.
     public let id: String
     /// Matches ``SpeakerSummary/id`` and ``TranscriptSegment/speakerSlotKey`` — the
     /// key ``SpeakerSlotAssigner`` files this span's colour slot under.
@@ -55,12 +60,12 @@ extension Meeting {
     /// only ever render as an invisible sliver, and `endTime < startTime` has
     /// shown up from a diarization edge case that's otherwise harmless to ignore.
     public var speakerTimeline: [SpeakerTimelineSpan] {
-        segments
-            .filter { $0.endTime > $0.startTime }
-            .sorted { $0.startTime < $1.startTime }
-            .map { segment in
+        segments.enumerated()
+            .filter { $0.element.endTime > $0.element.startTime }
+            .sorted { $0.element.startTime < $1.element.startTime }
+            .map { index, segment in
                 SpeakerTimelineSpan(
-                    id: "\(segment.speakerSlotKey)#\(segment.startTime)-\(segment.endTime)",
+                    id: "\(index)#\(segment.speakerSlotKey)",
                     speakerKey: segment.speakerSlotKey,
                     label: segment.displayLabel,
                     start: segment.startTime,
