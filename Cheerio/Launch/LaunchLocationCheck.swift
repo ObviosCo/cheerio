@@ -35,6 +35,14 @@ enum LaunchLocationCheck {
             isOnReadOnlyVolume: isOnReadOnlyVolume(bundleURL),
             isInApplicationsDirectory: InstalledCopyScan.isInApplicationsDirectory(bundlePath: bundleURL.path)
         )
+        // `LaunchAdvisoryClassifier.advise` always answers `.none` for
+        // `.normal`, regardless of what's installed — which is every ordinary
+        // and dev-build launch there is. Returning before asking
+        // `InstalledCopyScan.find()` anything skips its synchronous
+        // `/Applications`-and-`~/Applications` directory listing and a
+        // `Bundle(url:)` read per entry, none of which the answer needed.
+        guard location != .normal else { return }
+
         let advisory = LaunchAdvisoryClassifier.advise(
             location: location, installedBundlePath: InstalledCopyScan.find()
         )
@@ -64,21 +72,33 @@ enum LaunchLocationCheck {
         alert.addButton(withTitle: "Quit")
 
         // Never silently relaunch anything — both buttons are a choice the
-        // user made, and both end with this (unstable) copy gone.
+        // user made, and both end with this (unstable) copy gone. Both
+        // outcomes below still exit — this panel already told the user this
+        // copy will quit regardless of what "Check for Updates" manages to
+        // do, so there's nothing to gain by keeping this specific,
+        // known-unstable copy alive on a failure the way the move panel does.
         if alert.runModal() == .alertFirstButtonReturn {
-            switch ActivateInstalledCopy.activateAndCheckForUpdates(installedBundlePath: installedBundlePath) {
+            let outcome = blockingRun {
+                await ActivateInstalledCopy.activateAndCheckForUpdates(installedBundlePath: installedBundlePath)
+            }
+            switch outcome {
             case .activated:
                 break
             case .installedCopyTooOldForHandoff:
                 // The button just said "Check for Updates," so leaving without
                 // telling the user it didn't happen would read as a dead
                 // button rather than the back-compat gap it actually is.
-                let fallbackAlert = NSAlert()
-                fallbackAlert.messageText = "Check for Updates From Cheerio Itself"
-                fallbackAlert.informativeText =
-                    "The installed copy is old enough that it can't be asked automatically. In its menu bar, choose Cheerio → Check for Updates…"
-                fallbackAlert.addButton(withTitle: "OK")
-                fallbackAlert.runModal()
+                showInstructionAlert(
+                    title: "Check for Updates From Cheerio Itself",
+                    message:
+                        "The installed copy is old enough that it can't be asked automatically. In its menu bar, choose Cheerio → Check for Updates…"
+                )
+            case .handoffFailed(let description):
+                log.error("Handoff to the installed copy failed: \(description, privacy: .public)")
+                showInstructionAlert(
+                    title: "Couldn't Reach the Installed Copy",
+                    message: "Open Cheerio yourself from Applications to check for updates."
+                )
             }
         }
         exit(0)
@@ -102,17 +122,56 @@ enum LaunchLocationCheck {
 
         switch MoveToApplications.perform(currentBundleURL: currentBundleURL) {
         case .success(let installedURL):
-            MoveToApplications.relaunch(at: installedURL)
-            exit(0)
+            // The copy already happened — this is only asking whether Launch
+            // Services could also start it. Exiting unconditionally here
+            // would report success even if it couldn't, stranding the user
+            // with no running Cheerio at all until they go find the new copy
+            // themselves.
+            let launchFailure = blockingRun { await MoveToApplications.relaunch(at: installedURL) }
+            guard let launchFailure else {
+                exit(0)
+            }
+            log.error("Relaunch after moving to Applications failed: \(launchFailure, privacy: .public)")
+            showInstructionAlert(
+                title: "Cheerio Was Installed",
+                message: "It's in Applications now, but couldn't be launched automatically — open it from there."
+            )
+        // Continue running from here, the same fallback the copy-failure
+        // case below already uses — the move itself succeeded, so this is
+        // strictly better off than that case, not worse.
         case .failure(let error):
             log.error("Move to Applications failed: \(error.localizedDescription, privacy: .public)")
-            let failureAlert = NSAlert()
-            failureAlert.messageText = "Couldn't Move Cheerio"
-            failureAlert.informativeText = error.localizedDescription
-            failureAlert.runModal()
+            showInstructionAlert(title: "Couldn't Move Cheerio", message: error.localizedDescription)
         // Continue running from the current, unstable location — nothing
         // here should block the meeting the user opened the app for.
         }
+    }
+
+    private static func showInstructionAlert(title: String, message: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
+    /// Blocks the calling (main) thread until `operation` finishes, by
+    /// spinning the run loop rather than blocking it outright — the same
+    /// mechanism `NSAlert.runModal()` already uses everywhere in this file. A
+    /// hard block (`DispatchSemaphore.wait()`) would never let `operation`'s
+    /// `Task` make progress at all, since it's scheduled back onto this same
+    /// main run loop; this is the only safe way to wait for one synchronously
+    /// from code that, like all of `runIfNeeded()`, has to stay synchronous
+    /// itself — it runs from `CheerioApp.init()`, which can't be `async`.
+    private static func blockingRun<T: Sendable>(_ operation: @escaping @Sendable () async -> T) -> T {
+        var result: T?
+        Task { @MainActor in
+            result = await operation()
+        }
+        while result == nil {
+            RunLoop.current.run(mode: .default, before: .distantFuture)
+        }
+        return result!
     }
 
     private static func isQuarantined(_ url: URL) -> Bool {
