@@ -5,7 +5,7 @@
 ```
 cheerio/
 ├── project.yml          # XcodeGen config → generates Cheerio.xcodeproj
-├── Scripts/             # bootstrap.sh (fresh checkout → buildable), fetch-models.sh
+├── Scripts/             # bootstrap.sh (fresh checkout → buildable), fetch-models.sh, render-appicon.swift
 ├── CheerioKit/          # SwiftPM package: platform-portable core (macOS + future iOS)
 │   └── Sources/CheerioKit/
 │       ├── Models/          # SwiftData models: Meeting, TranscriptSegment, EnrolledSpeaker
