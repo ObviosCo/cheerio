@@ -71,6 +71,11 @@ final class NotificationService {
     /// There is no non-view API for opening a SwiftUI `Window` scene, and the
     /// notification handlers are not views.
     private var openMainWindow: (() -> Void)?
+    /// Reacts to the suggestion toggle going off without waiting for the next
+    /// ``reconcileInterval`` tick. `UserDefaults` posts this notification for every
+    /// write, not just this one key, so the handler re-checks the setting itself
+    /// rather than trusting that it fired for the reason it cares about.
+    private var defaultsObserver: NSObjectProtocol?
 
     private init() {}
 
@@ -95,6 +100,19 @@ final class NotificationService {
             while !Task.isCancelled {
                 await self?.reconcileCalendarSuggestions()
                 try? await Task.sleep(for: Self.reconcileInterval)
+            }
+        }
+
+        if let defaultsObserver {
+            NotificationCenter.default.removeObserver(defaultsObserver)
+        }
+        defaultsObserver = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            Task { @MainActor in
+                await self?.clearPendingSuggestionsIfDisabled()
             }
         }
     }
@@ -149,7 +167,13 @@ final class NotificationService {
         // walkthrough is deliberately pacing, from a window the user isn't looking
         // at. Nothing is lost by waiting: the loop comes back around.
         guard OnboardingState.hasCompleted else { return }
-        guard NotificationSettings.suggestsRecording else { return }
+        guard NotificationSettings.suggestsRecording else {
+            // The toggle may have just gone off with requests already sitting in the
+            // system's pending queue — the reactive path in `clearPendingSuggestionsIfDisabled`
+            // usually catches that faster, but this loop is the backstop.
+            await removePendingSuggestionRequests(withPrefix: Self.suggestionRequestPrefix)
+            return
+        }
         guard let session else { return }
 
         // No calendar access means no suggestions, silently and permanently — the
@@ -172,21 +196,34 @@ final class NotificationService {
 
         // A recording that started for an event we'd already queued an offer for
         // makes that offer wrong — withdraw it rather than let it fire mid-meeting.
+        // The request identifier is keyed by occurrence, not by the raw event id, so
+        // withdrawing means matching every occurrence's request by prefix rather
+        // than knowing one exact identifier to remove.
         if let eventID = recording.eventID {
-            center.removePendingNotificationRequests(withIdentifiers: [Self.suggestionRequestID(eventID: eventID)])
+            await removePendingSuggestionRequests(withPrefix: "\(Self.suggestionRequestPrefix)\(eventID)#")
         }
 
         let suggestions = MeetingSuggestionPlanner.suggestions(
             for: await CalendarService.shared.todaysMeetings(now: now),
             now: now,
-            alreadyNotified: ledger.eventIDs,
+            alreadyNotified: ledger.occurrenceKeys,
             recording: recording
         )
         guard !suggestions.isEmpty else { return }
         guard await ensureAuthorization() else { return }
 
-        for suggestion in suggestions {
-            await schedule(suggestion, now: now)
+        // `ensureAuthorization()` can sit open on the system's permission prompt for
+        // as long as the user takes to answer it, so `now` from above is stale by the
+        // time scheduling actually happens. Re-reading it here keeps `schedule`'s
+        // nil-trigger check correct for a suggestion that crossed from "starting
+        // soon" to "already started" while the prompt was up, and the `where` clause
+        // is what drops one that crossed all the way past `grace`: scheduling that
+        // one would either silently do nothing (a calendar trigger for a date that's
+        // already gone) or offer to record a meeting that's long since started.
+        let scheduledAt = Date.now
+        for suggestion in suggestions
+        where suggestion.startDate.addingTimeInterval(MeetingSuggestionPlanner.grace) > scheduledAt {
+            await schedule(suggestion, now: scheduledAt)
         }
         ledger.save()
     }
@@ -225,7 +262,7 @@ final class NotificationService {
         }
 
         let request = UNNotificationRequest(
-            identifier: Self.suggestionRequestID(eventID: suggestion.eventID),
+            identifier: Self.suggestionRequestID(occurrenceKey: suggestion.occurrenceKey),
             content: content,
             trigger: trigger
         )
@@ -234,15 +271,44 @@ final class NotificationService {
             // Recorded on *scheduling*, not on delivery, which is what makes "never
             // twice" hold: there is no callback for delivery, and the horizon is
             // short enough (see `MeetingSuggestionPlanner.lookahead`) that a queued
-            // offer is as good as a made one.
-            ledger.record(suggestion.eventID, at: now)
+            // offer is as good as a made one. Keyed by occurrence, not by the raw
+            // event id — see `MeetingSuggestion.occurrenceKey`.
+            ledger.record(suggestion.occurrenceKey, at: now)
         } catch {
             log.error("Couldn't schedule a recording suggestion: \(error, privacy: .public)")
         }
     }
 
-    private static func suggestionRequestID(eventID: String) -> String {
-        "\(suggestionCategoryID).\(eventID)"
+    /// Every suggestion request's identifier starts with this, which is what makes
+    /// prefix-based removal possible — `removePendingNotificationRequests` only
+    /// takes exact identifiers, and an occurrence-keyed identifier isn't known ahead
+    /// of time everywhere a suggestion request needs to be found and withdrawn.
+    private static var suggestionRequestPrefix: String { "\(suggestionCategoryID)." }
+
+    private static func suggestionRequestID(occurrenceKey: String) -> String {
+        "\(suggestionRequestPrefix)\(occurrenceKey)"
+    }
+
+    /// Removes every pending suggestion request whose identifier starts with
+    /// `prefix` — the whole suggestion category when the toggle just went off, or
+    /// just one event's occurrences when a recording started against it.
+    private func removePendingSuggestionRequests(withPrefix prefix: String) async {
+        let pending = await center.pendingNotificationRequests()
+        let matching = pending.map(\.identifier).filter { $0.hasPrefix(prefix) }
+        guard !matching.isEmpty else { return }
+        center.removePendingNotificationRequests(withIdentifiers: matching)
+    }
+
+    /// The reactive half of the suggestion toggle: `reconcileCalendarSuggestions`
+    /// catches "already off" on its own ``reconcileInterval`` cadence, but turning
+    /// the toggle off shouldn't wait for that — a request scheduled minutes ago is
+    /// still pending and would otherwise still show a banner for a feature the user
+    /// just disabled. Cheap and idempotent rather than surgical: it's driven by
+    /// every `UserDefaults` write, suggestion-related or not, and does nothing when
+    /// the toggle is on.
+    private func clearPendingSuggestionsIfDisabled() async {
+        guard !NotificationSettings.suggestsRecording else { return }
+        await removePendingSuggestionRequests(withPrefix: Self.suggestionRequestPrefix)
     }
 
     // MARK: Notes ready
@@ -432,6 +498,11 @@ final class NotificationService {
                 kind: .meeting,
                 context: container.mainContext
             )
+            // `.foreground` on the notification action activates the app process,
+            // but Cheerio is menu-bar-only: it does not reopen a SwiftUI `Window`
+            // scene that's been closed. Without this, a recording started from a
+            // notification has no visible window with a Stop button in it.
+            activateAndShowMainWindow()
         } catch {
             session.startFailure = .failed(error.localizedDescription)
             activateAndShowMainWindow()

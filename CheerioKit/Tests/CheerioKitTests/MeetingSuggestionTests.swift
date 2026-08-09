@@ -81,7 +81,39 @@ import Testing
     }
 
     @Test func neverOffersTheSameEventTwice() {
-        #expect(plan([event(id: "already", startsIn: 300)], alreadyNotified: ["already"]).isEmpty)
+        let meeting = event(id: "already", startsIn: 300)
+        let occurrenceKey = MeetingSuggestion.occurrenceKey(eventID: meeting.id, startDate: meeting.startDate)
+        #expect(plan([meeting], alreadyNotified: [occurrenceKey]).isEmpty)
+    }
+
+    @Test func recurringOccurrencesInOnePlanningPassGetDistinctKeys() {
+        // `EKEvent.eventIdentifier` is shared across every occurrence of a
+        // recurring event — two occurrences seen together (say, a daily standup
+        // whose next instance also falls inside the lookahead) must not collide on
+        // the same suggestion or the same request identifier downstream.
+        let sooner = event(id: "standup", startsIn: 300)
+        let later = event(id: "standup", startsIn: 600)
+        let suggestions = plan([sooner, later])
+        #expect(suggestions.count == 2)
+        #expect(suggestions.allSatisfy { $0.eventID == "standup" })
+        let keys = Set(suggestions.map(\.occurrenceKey))
+        #expect(keys.count == 2)
+        // `id` (Identifiable) has to disambiguate the two just as sharply, since
+        // that's what a SwiftUI list or any other identity-sensitive consumer sees.
+        #expect(Set(suggestions.map(\.id)).count == 2)
+    }
+
+    @Test func aRePlanDoesNotReOfferAnAlreadyOfferedOccurrence() {
+        // Same recurring event, two occurrences: the earlier one was already
+        // queued (its occurrence key is in the ledger), the later one wasn't.
+        let offered = event(id: "standup", startsIn: 300)
+        let notYetOffered = event(id: "standup", startsIn: 600)
+        let alreadyNotified = Set([
+            MeetingSuggestion.occurrenceKey(eventID: offered.id, startDate: offered.startDate)
+        ])
+        let suggestions = plan([offered, notYetOffered], alreadyNotified: alreadyNotified)
+        #expect(suggestions.count == 1)
+        #expect(suggestions.first?.startDate == notYetOffered.startDate)
     }
 
     @Test func offersNothingWhileARecordingIsInFlight() {
@@ -116,7 +148,7 @@ import Testing
         #expect(!ledger.contains("event-1"))
         ledger.record("event-1", at: now)
         #expect(ledger.contains("event-1"))
-        #expect(ledger.eventIDs == ["event-1"])
+        #expect(ledger.occurrenceKeys == ["event-1"])
     }
 
     @Test func prunesEntriesPastTheirRetention() {
@@ -124,7 +156,7 @@ import Testing
         ledger.record("yesterday", at: now.addingTimeInterval(-SuggestionLedger.retention - 60))
         ledger.record("recent", at: now.addingTimeInterval(-60))
         ledger.prune(now: now)
-        #expect(ledger.eventIDs == ["recent"])
+        #expect(ledger.occurrenceKeys == ["recent"])
     }
 
     @Test func roundTripsThroughUserDefaults() throws {
@@ -140,12 +172,12 @@ import Testing
         // Reloading must not resurrect anything the pruner would have dropped.
         var pruned = loaded
         pruned.prune(now: now.addingTimeInterval(SuggestionLedger.retention + 60))
-        #expect(pruned.eventIDs.isEmpty)
+        #expect(pruned.occurrenceKeys.isEmpty)
     }
 
     @Test func loadsEmptyWhenNothingWasEverSaved() throws {
         let defaults = try #require(UserDefaults(suiteName: "MeetingSuggestionTests.\(UUID().uuidString)"))
-        #expect(SuggestionLedger.load(from: defaults).eventIDs.isEmpty)
+        #expect(SuggestionLedger.load(from: defaults).occurrenceKeys.isEmpty)
     }
 }
 

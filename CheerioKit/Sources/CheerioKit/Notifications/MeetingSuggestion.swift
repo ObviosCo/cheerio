@@ -2,22 +2,49 @@ import Foundation
 
 /// One "this is starting — record it?" offer, and when it should land.
 public struct MeetingSuggestion: Identifiable, Equatable, Sendable {
-    /// The EventKit identifier, which is also what makes the offer unique: one
-    /// suggestion per event, ever.
+    /// The raw EventKit identifier. Shared across every occurrence of a recurring
+    /// event, which makes it safe for exactly one purpose downstream: it's what's
+    /// passed as `calendarEventID` when the suggestion is accepted, because a
+    /// started recording links to the *event*, not to one particular occurrence of
+    /// it. Never use this as a dedup or scheduling key — see ``occurrenceKey``.
     public let eventID: String
+    /// What actually makes an offer unique: ``eventID`` folded together with this
+    /// occurrence's own start date. `eventID` alone repeats across a recurring
+    /// event's instances, so the raw identifier can't tell "today's standup" apart
+    /// from "tomorrow's standup" — the dedup ledger and the notification request
+    /// identifier both key on this instead, so two occurrences seen in the same
+    /// planning pass get distinct requests, and a re-plan doesn't re-offer one
+    /// that's already been queued.
+    public let occurrenceKey: String
     public let title: String
     public let startDate: Date
     /// When the notification should be delivered — the event's start, or *now* for
     /// an event that started within the grace window while the app wasn't looking.
     public let fireDate: Date
 
-    public var id: String { eventID }
+    public var id: String { occurrenceKey }
 
     public init(eventID: String, title: String, startDate: Date, fireDate: Date) {
         self.eventID = eventID
+        self.occurrenceKey = Self.occurrenceKey(eventID: eventID, startDate: startDate)
         self.title = title
         self.startDate = startDate
         self.fireDate = fireDate
+    }
+
+    /// Combines an event's identifier with one occurrence's start date into the key
+    /// that names that specific occurrence. ISO-8601 rather than, say, a raw
+    /// `TimeInterval`, because this ends up inside a `UNNotificationRequest`
+    /// identifier and a `UserDefaults`-backed ledger entry — both places where
+    /// "legible in a debugger or a defaults dump" is worth the extra characters.
+    ///
+    /// Builds its own `ISO8601DateFormatter` on every call rather than sharing one
+    /// off a `static let`: the class isn't `Sendable`, and this isn't called often
+    /// enough for the allocation to be worth a concurrency-safety workaround.
+    public static func occurrenceKey(eventID: String, startDate: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return "\(eventID)#\(formatter.string(from: startDate))"
     }
 }
 
@@ -79,9 +106,13 @@ public enum MeetingSuggestionPlanner {
     /// - It hasn't already ended, and it isn't a zero-length marker (a reminder or
     ///   an all-day-ish placeholder someone entered as a point in time).
     /// - It starts within ``lookahead``, or started no more than ``grace`` ago.
-    /// - It hasn't been offered before. Once per event, ever — declining an offer by
-    ///   ignoring it is still an answer, and asking twice about one meeting is the
-    ///   fastest way to make someone turn the whole feature off.
+    /// - It hasn't been offered before. Once per *occurrence*, ever — declining an
+    ///   offer by ignoring it is still an answer, and asking twice about one meeting
+    ///   is the fastest way to make someone turn the whole feature off. A recurring
+    ///   event's `EKEvent.eventIdentifier` repeats across every occurrence, so what's
+    ///   actually checked is `meeting.id` folded together with that occurrence's own
+    ///   start date — see ``MeetingSuggestion/occurrenceKey(eventID:startDate:)``.
+    ///   `alreadyNotified` holds those occurrence keys, not raw event identifiers.
     public static func suggestions(
         for meetings: [CalendarMeeting],
         now: Date = .now,
@@ -93,7 +124,9 @@ public enum MeetingSuggestionPlanner {
             meetings
             .filter { meeting in
                 guard !meeting.isAllDay, !meeting.isDeclined else { return false }
-                guard !alreadyNotified.contains(meeting.id) else { return false }
+                let occurrenceKey = MeetingSuggestion.occurrenceKey(
+                    eventID: meeting.id, startDate: meeting.startDate)
+                guard !alreadyNotified.contains(occurrenceKey) else { return false }
                 guard meeting.id != recording.eventID else { return false }
                 guard meeting.endDate > meeting.startDate else { return false }
                 guard meeting.endDate > now else { return false }
@@ -115,17 +148,20 @@ public enum MeetingSuggestionPlanner {
     }
 }
 
-/// Which events have already been offered, so none is ever offered twice.
+/// Which occurrences have already been offered, so none is ever offered twice.
 ///
-/// Timestamped rather than a bare set of identifiers, so it can be pruned: EventKit
-/// identifiers are stable and a set that only grows would accumulate every recurring
-/// meeting's occurrences forever. Pruning by age also handles the one case where
-/// re-offering is right — a recurring event whose identifier repeats tomorrow is a
-/// genuinely different meeting.
+/// Keyed by occurrence key (``MeetingSuggestion/occurrenceKey(eventID:startDate:)``),
+/// not the raw EventKit identifier — that repeats across every occurrence of a
+/// recurring event, so keying on it directly would suppress every occurrence after
+/// the first one ever offered. Timestamped rather than a bare set of keys, so it can
+/// be pruned: a set that only grows would still accumulate one entry per occurrence
+/// forever. Pruning by age also handles the one case where re-offering is right — an
+/// event whose identifier repeats tomorrow, at a different start date, produces a
+/// genuinely different key.
 public struct SuggestionLedger: Equatable, Sendable {
     public static let defaultsKey = "meetingSuggestionLedger"
     /// How long an entry suppresses re-offering. A day, because that's the span over
-    /// which "this event" means one meeting.
+    /// which "this occurrence" means one meeting.
     public static let retention: TimeInterval = 24 * 60 * 60
 
     private var entries: [String: Date]
@@ -134,12 +170,12 @@ public struct SuggestionLedger: Equatable, Sendable {
         self.entries = entries
     }
 
-    public var eventIDs: Set<String> { Set(entries.keys) }
+    public var occurrenceKeys: Set<String> { Set(entries.keys) }
 
-    public func contains(_ eventID: String) -> Bool { entries[eventID] != nil }
+    public func contains(_ occurrenceKey: String) -> Bool { entries[occurrenceKey] != nil }
 
-    public mutating func record(_ eventID: String, at date: Date) {
-        entries[eventID] = date
+    public mutating func record(_ occurrenceKey: String, at date: Date) {
+        entries[occurrenceKey] = date
     }
 
     public mutating func prune(now: Date, retention: TimeInterval = SuggestionLedger.retention) {
