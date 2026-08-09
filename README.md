@@ -78,7 +78,7 @@ and a directive-capture mode ("Give Direction…" in the menu bar).
 - **It comes to you when it matters.** A notification offers to record when a calendar meeting
   with other people starts (never twice for the same occurrence, never while already
   recording), and another one tells you when a finished meeting's notes are ready. Both
-  switches live in Settings → Notifications.
+  switches live in the Notifications section of Settings → General.
 - **Audio retention you control.** Raw audio is written to disk per channel so a transcription
   failure isn't fatal, then purged on your schedule — discard immediately, 24 hours, 7 days,
   30 days, or keep forever. The default is 7 days.
