@@ -137,16 +137,23 @@ final class ScreenshotCaptureTests: XCTestCase {
                 "-onboardingHasCompleted", "NO",
             ]
         )
-        // Title comes from `MeetingListView`'s `.navigationTitle("Cheerio")`, which
-        // applies with no meeting selected — true here since this is a fresh, empty
-        // store. Absent means the handoff had already finished before this query ran.
-        let library = app.windows["Cheerio"]
-        if library.waitForExistence(timeout: 5) {
-            XCTAssertTrue(
-                library.waitForNonExistence(timeout: Self.windowTimeout),
-                "The library window opened but never handed off to the walkthrough."
-            )
-        }
+        // Waits for the walkthrough's own content to exist, not for the library
+        // window's absence — a fixed-length probe for the latter can't tell "the
+        // library window isn't coming" from "the model container is still opening
+        // and it just hasn't gotten there yet" (`windowTimeout`'s whole reason for
+        // being generous). Treating the second as the first is the same race #63
+        // was about, just moved into this test. "Get Started" is
+        // `OnboardingWelcomeStepView`'s own button, so this can't pass on anything
+        // else the app might show first.
+        let getStarted = app.buttons["Get Started"]
+        XCTAssertTrue(getStarted.waitForExistence(timeout: Self.windowTimeout), "The walkthrough never appeared.")
+        // Only now ask whether the library window handed off — it's known to exist
+        // eventually, if it exists at all, so there's no fixed-length guess left to
+        // make, just confirmation that it isn't still mid-dismiss underneath.
+        XCTAssertTrue(
+            app.windows["Cheerio"].waitForNonExistence(timeout: Self.windowTimeout),
+            "The library window opened but never handed off to the walkthrough."
+        )
         // Matched positionally like the library, and for a stronger reason: the
         // walkthrough is `.hiddenTitleBar`, so matching it on "Welcome to Cheerio"
         // would rest on a title no title bar is drawing. With the handoff finished
