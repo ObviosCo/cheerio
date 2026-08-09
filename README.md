@@ -262,24 +262,33 @@ macros.
 
 ### Before you run it
 
-- **Building your own fork or a distributable of your own?** Change the bundle
-  identifier in two places, not one. `PRODUCT_BUNDLE_IDENTIFIER` in `project.yml` is
-  what the built app actually is — now the project's real identifier
-  (`co.obvios.cheerio.mac`), not a placeholder; note it overrides
-  `options.bundleIdPrefix`, so changing the prefix alone leaves you building under
-  Obvios's. But `AudioStorage.appBundleIdentifier` in
-  `CheerioKit/Sources/CheerioKit/Audio/AudioStorage.swift` is the one CheerioKit
-  actually trusts as "the app's identifier," and it doesn't follow `project.yml`
+- **Building your own fork or a distributable of your own?** Change one constant,
+  leave another alone — they look similar and do opposite jobs. Change
+  `PRODUCT_BUNDLE_IDENTIFIER` in `project.yml`, what the built app actually is (now
+  the project's real identifier, `co.obvios.cheerio.mac`, not a placeholder; note it
+  overrides `options.bundleIdPrefix`, so changing the prefix alone leaves you
+  building under Obvios's), *and* `AudioStorage.appBundleIdentifier` in
+  `CheerioKit/Sources/CheerioKit/Audio/AudioStorage.swift` — the one CheerioKit
+  actually trusts as "the app's identifier," which doesn't follow `project.yml`
   automatically: the bundled MCP helper resolves its store against that constant
-  rather than `Bundle.main` (see its doc comment for why), and the bundle-identifier
-  migration and the DMG launch-location handoff's legacy-install match both gate on
-  whether the running identifier equals it. Leave it as `co.obvios.cheerio.mac` and
-  your fork's helper looks for the *official* Cheerio's store, not yours; change
-  `project.yml` alone and you get exactly that fork. There's no shared-config system
-  deriving one from the other — change both by hand. An ordinary local Debug build
-  needs neither change: Xcode signs it ad hoc under whatever identifier is there, and
-  the migration machinery above only runs at all when the running identifier already
-  matches the official one, so it stays out of a fork's way regardless.
+  rather than `Bundle.main` (see its doc comment for why). Leave it as
+  `co.obvios.cheerio.mac` and your fork's helper looks for the *official* Cheerio's
+  store, not yours. There's no shared-config system deriving one from the other —
+  change both by hand.
+
+  Do **not** change `AudioStorage.officialBundleIdentifier`, the other constant
+  right next to it. It's a fixed `"co.obvios.cheerio.mac"` that exists only to gate
+  the `app.cheerio.mac`-to-official migration and the DMG launch-location handoff's
+  legacy-install match — both meaningless for a fork, which never shipped under the
+  old identifier and has no legacy data of its own to find. It's deliberately not
+  the same constant as `appBundleIdentifier`: if it were, a fork that correctly
+  changed `appBundleIdentifier` per the paragraph above would end up matching its
+  *own* new identifier against this check too, turning both of those behaviors back
+  on by accident. Leaving it untouched is what keeps them off.
+
+  An ordinary local Debug build needs none of this: Xcode signs it ad hoc under
+  whatever identifier is there, and nothing reads any of these three constants until
+  you actually record something.
 - **Grant microphone access on first record.** Prompted once; if you deny it, macOS won't ask
   again and you'll need System Settings → Privacy & Security.
 - **First launch downloads a speech model.** macOS fetches the `SpeechTranscriber` assets for

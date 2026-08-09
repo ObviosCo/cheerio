@@ -349,4 +349,31 @@ import Testing
 
         #expect(path == nil)
     }
+
+    /// The two-edit fork configuration README.md documents, exercised exactly as
+    /// `InstalledCopyScan.find()` would compose it: a fork's `Bundle.main.bundleIdentifier`
+    /// and its (README-instructed) `AudioStorage.appBundleIdentifier` are the same
+    /// custom string by construction, since the fork changed the latter to match the
+    /// former. That equality is exactly what made the pre-fix gate self-defeating —
+    /// comparing against `appBundleIdentifier` would have made this `true`. Comparing
+    /// against the separate, fixed `officialBundleIdentifier` instead means the
+    /// legacy match stays off regardless.
+    @Test func aCorrectlyConfiguredForkStillGetsNoLegacyMatch() {
+        let forksRuntimeIdentifier = "com.example.myfork.cheerio"
+        // Stands in for the fork's own `AudioStorage.appBundleIdentifier`, changed
+        // per README.md to equal `forksRuntimeIdentifier` — deliberately the
+        // identical string, not a distractor.
+        let forksAppBundleIdentifier = forksRuntimeIdentifier
+        let candidates = [Candidate(path: "/Applications/Cheerio.app", bundleIdentifier: "app.cheerio.mac")]
+
+        let forkIdentifiers = InstalledCopyLocator.acceptableBundleIdentifiers(
+            runningAs: forksRuntimeIdentifier, legacyBundleIdentifier: "app.cheerio.mac"
+        )
+        let path = InstalledCopyLocator.find(
+            among: candidates, acceptableBundleIdentifiers: forkIdentifiers, preferredName: "Cheerio.app"
+        )
+
+        #expect(forksAppBundleIdentifier == forksRuntimeIdentifier)
+        #expect(path == nil)
+    }
 }

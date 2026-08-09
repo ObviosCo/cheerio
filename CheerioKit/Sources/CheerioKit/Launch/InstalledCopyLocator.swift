@@ -31,10 +31,14 @@ public enum InstalledCopyLocator {
     /// treat as "this app," given the identifier the current process is actually
     /// running under.
     ///
-    /// Only a process running as `AudioStorage.isRunningAsCanonicalIdentifier`
-    /// gets `legacyBundleIdentifier` added to its own — a fork built under its own
-    /// identifier matches only that identifier. Without this gate, a fork launched
-    /// from a DMG would find an unrelated, independently-installed
+    /// Only a process running as `AudioStorage.isRunningAsOfficialBuild` gets
+    /// `legacyBundleIdentifier` added to its own — a fork built under its own
+    /// identifier matches only that identifier, even if the fork correctly
+    /// followed README.md's instructions and changed `AudioStorage.appBundleIdentifier`
+    /// to match (`isRunningAsOfficialBuild` deliberately never reads
+    /// `appBundleIdentifier` — see its doc comment for why comparing against that
+    /// one instead would defeat this gate entirely). Without this gate, a fork
+    /// launched from a DMG would find an unrelated, independently-installed
     /// `app.cheerio.mac` copy, treat it as itself already installed, hand off to
     /// that unrelated app, and quit — wrong twice over, since that copy isn't the
     /// fork and the fork was never part of the rename the legacy identifier exists
@@ -42,7 +46,7 @@ public enum InstalledCopyLocator {
     public static func acceptableBundleIdentifiers(
         runningAs identifier: String, legacyBundleIdentifier: String = AudioStorage.legacyBundleIdentifier
     ) -> Set<String> {
-        AudioStorage.isRunningAsCanonicalIdentifier(identifier) ? [identifier, legacyBundleIdentifier] : [identifier]
+        AudioStorage.isRunningAsOfficialBuild(identifier) ? [identifier, legacyBundleIdentifier] : [identifier]
     }
 
     /// - Parameters:
