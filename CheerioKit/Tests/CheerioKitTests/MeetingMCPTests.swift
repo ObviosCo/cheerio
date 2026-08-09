@@ -495,6 +495,125 @@ import Testing
         #expect(reread.first?.segments.map(\.text) == ["hello"])
     }
 
+    /// The mechanics issue #65 is actually built on: the app's writer container and
+    /// the helper's read-only container are two independent `ModelContainer`s on
+    /// the same file, and the helper's is opened once and kept — see
+    /// `MeetingQueryService`'s own docs on why it still creates a fresh context per
+    /// call. This starts a reader that way, then makes three separate writes the
+    /// same shape `CaptureSession` now makes — the initial insert-and-save at
+    /// recording start, a mid-call segment checkpoint, and the final save at
+    /// `stop()` — checking after each one that the long-lived reader's next call
+    /// sees it, without ever reopening its container.
+    @Test func writesDuringRecordingAreVisibleToAReaderOpenedBeforeTheyHappened() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "cheerio-mcp-live-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appending(path: "default.store")
+
+        // The writer: one container, open for the whole "recording", exactly like
+        // the app holds one context across `start`/checkpoints/`stop`.
+        let writerContainer = try ModelContainer(
+            for: Meeting.self, TranscriptSegment.self, EnrolledSpeaker.self,
+            configurations: ModelConfiguration(url: url))
+        let writer = ModelContext(writerContainer)
+
+        // The reader: opened once, before any of the writes below — this is the
+        // long-lived MCP helper process, not a fresh container per assertion.
+        let reader = MeetingQueryService(container: try MeetingStore.openReadOnly(at: url))
+
+        // 1. `CaptureSession.startCapturing`: insert, assign `stableID`, save —
+        // before a single word has been transcribed.
+        let meeting = Meeting(title: "Design review")
+        writer.insert(meeting)
+        let uuid = meeting.stableID
+        try writer.save()
+
+        let afterStart = try await reader.list(ListMeetingsRequest())
+        #expect(afterStart.meetings.map(\.title) == ["Design review"])
+        let listedAtStart = try #require(afterStart.meetings.first)
+        #expect(listedAtStart.isInProgress)
+        #expect(listedAtStart.uuid == uuid)
+        #expect(listedAtStart.segmentCount == 0)
+
+        // 2. A checkpoint mid-call: `handle(_:context:)` already inserted this
+        // segment; the periodic task's job is only the `save()`.
+        let segment = TranscriptSegment(channel: .me, text: "so far so good", startTime: 0, endTime: 3)
+        segment.meeting = meeting
+        writer.insert(segment)
+        try writer.save()
+
+        let midCall = try await reader.export(for: uuid)
+        #expect(midCall.endedAt == nil)
+        #expect(midCall.segments.map(\.text) == ["so far so good"])
+
+        // 3. `stop(context:)`: another segment, `endedAt` set, saved.
+        let closing = TranscriptSegment(channel: .them, text: "sounds good, ship it", startTime: 3, endTime: 6)
+        closing.meeting = meeting
+        writer.insert(closing)
+        meeting.endedAt = .now
+        try writer.save()
+
+        let afterStop = try await reader.export(for: uuid)
+        #expect(afterStop.endedAt != nil)
+        #expect(afterStop.segments.map(\.text) == ["so far so good", "sounds good, ship it"])
+        let finalList = try await reader.list(ListMeetingsRequest())
+        #expect(finalList.meetings.first?.isInProgress == false)
+    }
+
+    // MARK: - Crash recovery
+
+    @Test func closeAbandonedRecordingsEndsALeftoverMeetingAtItsLastTranscribedMoment() throws {
+        let container = try ModelContainer(
+            for: Meeting.self, TranscriptSegment.self, EnrolledSpeaker.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+
+        let iso = ISO8601DateFormatter()
+        let crashed = Meeting(title: "Crashed mid-call", startedAt: iso.date(from: "2026-08-07T15:00:00Z")!)
+        crashed.segments = [
+            TranscriptSegment(channel: .me, text: "one", startTime: 0, endTime: 5),
+            TranscriptSegment(channel: .them, text: "two", startTime: 4, endTime: 12),
+        ]
+        context.insert(crashed)
+
+        // No segments at all — the crash landed before anything was transcribed.
+        let stillborn = Meeting(title: "Crashed before speech", startedAt: iso.date(from: "2026-08-07T16:00:00Z")!)
+        context.insert(stillborn)
+        try context.save()
+
+        #expect(StorageMigration.closeAbandonedRecordings(context: context, excluding: nil) == 2)
+
+        // Ends at the last transcribed moment (the later segment's endTime past
+        // startedAt), not "now" — a relaunch long after the crash must not silently
+        // claim the gap as part of the meeting.
+        #expect(crashed.endedAt == iso.date(from: "2026-08-07T15:00:12Z")!)
+        #expect(stillborn.endedAt == stillborn.startedAt)
+
+        // Idempotent: a second run has nothing left with `endedAt == nil`.
+        #expect(StorageMigration.closeAbandonedRecordings(context: context, excluding: nil) == 0)
+    }
+
+    @Test func closeAbandonedRecordingsLeavesTheLiveMeetingAlone() throws {
+        let container = try ModelContainer(
+            for: Meeting.self, TranscriptSegment.self, EnrolledSpeaker.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+
+        // Simulates reopening the main window mid-recording — `ContentView`'s
+        // `.task` runs again while `session.meeting` is this genuinely in-progress
+        // meeting, not one abandoned by a previous process.
+        let recordingNow = Meeting(title: "Right now")
+        context.insert(recordingNow)
+        let leftoverFromACrash = Meeting(title: "Yesterday's crash")
+        context.insert(leftoverFromACrash)
+        try context.save()
+
+        #expect(StorageMigration.closeAbandonedRecordings(context: context, excluding: recordingNow) == 1)
+        #expect(recordingNow.endedAt == nil)
+        #expect(leftoverFromACrash.endedAt != nil)
+    }
+
     @Test func theStorePathOverrideWins() throws {
         let override = "/tmp/somewhere/else/default.store"
         #expect(

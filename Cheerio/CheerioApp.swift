@@ -240,6 +240,13 @@ struct ContentView: View {
             // Legacy rows carry no uuid, and the bundled MCP helper can't mint one
             // for them because it never writes. This process can.
             StorageMigration.backfillMeetingIDs(context: context)
+            // A meeting still `endedAt == nil` from a previous run is one a crash
+            // or force-quit interrupted, not one genuinely recording right now —
+            // `session.meeting` is that live exception, excluded so reopening this
+            // window mid-call can't close out the very meeting it's showing. See
+            // `StorageMigration.closeAbandonedRecordings` for why this can't wait
+            // for `stop()` to run for a process that no longer exists.
+            StorageMigration.closeAbandonedRecordings(context: context, excluding: session.meeting)
             // Refresh only — never prompt here. The onboarding walkthrough's
             // calendar step is what's allowed to show the TCC dialog; this just
             // picks up whatever the user already decided, there or in System

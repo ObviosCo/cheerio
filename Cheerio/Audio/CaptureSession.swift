@@ -67,6 +67,24 @@ final class CaptureSession {
     private var systemTap: SystemAudioTap?
     private var recorder: MeetingAudioRecorder?
     private var consumerTasks: [Task<Void, Never>] = []
+    /// Flushes finalized transcript segments to disk on ``checkpointInterval``'s
+    /// cadence — see ``startCheckpointing(context:)``. Cancelled in ``stop(context:)``
+    /// and ``rollbackFailedStart(context:)``, both of which take over saving
+    /// explicitly from that point on.
+    private var checkpointTask: Task<Void, Never>?
+    /// How often ``handle(_:context:)``'s inserts are checkpointed while recording.
+    ///
+    /// Off the realtime audio path entirely — ``handle`` already runs on this
+    /// (main) actor, not the audio callback, and this loop is a second, independent
+    /// task that only ever touches the `ModelContext`. The interval is a trade
+    /// between two readers: a second process (the MCP helper) watching an
+    /// in-progress meeting sees the transcript lag the live one by up to this much,
+    /// and a shorter interval spends more disk I/O contending with the same
+    /// context transcription is inserting into. Two seconds is short enough that
+    /// "in progress" reads as live, long enough that it coalesces the common case
+    /// of both channels finalizing a line within the same second or two of each
+    /// other into one save instead of two.
+    private static let checkpointInterval: Duration = .seconds(2)
     /// When the current recording began, for the elapsed-time readout.
     private(set) var startedAt: Date?
 
@@ -121,6 +139,23 @@ final class CaptureSession {
             meeting.participantNames = [me.name]
         }
         context.insert(meeting)
+        // Persisted now, not left to whenever `stop()` next saves: a second process
+        // reading this store (the MCP helper) takes its own snapshot on each call,
+        // so a meeting that only exists in this context's in-memory changes is
+        // invisible to it for the entire recording. `stableID` is read here rather
+        // than left to backfill lazily, so the row that lands on disk already
+        // carries the same identifier `fireTranscriptReadyCallback` will hand out
+        // later — a reader that saw this meeting mid-call and one that sees it
+        // after `stop()` need to agree it's the same meeting.
+        _ = meeting.stableID
+        do {
+            try context.save()
+        } catch {
+            // Best-effort, like every checkpoint below: a failed save here doesn't
+            // stop the recording, it only means a reader won't see this meeting
+            // until the next one succeeds — at worst `stop()`'s own save.
+            log.error("Couldn't persist meeting at recording start: \(error)")
+        }
         self.meeting = meeting
         self.calendarEventOccurrenceStart = calendarEventOccurrenceStart
         self.startedAt = .now
@@ -142,6 +177,7 @@ final class CaptureSession {
                     }
                 })
         }
+        startCheckpointing(context: context)
 
         // Audio-to-disk is a safety net, not a requirement: if it can't be set up
         // the meeting still records and transcribes.
@@ -188,6 +224,33 @@ final class CaptureSession {
         NotificationService.shared.recordingDidStart()
     }
 
+    /// Starts the periodic save that makes ``handle(_:context:)``'s inserts visible
+    /// to a second process, on ``checkpointInterval``'s cadence for as long as this
+    /// task runs — cancelled by ``stop(context:)`` and
+    /// ``rollbackFailedStart(context:)``, both of which save explicitly from that
+    /// point.
+    private func startCheckpointing(context: ModelContext) {
+        checkpointTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.checkpointInterval)
+                guard !Task.isCancelled else { return }
+                self?.checkpoint(context: context)
+            }
+        }
+    }
+
+    /// One checkpoint save. `hasChanges` skips the common case of a quiet couple of
+    /// seconds where nothing new finalized, so this doesn't touch disk on a fixed
+    /// timer regardless of whether there's anything to write.
+    private func checkpoint(context: ModelContext) {
+        guard context.hasChanges else { return }
+        do {
+            try context.save()
+        } catch {
+            log.error("Checkpoint save failed: \(error)")
+        }
+    }
+
     /// Waits for the transcript consumers to finish handing over their last updates.
     ///
     /// Bounded, because being wedged in `.finishing` with no stop button is worse than
@@ -216,6 +279,8 @@ final class CaptureSession {
         try? await systemEngine?.stop()
         consumerTasks.forEach { $0.cancel() }
         consumerTasks = []
+        checkpointTask?.cancel()
+        checkpointTask = nil
         await recorder?.finish()
 
         if let meeting {
@@ -270,6 +335,12 @@ final class CaptureSession {
         systemTap?.stop()
         try? await micEngine?.stop()
         try? await systemEngine?.stop()
+        // From here on this function saves explicitly at each step below — the
+        // periodic checkpoint has nothing left to do and would only race those
+        // saves, most of which need to run after work (diarization, enhancement)
+        // that a save on a two-second timer can't wait for.
+        checkpointTask?.cancel()
+        checkpointTask = nil
         await recorder?.finish()
         // Drain, don't cancel. Each engine's `stop()` finishes its results stream, so
         // these consumers end on their own once they've handed over every update —

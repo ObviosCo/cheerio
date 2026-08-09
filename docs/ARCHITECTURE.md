@@ -131,6 +131,8 @@ Three things this turned up, all of which shape the design:
 
 Contexts are created fresh per call, not held: the app keeps recording and relabelling underneath, and a long-lived context would answer the second question out of the row cache it filled answering the first.
 
+**The meeting exists before it's over.** `CaptureSession` inserts and saves the `Meeting` — with its `stableID` already assigned, for the same reason `backfillMeetingIDs` matters above — the instant recording starts, not at `stop()`. Finalized `TranscriptSegment`s are checkpointed on a periodic save (`CaptureSession.checkpointInterval`, off the realtime audio path) rather than folded into that one save at the end, so a reader's view of an in-progress meeting lags the live one by at most that interval instead of by however long the meeting still has left to run. A crash mid-recording leaves that partial meeting behind with `endedAt` still nil; `StorageMigration.closeAbandonedRecordings` backfills it from the last transcribed timestamp the next time the app launches, so a call nobody is still recording doesn't read as in progress forever.
+
 `CHEERIO_STORE_PATH` overrides which store file is read. It exists so a smoke test or a bug report can be pointed at a *copy* without editing code, and it's an environment variable rather than an argument because MCP client configs treat `env` as a first-class field.
 
 ### Setup, and what Cheerio doesn't do
