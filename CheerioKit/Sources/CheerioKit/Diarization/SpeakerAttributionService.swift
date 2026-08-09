@@ -95,8 +95,20 @@ public actor SpeakerAttributionService {
             }
         }
 
-        let samples = try converter.resampleAudioFile(audioFile)
-        let timeline = try diarizer.processComplete(samples)
+        // Streamed rather than materialized whole: `processComplete` needs the
+        // entire channel as one [Float] up front — ~230 MB for a 60-minute side
+        // (issue #7), before the model's own state. `addAudio` + `finalizeSession`
+        // is FluidAudio's own tested streaming equivalent — its
+        // SortformerStreamingIntegrationTests assert the two paths land within 1
+        // frame (~80ms) of each other — so each window is resampled and handed off
+        // as it's read, and the channel's audio never exists as one array.
+        let file = try AVAudioFile(forReading: audioFile)
+        try ChunkedAudioReader.read(file) { window in
+            let chunkSamples = try converter.resampleBuffer(window)
+            diarizer.addAudio(chunkSamples)
+        }
+        try diarizer.finalizeSession()
+        let timeline = diarizer.timeline
 
         // The name from enrollment lives on the speaker. `DiarizerSegment.speakerLabel`
         // is hardcoded to "Speaker \(index)" and never carries it, so reading the
