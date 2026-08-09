@@ -45,12 +45,25 @@ public final class Meeting {
     /// the right answer for an all-remote call, where priming anyone is pointless
     /// because the mic/system split already separates you from them.
     public var participantNames: [String]?
+    /// Backing storage for ``speakerSlotAssigner``. Optional on purpose, and the
+    /// distinction is load-bearing: SwiftData flattens a composite struct into
+    /// mandatory sub-attributes, and a Swift-side default value never becomes a
+    /// store-level default — so a non-optional composite makes lightweight
+    /// migration of every pre-existing store fail with "missing attribute values
+    /// on mandatory destination attribute", which crashed 26.8.10 at launch on
+    /// any Mac that had used an earlier version. An optional migrates as NULL.
+    /// (A primitive with a default, like ``kindRaw``, is fine — the trap is
+    /// composites only.)
+    private var speakerSlotAssignerStorage: SpeakerSlotAssigner?
     /// Speaker-to-colour slot assignments, stable across relaunches — the slot is
     /// part of a speaker's identity, not a view detail, so it lives on the meeting
     /// rather than on whatever view model happens to be rendering it today.
-    /// Defaulted so existing stores migrate additively, the same as
-    /// ``actionItems``. See ``SpeakerSlotAssigner``.
-    public var speakerSlotAssigner: SpeakerSlotAssigner = SpeakerSlotAssigner()
+    /// See ``SpeakerSlotAssigner``; non-optional facade over the optional storage
+    /// above, so call sites never see the migration concern.
+    public var speakerSlotAssigner: SpeakerSlotAssigner {
+        get { speakerSlotAssignerStorage ?? SpeakerSlotAssigner() }
+        set { speakerSlotAssignerStorage = newValue }
+    }
     /// Raw storage for ``kind``, following the same pattern as
     /// ``TranscriptSegment/channelRaw`` — a string survives an unrecognized future case
     /// better than an enum would. Defaulted so existing stores migrate additively.
