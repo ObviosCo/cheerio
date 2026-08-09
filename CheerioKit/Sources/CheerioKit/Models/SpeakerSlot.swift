@@ -29,27 +29,91 @@ public enum SpeakerSlot: Hashable, Codable, Sendable {
 /// Hands out slots in order and remembers them. Persist this with the
 /// meeting (see ``Meeting/speakerSlotAssigner``) — the slot is part of the
 /// speaker's identity, not a view detail.
+///
+/// Keyed by speaker identity (``SpeakerSummary/id``, or the equivalent
+/// per-segment ``TranscriptSegment/speakerSlotKey``), which changes whenever a
+/// label changes — a rename, a merge, an enrollment. That means a plain
+/// "hand out the next number" counter isn't enough: a rename would look like
+/// a brand-new speaker to ``slot(for:isYou:)``, visibly changing that
+/// person's colour, while the *old* key it abandoned would stay counted
+/// against capacity forever. ``rename(from:to:)`` and ``reconcile(liveIDs:)``
+/// exist to keep both of those honest — see ``Meeting/relabelSpeaker(_:to:)``
+/// and ``Meeting/resolveSpeakerSlots(ownerNames:)`` for where they're called.
 public struct SpeakerSlotAssigner: Codable, Sendable, Equatable {
     public private(set) var assignments: [String: SpeakerSlot] = [:]
-    private var nextSlot = 1
 
     public init() {}
 
     /// - Parameter isYou: pins the speaker to the navy `.you` slot, outside rotation.
+    ///
+    /// `.unresolved` is deliberately **not** sticky the way `.you` and a numbered
+    /// slot are: it means "no room *as of the last attempt*," not "never eligible
+    /// again." A speaker stored as `.unresolved` retries allocation on every call
+    /// instead of returning early, so freeing a number elsewhere — a merge, a
+    /// ``Meeting/resolveSpeakerSlots(ownerNames:)`` pass that prunes a dead key —
+    /// actually reaches them on their next lookup rather than stranding them
+    /// behind a decision this type made once and never revisited. That also
+    /// covers a `.unresolved` decoded from a store persisted before this existed:
+    /// nothing about the stored value marks it retryable, the *lookup* does, so
+    /// there's nothing to migrate.
     @discardableResult
     public mutating func slot(for speakerID: String, isYou: Bool = false) -> SpeakerSlot {
         if isYou {
             assignments[speakerID] = .you
             return .you
         }
-        if let existing = assignments[speakerID] { return existing }
-        guard nextSlot <= SpeakerSlot.capacity else {
+        if let existing = assignments[speakerID], existing != .unresolved {
+            return existing
+        }
+        guard let number = lowestUnusedSlotNumber() else {
             assignments[speakerID] = .unresolved
             return .unresolved
         }
-        let assigned = SpeakerSlot.slot(nextSlot)
-        nextSlot += 1
+        let assigned = SpeakerSlot.slot(number)
         assignments[speakerID] = assigned
         return assigned
+    }
+
+    /// Transfers an existing assignment to a new key when a speaker's label
+    /// changes, so a rename or an enrollment can't look like a brand-new
+    /// speaker to ``slot(for:isYou:)`` — the whole reason this type exists is
+    /// so a correction never reshuffles a colour under someone mid-read.
+    ///
+    /// If `to` already holds a slot — merging into a speaker who was already
+    /// separately identified — that slot wins and `from`'s assignment is
+    /// simply dropped, which is what frees its number for reuse. If `from`
+    /// never had a slot (nothing to transfer) or `from == to` (no rename
+    /// actually happened), this is a no-op.
+    public mutating func rename(from: String, to: String) {
+        guard from != to else { return }
+        guard let existing = assignments.removeValue(forKey: from) else { return }
+        if assignments[to] == nil {
+            assignments[to] = existing
+        }
+    }
+
+    /// Drops any assignment whose key isn't in `liveIDs` — reclaims capacity
+    /// from a speaker who no longer exists under that identity: merged away
+    /// by ``rename(from:to:)``, or the meeting's last line under that label
+    /// was corrected to someone else outside a whole-speaker rename. Safe to
+    /// call on every resolution pass; a key still present is left untouched.
+    public mutating func reconcile(liveIDs: Set<String>) {
+        assignments = assignments.filter { liveIDs.contains($0.key) }
+    }
+
+    /// The lowest numbered slot (1...capacity) no live key currently holds —
+    /// not a monotonic counter, so a number freed by ``reconcile(liveIDs:)``
+    /// or a merge in ``rename(from:to:)`` is actually available again, rather
+    /// than being retired the moment it's first handed out.
+    private func lowestUnusedSlotNumber() -> Int? {
+        let used = Set(
+            assignments.values.compactMap { slot in
+                if case .slot(let number) = slot { return number }
+                return nil
+            })
+        for number in 1...SpeakerSlot.capacity where !used.contains(number) {
+            return number
+        }
+        return nil
     }
 }

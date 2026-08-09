@@ -323,13 +323,23 @@ extension Meeting {
     /// already have one, in that order (most talkative first, so the common cases
     /// land on the best-separated pairs), and pins the local channel to `.you`.
     ///
-    /// A speaker who already has a slot keeps it — this only ever adds, never
-    /// reassigns, so calling it again after a rename or a fresh diarization pass
-    /// can't reshuffle a colour out from under someone mid-read. The one caveat:
-    /// an *unnamed* diarizer label ("Speaker 2") that a later pass renumbers or
-    /// matches to a name is, mechanically, a new key — the same churn that label
-    /// already has today, not something this introduces. Once a label is
-    /// enrolled, matched, or hand-typed, it's stable and so is its slot.
+    /// A speaker who already has a slot keeps it — ``SpeakerSlotAssigner/slot(for:isYou:)``
+    /// only ever adds, never reassigns, so calling this again after a fresh
+    /// diarization pass can't reshuffle a colour out from under someone mid-read.
+    ///
+    /// Prunes dead keys *before* allocating, not after — see
+    /// ``SpeakerSlotAssigner/reconcile(liveIDs:)``, called against a snapshot of
+    /// this same ``speakerSummaries`` list. Reconciling afterward would still see
+    /// every live id already accounted for in the loop below, so there'd be
+    /// nothing left for it to catch; pruning first is what lets a dead key's
+    /// number reach whoever just inherited that identity — a merge, or a
+    /// corrected line that happened to be the only one under its old label — in
+    /// this same pass, rather than leaving them `.unresolved` for one more
+    /// resolve cycle while a freed number sits idle. Renaming or merging a
+    /// *whole* speaker (``relabelSpeaker(_:to:)``) rekeys instead of abandoning,
+    /// so it's really only the single-corrected-line path that ever depends on
+    /// this pruning to recover capacity — and even then, the freed number isn't
+    /// the departing speaker's own colour, just a number back in circulation.
     ///
     /// `ownerNames` is whichever enrolled names have `isMe == true`, the same set
     /// ``isOwnerAttributed(_:ownerNames:)`` uses — a summary counts as "you" when
@@ -343,7 +353,9 @@ extension Meeting {
     /// pin outside rotation.
     @discardableResult
     public func resolveSpeakerSlots(ownerNames: Set<String>) -> [String: SpeakerSlot] {
-        for summary in speakerSummaries {
+        let summaries = speakerSummaries
+        speakerSlotAssigner.reconcile(liveIDs: Set(summaries.map(\.id)))
+        for summary in summaries {
             let isYou = summary.label == "Me" || ownerNames.contains(summary.label)
             speakerSlotAssigner.slot(for: summary.id, isYou: isYou)
         }
@@ -357,12 +369,26 @@ extension Meeting {
     /// phantom's lines get merged into the real speaker in one move. Takes a summary
     /// rather than a bare label so a channel-scoped "Speaker 1" only renames its own
     /// channel's lines.
+    ///
+    /// Also rekeys ``speakerSlotAssigner`` from `speaker.id` to whatever identity
+    /// the renamed lines resolve to, so this speaker's colour survives the rename
+    /// (or, merging into an existing target, defers to that target's colour and
+    /// frees this one's slot) instead of reading as a brand-new speaker. Skipped
+    /// only in the rare case a `nil` reset splits one unscoped identity across both
+    /// channels at once — genuinely ambiguous which of the resulting identities
+    /// should inherit the old colour, so neither does; both pick up a fresh slot
+    /// on the next ``resolveSpeakerSlots(ownerNames:)``.
     @discardableResult
     public func relabelSpeaker(_ speaker: SpeakerSummary, to newLabel: String?) -> Int {
         var changed = 0
+        var newKeys: Set<String> = []
         for segment in segments where speaker.matches(segment) {
             segment.assignSpeaker(newLabel)
+            newKeys.insert(segment.speakerSlotKey)
             changed += 1
+        }
+        if let newKey = newKeys.first, newKeys.count == 1 {
+            speakerSlotAssigner.rename(from: speaker.id, to: newKey)
         }
         return changed
     }
