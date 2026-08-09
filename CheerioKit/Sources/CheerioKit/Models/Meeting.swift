@@ -197,10 +197,26 @@ public final class TranscriptSegment {
     /// Who spoke, once diarization has run. Nil until then, and nil for meetings
     /// recorded before diarization existed.
     public var speakerLabel: String?
-    /// Set when a person named this line rather than the diarizer. Re-identifying
-    /// speakers leaves these alone — a human correction outranks the model, and
-    /// losing it to a later re-run would make correcting anything pointless.
+    /// Set when a person *typed* this line's label — a rename, or the "Reset to
+    /// Me/Them" that hands it back to the diarizer. Distinct from
+    /// ``isSpeakerLabelConfirmed`` (which vouches for a label without changing it) so
+    /// the two can carry different consequences: only a manual line's transcript menu
+    /// offers "Undo my change," a destructive revert to the capture channel that
+    /// would wrongly discard a model label the person merely confirmed as already
+    /// correct, never actually retyped. Re-identifying speakers leaves both alone —
+    /// a human's word outranks the model either way, and losing it to a later re-run
+    /// would make correcting or confirming anything pointless. A primitive with a
+    /// default, so existing stores migrate additively — see
+    /// ``Meeting/speakerSlotAssignerStorage``'s doc for the composite trap this
+    /// avoids (the 26.8.10 incident).
     public var isSpeakerLabelManual: Bool = false
+    /// Set when a person vouched for this line's *model-matched* label without
+    /// retyping it — ``Meeting/confirmSpeaker(_:)``. Never set alongside a
+    /// diarizer-generated or channel-default label: there's no model guess there to
+    /// confirm. Kept separate from ``isSpeakerLabelManual`` rather than folded into
+    /// it (see that property's doc) and cleared by ``assignSpeaker(_:)`` the moment a
+    /// line is renamed or reset, so the two states never linger stale together.
+    public var isSpeakerLabelConfirmed: Bool = false
     public var meeting: Meeting?
 
     public var channel: SpeakerChannel {
@@ -222,9 +238,15 @@ public final class TranscriptSegment {
 
     /// Names this line by hand. Passing nil reverts it to the capture channel and
     /// hands it back to the diarizer.
+    ///
+    /// Clears ``isSpeakerLabelConfirmed`` unconditionally: a rename replaces whatever
+    /// was confirmed with a fresh, already-manual label, and a reset to nil removes
+    /// the model guess there was ever anything to confirm. Either way, leaving the
+    /// bit set would let it outlive the label it was about.
     public func assignSpeaker(_ label: String?) {
         speakerLabel = label
         isSpeakerLabelManual = label != nil
+        isSpeakerLabelConfirmed = false
     }
 
     /// True for labels the diarizer invented, like "Speaker 2".
@@ -263,8 +285,15 @@ public struct SpeakerSummary: Identifiable, Sendable, Equatable {
     public let duration: TimeInterval
     /// The channel most of this speaker's audio came from, i.e. which CAF to excerpt.
     public let channel: SpeakerChannel
-    /// True when every line under this label was named by hand.
+    /// True when every line under this label was named by hand — a rename, not a
+    /// confirm. See ``TranscriptSegment/isSpeakerLabelManual``.
     public let isManual: Bool
+    /// True when every line under this label is settled by a human either way —
+    /// renamed or confirmed. Not "every line was confirmed": a speaker with one
+    /// renamed line and one confirmed one is `isSettled` but not `isManual`, and
+    /// the panel picks its wording off which of the two this is. See
+    /// ``TranscriptSegment/isSpeakerLabelConfirmed``.
+    public let isSettled: Bool
 
     public var id: String {
         // Unit separator: can't occur in a label, so it can't collide.
@@ -326,7 +355,8 @@ extension Meeting {
                 lineCount: group.count,
                 duration: duration,
                 channel: key.channel ?? (meSeconds * 2 >= duration ? .me : .them),
-                isManual: group.allSatisfy(\.isSpeakerLabelManual)
+                isManual: group.allSatisfy(\.isSpeakerLabelManual),
+                isSettled: group.allSatisfy { $0.isSpeakerLabelManual || $0.isSpeakerLabelConfirmed }
             )
         }
         .sorted { $0.duration > $1.duration }
@@ -410,40 +440,51 @@ extension Meeting {
     /// checked, it's right" complement to ``relabelSpeaker(_:to:)``, which is "I
     /// checked, it's wrong, call them this instead."
     ///
-    /// Flips every line under this identity to ``TranscriptSegment/isSpeakerLabelManual``,
-    /// the same bit a hand-typed rename sets, so a later re-identification pass skips
-    /// confirmed lines exactly the way it already skips renamed ones (the guard in
-    /// `SpeakerLabeling.label`, in the app target, reads that bit and nothing else).
-    /// Because the label itself never moves, this needs none of `relabelSpeaker`'s
-    /// slot-rekeying or action-item reconciliation — ``TranscriptSegment/speakerSlotKey``
-    /// and ``Meeting/isOwnerAttributed(_:ownerNames:)`` both key off the label and
+    /// Flips every eligible line under this identity to
+    /// ``TranscriptSegment/isSpeakerLabelConfirmed`` — deliberately *not*
+    /// ``TranscriptSegment/isSpeakerLabelManual``, which a hand rename owns alone.
+    /// The two used to share one bit, and that overloading broke the transcript's
+    /// per-line "Undo my change": it's gated on `isSpeakerLabelManual`, so a
+    /// confirmed line offered it too, and choosing it discarded a label that was
+    /// never wrong in the first place, only unconfirmed. `SpeakerLabeling.label`'s
+    /// re-identification guard, in the app target, now reads *either* bit — a
+    /// confirmed line skips a re-run exactly the way a renamed one already did,
+    /// since a human vouched for it either way. Because the label itself never
+    /// moves, this needs none of `relabelSpeaker`'s slot-rekeying or action-item
+    /// reconciliation — ``TranscriptSegment/speakerSlotKey`` and
+    /// ``Meeting/isOwnerAttributed(_:ownerNames:)`` both key off the label and
     /// diarizer-generated-ness, neither of which this touches.
     ///
     /// Only settles lines that could actually be showing the ring — a real,
-    /// non-diarizer-generated label. A channel-default line (no
-    /// ``TranscriptSegment/speakerLabel`` at all, still reading as the bare "Me"/"Them"
-    /// fallback) or a diarizer-generated one ("Speaker 2") is left alone and doesn't
-    /// count toward the return value: the UI never rings either of those, but a caller
-    /// that skipped that check and confirmed one anyway would set the manual bit on a
-    /// line with nothing to confirm — and ``SpeakerLabeling/label`` would then skip it
-    /// on every future identification pass, permanently hiding a voice nobody ever
-    /// actually identified. Enforced here rather than left to the UI guard so it holds
-    /// for every caller, not just this one screen.
+    /// non-diarizer-generated label nobody has settled yet. A channel-default line
+    /// (no ``TranscriptSegment/speakerLabel`` at all, still reading as the bare
+    /// "Me"/"Them" fallback) or a diarizer-generated one ("Speaker 2") is left alone
+    /// and doesn't count toward the return value: the UI never rings either of
+    /// those, but a caller that skipped that check and confirmed one anyway would
+    /// set a settled bit on a line with nothing to confirm — and
+    /// ``SpeakerLabeling/label`` would then skip it on every future identification
+    /// pass, permanently hiding a voice nobody ever actually identified. Enforced
+    /// here rather than left to the UI guard so it holds for every caller, not just
+    /// this one screen. An already-manual line is left alone too, for the plainer
+    /// reason that a rename already settled it.
     ///
-    /// Idempotent — confirming a speaker who's already partly hand-named only ever
-    /// sets the bit on the remaining lines, never clears one that's already set — so
-    /// there's no separate "unconfirm"; a wrong confirm is recoverable the same way a
-    /// wrong rename is, by renaming. Returns how many lines flipped, so a caller with
-    /// nothing to change can skip the save.
+    /// Idempotent — confirming a speaker who's already partly settled only ever
+    /// sets the bit on the remaining lines, never touches one that's already
+    /// manual or confirmed. There's no bulk "unconfirm" here; the transcript's
+    /// per-line menu offers one for a single confirmed line (non-destructive, since
+    /// the label stays), and a wrong confirm is otherwise recoverable the same way
+    /// a wrong rename is, by renaming. Returns how many lines flipped, so a caller
+    /// with nothing to change can skip the save.
     @discardableResult
     public func confirmSpeaker(_ speaker: SpeakerSummary) -> Int {
         var changed = 0
         for segment in segments where speaker.matches(segment) {
             guard !segment.isSpeakerLabelManual,
+                !segment.isSpeakerLabelConfirmed,
                 let label = segment.speakerLabel,
                 !TranscriptSegment.isDiarizerGeneratedLabel(label)
             else { continue }
-            segment.isSpeakerLabelManual = true
+            segment.isSpeakerLabelConfirmed = true
             changed += 1
         }
         return changed

@@ -70,14 +70,15 @@ struct MeetingSpeakersSection: View {
             SpeakerChip(chip)
             Text(summary.displayName)
                 .font(.callout.weight(.medium))
-            if summary.isManual {
-                // Covers both ways a speaker ends up here — renamed by hand or a
-                // model-matched name confirmed as-is — so the icon doesn't claim a
-                // provenance ("named by hand") that a confirm never had.
+            if summary.isSettled {
+                // Renamed and confirmed are now distinguishable states (see
+                // `TranscriptSegment.isSpeakerLabelConfirmed`), so the help text says
+                // which one actually happened instead of a wording vague enough to
+                // cover both.
                 Image(systemName: "hand.raised.fill")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                    .help("Set by you")
+                    .help(summary.isManual ? "Named by hand" : "Confirmed by you")
             }
             Text("\(summary.lineCount) \(summary.lineCount == 1 ? "line" : "lines") · \(Int(summary.duration.rounded()))s")
                 .font(.caption)
@@ -142,7 +143,7 @@ struct MeetingSpeakersSection: View {
     /// ``SpeakerSummary`` instead of a single ``TranscriptSegment``.
     private func speaker(for summary: SpeakerSummary) -> Speaker {
         let provenance = SpeakerProvenance(
-            isSpeakerLabelManual: summary.isManual,
+            isSettled: summary.isSettled,
             isDiarizerGeneratedLabel: TranscriptSegment.isDiarizerGeneratedLabel(summary.label),
             hasName: !summary.isGeneratedLabel
         )
@@ -170,7 +171,7 @@ struct MeetingSpeakersSection: View {
     /// Settles a `.modelMatched` speaker in one move, without renaming it — the fix
     /// for the ring otherwise never coming off an already-correct name. Rides
     /// ``Meeting/confirmSpeaker(_:)``, which only ever flips
-    /// ``TranscriptSegment/isSpeakerLabelManual``; the label, slot and action-item
+    /// ``TranscriptSegment/isSpeakerLabelConfirmed``; the label, slot and action-item
     /// attribution it might own are all untouched, so unlike ``relabel(_:to:)`` there's
     /// nothing else here to reconcile — only the flag itself to put back on failure.
     ///
@@ -179,12 +180,12 @@ struct MeetingSpeakersSection: View {
     /// button told the user it failed, while a later autosave quietly persisted the
     /// confirm anyway.
     private func confirm(_ summary: SpeakerSummary) {
-        let prior = meeting.segments.filter { summary.matches($0) }.map { ($0, $0.isSpeakerLabelManual) }
+        let prior = meeting.segments.filter { summary.matches($0) }.map { ($0, $0.isSpeakerLabelConfirmed) }
         guard meeting.confirmSpeaker(summary) > 0 else { return }
         do {
             try context.save()
         } catch {
-            for (segment, wasManual) in prior { segment.isSpeakerLabelManual = wasManual }
+            for (segment, wasConfirmed) in prior { segment.isSpeakerLabelConfirmed = wasConfirmed }
             saveFailure = SaveFailure(title: "Couldn't confirm this speaker", message: error.localizedDescription)
         }
     }

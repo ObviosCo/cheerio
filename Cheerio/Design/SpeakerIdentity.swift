@@ -44,8 +44,15 @@ public enum SpeakerProvenance: Hashable, Sendable {
     /// You said so. The clean resting state.
     case userSettled
 
-    public init(isSpeakerLabelManual: Bool, isDiarizerGeneratedLabel: Bool, hasName: Bool) {
-        if isSpeakerLabelManual {
+    /// `isSettled` covers both ways a label becomes the clean resting state —
+    /// hand-typed (`TranscriptSegment.isSpeakerLabelManual`) or vouched-for as-is
+    /// (`TranscriptSegment.isSpeakerLabelConfirmed`). The ring only ever marked
+    /// "not checked yet," never *how* it got checked, so both collapse to the same
+    /// rung here; callers that need to say which happened (the "Named by hand" vs.
+    /// "Confirmed by you" distinction in the speakers panel) read the two source
+    /// bits directly instead of going through this enum.
+    public init(isSettled: Bool, isDiarizerGeneratedLabel: Bool, hasName: Bool) {
+        if isSettled {
             self = .userSettled
         } else if isDiarizerGeneratedLabel {
             self = .diarizerGenerated

@@ -170,15 +170,26 @@ struct MeetingDetailView: View {
                 }
             }
             if segment.isSpeakerLabelManual {
+                // Exclusive to a line someone actually retyped: it reverts to the
+                // capture channel, which would be the wrong action for a confirmed
+                // line below — that label was never wrong, only unconfirmed.
                 Divider()
                 Button("Undo my change") {
                     segment.assignSpeaker(nil)
                     save()
                 }
+            } else if segment.isSpeakerLabelConfirmed {
+                // Non-destructive: the label stays, only the settled bit clears, so
+                // the ring comes back instead of the line reverting to Me/Them.
+                Divider()
+                Button("Unconfirm") {
+                    segment.isSpeakerLabelConfirmed = false
+                    save()
+                }
             }
         } label: {
             // A minimum-width rail, not a fixed 72pt one — `SpeakerRailLabel`'s
-            // provenance styling (bold, primary text for a manual label) already
+            // provenance styling (bold, primary text for a settled label) already
             // carries what the hand icon used to say on its own.
             SpeakerRailLabel(speaker(for: segment))
         }
@@ -241,14 +252,14 @@ struct MeetingDetailView: View {
 
     /// The chip-and-name view model for one transcript line, reading provenance
     /// straight off the model rather than inventing it here — see
-    /// ``SpeakerProvenance/init(isSpeakerLabelManual:isDiarizerGeneratedLabel:hasName:)``.
+    /// ``SpeakerProvenance/init(isSettled:isDiarizerGeneratedLabel:hasName:)``.
     /// The slot itself is a lookup, not an assignment: ``Meeting/resolveSpeakerSlots(ownerNames:)``
     /// is what hands new slots out, at the points above where speakers actually resolve,
     /// so this stays a pure read safe to call from `body`.
     private func speaker(for segment: TranscriptSegment) -> Speaker {
         let isDiarizerGenerated = TranscriptSegment.isDiarizerGeneratedLabel(segment.speakerLabel)
         let provenance = SpeakerProvenance(
-            isSpeakerLabelManual: segment.isSpeakerLabelManual,
+            isSettled: segment.isSpeakerLabelManual || segment.isSpeakerLabelConfirmed,
             isDiarizerGeneratedLabel: isDiarizerGenerated,
             hasName: segment.speakerLabel != nil && !isDiarizerGenerated
         )
