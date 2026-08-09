@@ -283,7 +283,14 @@ struct MeetingDetailView: View {
                     .padding(Theme.Space.x1)
                     .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: Theme.Radius.md))
                     .accessibilityLabel("Rough notes")
-            } else if !meeting.roughNotes.isEmpty {
+            } else if !MarkdownBlock.blocks(in: meeting.roughNotes, preservingLineBreaksInParagraphs: true).isEmpty {
+                // Checking `blocks(in:)` itself, not `meeting.roughNotes.isEmpty` —
+                // whitespace-only notes (a stray space, a blank line left over from
+                // an edit) are non-empty as a string but parse to zero blocks, and
+                // asking the parser directly is what keeps this in agreement with
+                // what it's about to render instead of guessing at "blank" with a
+                // second, separately-maintained trim check.
+                //
                 // `preservesLineBreaksInParagraphs: true` — see
                 // ``MarkdownBlock/blocks(in:preservingLineBreaksInParagraphs:)``.
                 // A rough note is typed as one line per thought with no blank line
