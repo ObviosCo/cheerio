@@ -406,6 +406,34 @@ extension Meeting {
         return changed
     }
 
+    /// Settles this speaker's current label without changing what it says — the "I
+    /// checked, it's right" complement to ``relabelSpeaker(_:to:)``, which is "I
+    /// checked, it's wrong, call them this instead."
+    ///
+    /// Flips every line under this identity to ``TranscriptSegment/isSpeakerLabelManual``,
+    /// the same bit a hand-typed rename sets, so a later re-identification pass skips
+    /// confirmed lines exactly the way it already skips renamed ones (the guard in
+    /// `SpeakerLabeling.label`, in the app target, reads that bit and nothing else).
+    /// Because the label itself never moves, this needs none of `relabelSpeaker`'s
+    /// slot-rekeying or action-item reconciliation — ``TranscriptSegment/speakerSlotKey``
+    /// and ``Meeting/isOwnerAttributed(_:ownerNames:)`` both key off the label and
+    /// diarizer-generated-ness, neither of which this touches.
+    ///
+    /// Idempotent — confirming a speaker who's already partly hand-named only ever
+    /// sets the bit on the remaining lines, never clears one that's already set — so
+    /// there's no separate "unconfirm"; a wrong confirm is recoverable the same way a
+    /// wrong rename is, by renaming. Returns how many lines flipped, so a caller with
+    /// nothing to change can skip the save.
+    @discardableResult
+    public func confirmSpeaker(_ speaker: SpeakerSummary) -> Int {
+        var changed = 0
+        for segment in segments where speaker.matches(segment) && !segment.isSpeakerLabelManual {
+            segment.isSpeakerLabelManual = true
+            changed += 1
+        }
+        return changed
+    }
+
     /// The enrolled voices to prime for this meeting, and anyone the diarizer's cap
     /// forced out.
     ///

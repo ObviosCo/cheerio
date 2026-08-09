@@ -52,7 +52,10 @@ and a directive-capture mode ("Give Direction…" in the menu bar).
   and `SpeechTranscriber` exposes no speaker information at all. So a Sortformer diarization
   pass runs over the recorded audio after the meeting. Enroll a voice once and it comes back
   named instead of "Speaker 2"; pick who was in a given meeting from a per-meeting roster; fix
-  any label by hand, and your correction outranks the model.
+  any label by hand, and your correction outranks the model. Once a model-matched name looks
+  right, confirm the whole speaker in one action from the speakers panel instead of retyping it
+  line by line — a re-identification pass leaves confirmed lines alone, the same as hand-named
+  ones.
 - **Rough notes are first-class.** A scratchpad sits next to the live transcript during the
   meeting. What you bothered to type is the strongest signal about what mattered.
 - **Enhance locally.** Afterwards the on-device Foundation Model merges your rough notes with

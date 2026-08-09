@@ -3,7 +3,8 @@ import SwiftData
 import SwiftUI
 
 /// Correcting diarization after the fact: rename or merge the speakers in one
-/// meeting, and lift a speaker's audio out as an enrollment sample.
+/// meeting, confirm one the model already got right, and lift a speaker's audio
+/// out as an enrollment sample.
 ///
 /// Sortformer sometimes splits one person across two slots — observed on a 25s
 /// recording where a speaker's own turns came back as both "Glen" and "Speaker 3",
@@ -37,7 +38,7 @@ struct MeetingSpeakersSection: View {
                     }
                     Divider()
                     Text(
-                        "Renaming a speaker updates every line they're on. Corrections stick — “Re-identify speakers” leaves hand-named lines alone."
+                        "Renaming or confirming a speaker updates every line they're on. Corrections stick — “Re-identify speakers” leaves hand-named and confirmed lines alone."
                     )
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -64,8 +65,9 @@ struct MeetingSpeakersSection: View {
     }
 
     private func row(for summary: SpeakerSummary) -> some View {
-        HStack(spacing: 8) {
-            SpeakerChip(speaker(for: summary))
+        let chip = speaker(for: summary)
+        return HStack(spacing: 8) {
+            SpeakerChip(chip)
             Text(summary.displayName)
                 .font(.callout.weight(.medium))
             if summary.isManual {
@@ -79,6 +81,14 @@ struct MeetingSpeakersSection: View {
                 .foregroundStyle(.secondary)
 
             Spacer()
+
+            // Only a `.modelMatched` row carries the ring, and only that row needs a
+            // way to clear it — the model got this one right, so say so once instead
+            // of retyping the same name it already guessed.
+            if chip.provenance == .modelMatched {
+                Button("Confirm") { confirm(summary) }
+                    .help("The model's name for this speaker is right — settle it and drop the ring.")
+            }
 
             Menu("Rename") {
                 let others = candidates(for: summary)
@@ -147,6 +157,21 @@ struct MeetingSpeakersSection: View {
         // Renaming a speaker can change who owns an action item — keep the stored
         // items in agreement with what an export would now say.
         meeting.reconcileActionItems(ownerNames: ownerNames)
+        do {
+            try context.save()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Settles a `.modelMatched` speaker in one move, without renaming it — the fix
+    /// for the ring otherwise never coming off an already-correct name. Rides
+    /// ``Meeting/confirmSpeaker(_:)``, which only ever flips
+    /// ``TranscriptSegment/isSpeakerLabelManual``; the label, slot and action-item
+    /// attribution it might own are all untouched, so unlike ``relabel(_:to:)`` there's
+    /// nothing else here to reconcile.
+    private func confirm(_ summary: SpeakerSummary) {
+        guard meeting.confirmSpeaker(summary) > 0 else { return }
         do {
             try context.save()
         } catch {

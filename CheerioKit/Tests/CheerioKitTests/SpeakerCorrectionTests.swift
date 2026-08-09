@@ -71,6 +71,67 @@ import Testing
         #expect(meeting.speakerSummaries.map(\.label) == ["Jackson", "Them"])
     }
 
+    @Test func confirmSpeakerFlipsOnlyThatSpeakersModelMatchedLines() {
+        let meeting = splitSpeakerMeeting()
+        let glen = summary(in: meeting, "Glen")
+        #expect(meeting.confirmSpeaker(glen) == 1)
+
+        #expect(meeting.segments.first { $0.text == "Glen" }?.isSpeakerLabelManual == true)
+        // "and only that speaker's" — Jackson and Speaker 3 are untouched.
+        #expect(meeting.segments.filter { $0.text != "Glen" }.allSatisfy { !$0.isSpeakerLabelManual })
+
+        // The panel's provenance summary is derived from `isManual`; it must flip too.
+        #expect(meeting.speakerSummaries.first { $0.label == "Glen" }?.isManual == true)
+        #expect(meeting.speakerSummaries.first { $0.label == "Speaker 3" }?.isManual == false)
+    }
+
+    @Test func confirmSpeakerIsIdempotent() {
+        let meeting = splitSpeakerMeeting()
+        #expect(meeting.confirmSpeaker(summary(in: meeting, "Glen")) == 1)
+        // Re-reading the summary after the first confirm, the way the panel would
+        // after a save — nothing left to flip, so nothing reports as changed.
+        #expect(meeting.confirmSpeaker(summary(in: meeting, "Glen")) == 0)
+        #expect(meeting.segments.first { $0.text == "Glen" }?.isSpeakerLabelManual == true)
+    }
+
+    /// A speaker can carry both a hand-corrected line and a still-model-matched one —
+    /// the single corrected line from a `relabelSpeaker` merge, say. Confirming must
+    /// leave the already-manual line alone and only settle the rest.
+    @Test func confirmSpeakerHandlesMixedManualAndModelLines() {
+        let meeting = Meeting(title: "Standup")
+        let modelLine = TranscriptSegment(channel: .me, text: "model", startTime: 0, endTime: 1)
+        modelLine.speakerLabel = "Jackson"
+        let manualLine = TranscriptSegment(channel: .me, text: "manual", startTime: 1, endTime: 2)
+        manualLine.assignSpeaker("Jackson")
+        meeting.segments = [modelLine, manualLine]
+
+        let jackson = summary(in: meeting, "Jackson")
+        #expect(jackson.isManual == false)
+
+        #expect(meeting.confirmSpeaker(jackson) == 1)
+        #expect(modelLine.isSpeakerLabelManual)
+        #expect(manualLine.isSpeakerLabelManual)
+        #expect(meeting.speakerSummaries.first { $0.label == "Jackson" }?.isManual == true)
+    }
+
+    /// The guarantee a rename already gets: re-identification only ever overwrites
+    /// segments that aren't ``TranscriptSegment/isSpeakerLabelManual`` (see the guard
+    /// in `SpeakerLabeling.label`, in the app target). Confirming sets exactly that
+    /// bit, so it must survive a re-run the same way a hand rename does — mirroring
+    /// that guard here since the surrounding diarization pass isn't something
+    /// CheerioKit can run without the bundled model.
+    @Test func confirmedLinesSurviveReAttribution() {
+        let meeting = splitSpeakerMeeting()
+        #expect(meeting.confirmSpeaker(summary(in: meeting, "Glen")) == 1)
+
+        for segment in meeting.segments where !segment.isSpeakerLabelManual {
+            segment.speakerLabel = "Speaker 9"
+        }
+
+        #expect(meeting.segments.first { $0.text == "Glen" }?.speakerLabel == "Glen")
+        #expect(meeting.speakerSummaries.first { $0.label == "Glen" }?.isManual == true)
+    }
+
     @Test func rangesCoverOnlyTheRequestedSpeakerAndChannel() {
         let meeting = splitSpeakerMeeting()
         let ranges = meeting.ranges(for: summary(in: meeting, "Glen"))
