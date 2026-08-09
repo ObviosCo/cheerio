@@ -85,11 +85,35 @@ public actor CalendarService {
         guard hasAccess else { return [] }
         let calendar = Calendar.current
         let endOfDay = calendar.startOfDay(for: now).addingTimeInterval(86_400)
-        let predicate = store.predicateForEvents(
-            withStart: calendar.startOfDay(for: now),
-            end: endOfDay,
-            calendars: nil
+        return events(
+            from: calendar.startOfDay(for: now), to: endOfDay
         )
+        .sorted { $0.startDate < $1.startDate }
+    }
+
+    /// Non-declined events starting at or after `now`, for the empty-state
+    /// dashboard's "Upcoming meetings" section (#124).
+    ///
+    /// Distinct from ``todaysMeetings(now:)`` in the two ways that section actually
+    /// needs: it looks past midnight, so a dashboard glanced at on a quiet afternoon
+    /// still offers tomorrow morning's standup, and it drops anything the user has
+    /// already declined — an offer to record something they said no to isn't help,
+    /// it's noise. `limit` keeps a calendar with a packed week from turning a "quiet
+    /// stat rows" section into a scroll of its own.
+    public func upcomingMeetings(now: Date = .now, horizon: TimeInterval = 7 * 86_400, limit: Int = 5) -> [CalendarMeeting] {
+        guard hasAccess else { return [] }
+        return
+            events(from: now, to: now.addingTimeInterval(horizon))
+            .filter { !$0.isDeclined && $0.startDate >= now }
+            .sorted { $0.startDate < $1.startDate }
+            .prefix(limit)
+            .map { $0 }
+    }
+
+    /// Every non-all-day event in `[start, end)`, with no filtering beyond that —
+    /// callers decide what "worth showing" means for their own use.
+    private func events(from start: Date, to end: Date) -> [CalendarMeeting] {
+        let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
         return store.events(matching: predicate)
             .filter { !$0.isAllDay }
             .map { event in
@@ -102,7 +126,6 @@ public actor CalendarService {
                     isDeclined: Self.isDeclined(event)
                 )
             }
-            .sorted { $0.startDate < $1.startDate }
     }
 
     /// Whether the user has effectively opted out of this event.

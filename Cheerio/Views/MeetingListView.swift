@@ -449,31 +449,11 @@ struct MeetingListView: View {
 
     /// `kind` defaults to `.meeting` so the calendar-event call site (never offered
     /// for a directive — see the button above) doesn't need to name it explicitly.
+    ///
+    /// The permission check and the `CaptureSession.start` call themselves live in
+    /// ``RecordingStartFlow``, shared with the empty-state dashboard's matching
+    /// buttons (#124) rather than duplicated here.
     private func startRecording(event: CalendarMeeting?, kind: MeetingKind = .meeting) {
-        Task {
-            guard await MicrophoneCapture.permission() == .granted else {
-                // Re-asking can't help once it's been denied, so offer the only
-                // thing that can fix it.
-                session.startFailure = .microphoneDenied
-                return
-            }
-            // Don't leave a past meeting covering the detail column while the new one
-            // spins up.
-            selection = nil
-            do {
-                try await session.start(
-                    // Same placeholder wording as the menu bar's "Give Direction…" —
-                    // shared so the two entry points can't drift onto different text
-                    // for the same auto-generated title.
-                    title: event?.title ?? MenuBarView.autoTitle(for: kind),
-                    calendarEventID: event?.id,
-                    calendarEventOccurrenceStart: event?.startDate,
-                    kind: kind,
-                    context: context
-                )
-            } catch {
-                session.startFailure = .failed(error.localizedDescription)
-            }
-        }
+        RecordingStartFlow.start(kind: kind, event: event, session: session, context: context, selection: $selection)
     }
 }

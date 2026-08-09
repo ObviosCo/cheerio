@@ -2,12 +2,19 @@
 #
 # Writes the demo store both halves of the screenshot harness photograph.
 #
-#     ./Scripts/screenshots/seed-store.sh [--home <dir>] [--bundle-id <id>]
+#     ./Scripts/screenshots/seed-store.sh [--home <dir>] [--bundle-id <id>] [--skip-enrollment]
 #
 # `<dir>` is a scratch *home* directory — the store lands in
 # `<dir>/Library/Application Support/<bundle-id>`, which is where the app looks
 # once it's launched with `CFFIXED_USER_HOME` pointed at `<dir>`. The container
 # path is printed on stdout, so a caller that wants it can capture it.
+#
+# `--skip-enrollment` writes the same meetings with nobody enrolled — the
+# "recorded without enrolling" case issue #125's empty-state prompt has to keep
+# confronting rather than assume away. Used for a second, separately-seeded home;
+# it isn't a flag on the one everything else photographs, since that store is also
+# what the enrolled-roster shots (Settings → Participants, the transcript's named
+# speakers) depend on.
 #
 # Extracted from capture.sh so the CI capture pass (CheerioScreenshotTests, run by
 # .github/workflows/screenshots.yml) seeds from the same code the local script does.
@@ -25,12 +32,14 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # CHEERIO_SCREENSHOT_HOME isn't set. Change one, change the other.
 HOME_DIR="/tmp/cheerio-screenshots-home"
 BUNDLE_ID="co.obvios.cheerio.mac"
+SEED_ARGS=()
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --home) HOME_DIR="$2"; shift 2 ;;
         --bundle-id) BUNDLE_ID="$2"; shift 2 ;;
-        -h|--help) sed -n '2,18p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        --skip-enrollment) SEED_ARGS+=("--skip-enrollment"); shift ;;
+        -h|--help) sed -n '2,25p' "${BASH_SOURCE[0]}"; exit 0 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
 done
@@ -48,6 +57,6 @@ mkdir -p "$CONTAINER"
 # stdout holding one line: the container path.
 swift build --package-path "${HERE}/SeedDemoStore" >/dev/null
 "$(swift build --package-path "${HERE}/SeedDemoStore" --show-bin-path)/SeedDemoStore" \
-    --container "$CONTAINER" >/dev/null
+    --container "$CONTAINER" "${SEED_ARGS[@]+"${SEED_ARGS[@]}"}" >/dev/null
 
 printf '%s\n' "$CONTAINER"

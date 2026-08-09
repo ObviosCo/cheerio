@@ -35,6 +35,14 @@ final class ScreenshotCaptureTests: XCTestCase {
     /// silently if that forwarding ever stops working.
     private static let defaultSeededHome = "/tmp/cheerio-screenshots-home"
 
+    /// A second seeded store, written with `--skip-enrollment` — meetings exist but
+    /// nobody is enrolled, which is what `testLibraryEmptyStateNoEnrollment` needs
+    /// to show issue #125's prompt still confronting someone who has recorded
+    /// without enrolling. Kept as a whole separate store rather than a flag toggled
+    /// on the main one: the enrolled-roster shots (Settings → Participants, named
+    /// speakers in the transcript) depend on that one actually having a roster.
+    private static let defaultNoEnrollmentHome = "/tmp/cheerio-screenshots-home-no-enrollment"
+
     /// How long to wait for a window to appear. Generous because the first launch of
     /// the run pays for the model container opening on a cold runner.
     private static let windowTimeout: TimeInterval = 60
@@ -84,6 +92,25 @@ final class ScreenshotCaptureTests: XCTestCase {
             Self.libraryArguments + ["-screenshotSelectMeeting", "2", "-screenshotExpandTranscript", "YES"]
         )
         capture(soleWindow(of: app), named: "library-transcript")
+    }
+
+    /// The empty-state dashboard (#124): no `-screenshotSelectMeeting` argument, so
+    /// nothing is selected and idle — the same state that used to render a bare
+    /// "No meeting selected." A store with a full roster enrolled, so this is the
+    /// dashboard *without* issue #125's voice-enrollment prompt on top of it; see
+    /// `testLibraryEmptyStateNoEnrollment` for the other half.
+    func testLibraryEmptyState() throws {
+        let app = try launchSeeded(Self.libraryArguments)
+        capture(soleWindow(of: app), named: "library-empty-state")
+    }
+
+    /// The same idle dashboard, against a store that has meetings but no enrolled
+    /// voices — issue #125's prompt has to keep showing here, not just on a
+    /// first-run library with nothing in it yet, since "recorded without
+    /// enrolling" is exactly the person who needs it most.
+    func testLibraryEmptyStateNoEnrollment() throws {
+        let app = try launchNoEnrollment(Self.libraryArguments)
+        capture(soleWindow(of: app), named: "library-empty-state-no-enrollment")
     }
 
     // MARK: - Settings
@@ -211,6 +238,27 @@ final class ScreenshotCaptureTests: XCTestCase {
             Run `Scripts/screenshots/seed-store.sh` first, or set CHEERIO_SCREENSHOT_HOME \
             (TEST_RUNNER_CHEERIO_SCREENSHOT_HOME for xcodebuild) to a home that has one. \
             These tests photograph a store full of invented meetings; they never open yours.
+            """
+        )
+        return launch(home: URL(filePath: home), arguments: arguments)
+    }
+
+    /// Launches against the second seeded store — meetings, nobody enrolled. See
+    /// `defaultNoEnrollmentHome`; `TEST_RUNNER_CHEERIO_SCREENSHOT_HOME_NO_ENROLLMENT`
+    /// is this store's equivalent of `CHEERIO_SCREENSHOT_HOME` above.
+    private func launchNoEnrollment(_ arguments: [String]) throws -> XCUIApplication {
+        let home =
+            ProcessInfo.processInfo.environment["CHEERIO_SCREENSHOT_HOME_NO_ENROLLMENT"]
+            ?? Self.defaultNoEnrollmentHome
+        let store = URL(filePath: home).appending(path: "Library/Application Support/co.obvios.cheerio.mac")
+        try XCTSkipUnless(
+            FileManager.default.fileExists(atPath: store.path),
+            """
+            No seeded demo store at \(store.path).
+            Run `Scripts/screenshots/seed-store.sh --home \(home) --skip-enrollment` first, or set \
+            CHEERIO_SCREENSHOT_HOME_NO_ENROLLMENT (TEST_RUNNER_CHEERIO_SCREENSHOT_HOME_NO_ENROLLMENT for \
+            xcodebuild) to a home that has one. These tests photograph a store full of invented meetings; \
+            they never open yours.
             """
         )
         return launch(home: URL(filePath: home), arguments: arguments)

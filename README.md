@@ -86,6 +86,12 @@ its context menu or detail view).
   then the weekday or the date — search across titles, notes, transcripts, and speaker names,
   rename or delete a meeting from the list or the meeting itself, and export any meeting as
   Markdown.
+- **Nothing selected still shows something useful.** With no meeting open, the main window
+  shows this week's upcoming calendar events (when access is granted), how many meetings and
+  minutes you've recorded this week, how many follow-ups are still open, the two start actions,
+  and a rotating tip. If no voice is enrolled yet, a prompt to fix that leads the way — it comes
+  back every launch, in the empty state or as a banner above whatever meeting you do have open,
+  until at least one voice is enrolled.
 - **It comes to you when it matters.** A notification offers to record when a calendar meeting
   with other people starts (never twice for the same occurrence, never while already
   recording), and another one tells you when a finished meeting's notes are ready. Both
