@@ -13,6 +13,7 @@ Cheerio/
     SpeakerIdentity.swift          slots, provenance, monograms
     Components/
       SpeakerChip.swift            the chip and the rail label
+      SpeakerTimelineBar.swift     who spoke when, across the whole meeting
       RecordingIndicator.swift     the three-signal rule, enforced
       StatusLabel.swift            semantic state + symbol + label
   Resources/
@@ -38,9 +39,13 @@ monogram letters; state is carried by an SF Symbol and a word. Both survive
 greyscale, exported Markdown and VoiceOver with the hue removed. That is the
 test — if a state stops being legible in greyscale, it isn't finished.
 
-**Speaker colour fills the chip and nothing else.** Never transcript text,
-never a row background. This one rule is what keeps a 400-line transcript
-readable.
+**Speaker colour fills the chip, and the speakers-panel timeline, and nothing
+else.** Never transcript text, never a row background. `SpeakerTimelineBar`
+(`Design/Components/SpeakerTimelineBar.swift`) is the one other place a slot
+colour paints something, because the bar itself is a visual element rather
+than text sitting next to one — the same distinction that lets a chip carry
+colour while the name beside it stays plain. This rule is what keeps a
+400-line transcript readable.
 
 **Certainty is unmarked.** Only `.modelMatched` gets the hairline ring. Correct
 a label and the ring goes away — that disappearance is the receipt that your
