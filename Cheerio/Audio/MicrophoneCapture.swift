@@ -15,12 +15,20 @@ final class MicrophoneCapture: @unchecked Sendable {
     /// alongside an actual recording, from the same tap. `AudioLevel.measuring`
     /// is cheap enough to run on the buffer directly inside the tap closure, so
     /// only the resulting scalar crosses into this stream — never the buffer.
+    ///
+    /// `.bufferingNewest(1)`, unlike every other `AsyncStream` in this codebase:
+    /// those hold audio or transcription results that all have to survive to be
+    /// written or transcribed, but a meter only ever cares about the latest
+    /// reading. `CaptureSession` doesn't consume this stream during a real
+    /// meeting at all — only the enrollment view does — so an unbounded buffer
+    /// would otherwise retain one `AudioLevel` per tap buffer for the length of
+    /// the recording, for a value nothing downstream is watching.
     let levels: AsyncStream<AudioLevel>
     private let levelsContinuation: AsyncStream<AudioLevel>.Continuation
 
     init(onBuffer: @escaping @Sendable (sending AVAudioPCMBuffer) -> Void) {
         self.onBuffer = onBuffer
-        (levels, levelsContinuation) = AsyncStream.makeStream()
+        (levels, levelsContinuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(1))
     }
 
     enum Permission {

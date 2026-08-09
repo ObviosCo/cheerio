@@ -126,16 +126,18 @@ size and fails, naming the mismatch, rather than let that through.
 | `library-transcript` | A shorter meeting, so the attributed transcript is on screen under the notes |
 | `onboarding-welcome` … `onboarding-finish` | All seven walkthrough steps, in order |
 | `settings-participants`, `settings-updates`, `settings-callback` | Three of the six Settings tabs — the site uses these three; CI shoots all six |
+| `settings-participants-confirmed` | The same tab with `VoiceEnrollmentRecorder`'s post-save acknowledgment (issue #128) forced on via `ScreenshotMode` — nothing here saves a real sample, so this is the only way that state gets photographed |
 
 Each one twice: `<name>-2x.png` straight off the Retina display, and `<name>.png`
 at half that, which is the 1×/2× pair `site/index.html`'s `srcset` wants.
 
 The CI pass shoots a different, overlapping set: `library`, `library-transcript`, all
-six Settings tabs and `onboarding-welcome` — one test per surface in
-`CheerioScreenshotTests`. It doesn't walk the whole walkthrough (seven launches to
-show what one screen already tells a reviewer), and it labels nothing `-2x`: a GitHub
-runner's display is 1x, so there's no second scale to name, only a width-capped
-`-preview` copy for the comment with the full-size file behind the link.
+six Settings tabs, `settings-participants-confirmed`, and `onboarding-welcome` — one
+test per surface in `CheerioScreenshotTests`. It doesn't walk the whole walkthrough
+(seven launches to show what one screen already tells a reviewer), and it labels
+nothing `-2x`: a GitHub runner's display is 1x, so there's no second scale to name,
+only a width-capped `-preview` copy for the comment with the full-size file behind
+the link.
 
 ## The three things worth knowing
 
@@ -174,6 +176,7 @@ argument, read in `ScreenshotMode` in the app target:
 | `-screenshotOpenSettings YES` | Opens Settings (the tab comes from `-com_apple_SwiftUI_Settings_selectedTabIndex`) |
 | `-screenshotOnboardingStep <n>` | Opens the walkthrough on step *n* |
 | `-screenshotExpandTranscript YES` | Opens the detail view's transcript disclosure, which otherwise starts collapsed (#104) — only `library-transcript` needs it |
+| `-screenshotVoiceEnrollmentConfirmed YES` | Shows `VoiceEnrollmentRecorder`'s post-save acknowledgment instead of its empty form — only `settings-participants-confirmed` needs it |
 
 This is not the obvious design — the obvious one drives the real UI with AppleScript
 or XCUITest — and the launch-argument hooks exist because reaching a *state* this way

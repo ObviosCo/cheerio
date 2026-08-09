@@ -193,6 +193,11 @@ settings_shot() { # <name> <tab index> <window title> [extra app arguments...]
         -screenshotOpenSettings YES -com_apple_SwiftUI_Settings_selectedTabIndex "$tab" "$@"
 }
 settings_shot settings-participants 2 Participants
+# A second, dedicated shot of the same tab: nothing here saves a real voice
+# sample, so `VoiceEnrollmentRecorder`'s post-save acknowledgment (issue #128)
+# only exists to photograph via this flag. Kept separate from the shot above
+# so the one the site publishes keeps showing the ordinary empty form.
+settings_shot settings-participants-confirmed 2 Participants -screenshotVoiceEnrollmentConfirmed YES
 settings_shot settings-updates 3 Updates
 settings_shot settings-callback 4 Callback \
     -transcriptCallbackCommand 'claude -p "Turn my action items into tasks"'

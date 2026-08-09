@@ -35,15 +35,33 @@ public struct AudioLevel: Sendable, Equatable {
 
         var sumOfSquares: Float = 0
         var peak: Float = 0
-        for channel in 0..<channelCount {
-            let samples = channelData[channel]
-            for frame in 0..<frameCount {
-                let magnitude = abs(samples[frame])
+        let sampleCount = frameCount * channelCount
+
+        if buffer.format.isInterleaved {
+            // Interleaved formats pack every channel into the one buffer at
+            // `channelData[0]` — there is no `channelData[1]` to index into, and
+            // reading past it would be reading someone else's memory. Measuring
+            // the whole interleaved span still covers "every channel and frame"
+            // exactly as the non-interleaved path below does; it just doesn't
+            // need a per-channel stride to get there.
+            let samples = channelData[0]
+            for index in 0..<sampleCount {
+                let magnitude = abs(samples[index])
                 sumOfSquares += magnitude * magnitude
                 peak = max(peak, magnitude)
             }
+        } else {
+            for channel in 0..<channelCount {
+                let samples = channelData[channel]
+                for frame in 0..<frameCount {
+                    let magnitude = abs(samples[frame])
+                    sumOfSquares += magnitude * magnitude
+                    peak = max(peak, magnitude)
+                }
+            }
         }
-        let meanSquare = sumOfSquares / Float(frameCount * channelCount)
+
+        let meanSquare = sumOfSquares / Float(sampleCount)
         return AudioLevel(rms: min(meanSquare.squareRoot(), 1), peak: min(peak, 1))
     }
 

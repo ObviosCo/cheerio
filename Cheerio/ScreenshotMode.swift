@@ -16,7 +16,7 @@ import SwiftUI
 /// process to hold macOS Accessibility permission, and XCUITest requires developer
 /// mode. A harness that depends on either is a harness that can't run on a fresh
 /// machine or a CI runner without someone granting it permissions by hand first.
-/// These five hooks reach the same states with no input at all, which also makes the
+/// These hooks reach the same states with no input at all, which also makes the
 /// captures deterministic — no waiting for a click to land, no window that moved.
 ///
 /// They are hooks into *presentation only*: which window opens, how big it is, and
