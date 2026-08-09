@@ -59,8 +59,11 @@ code that asks which mode it's in will eventually get it wrong.
 
 ## Still open
 
-`SpeakerSlotAssigner` hands out slots and remembers them, but persisting it is
-the app's job — store it with the meeting, not the view. And the inversion needs
-a way to confirm a whole speaker at once from the speakers panel, or every
-model-assigned name stays ringed forever and the mark stops meaning anything.
-That's an IA change, flagged in phase 2 and still unbuilt.
+The inversion needs a way to confirm a whole speaker at once from the speakers
+panel, or every model-assigned name stays ringed forever and the mark stops
+meaning anything. That's an IA change, flagged in phase 2 and tracked as
+[#77](https://github.com/ObviosCo/cheerio/issues/77) — still unbuilt.
+
+`SpeakerSlotAssigner` persistence (storing slots with the meeting, not the
+view) is no longer on this list — it shipped in the same migration that
+brought this vocabulary into the app.

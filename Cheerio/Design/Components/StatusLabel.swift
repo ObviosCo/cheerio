@@ -49,6 +49,4 @@ public struct StatusLabel: View {
     }
 }
 
-// `.attention` replaces the ad-hoc `.orange` in three places: a voice sample
-// under 30 s, a duplicate enrolled name, and a roster over the four-speaker cap.
 // Amber #946000 is AA on the light page where `.orange` was not.
