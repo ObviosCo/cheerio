@@ -15,6 +15,14 @@ struct CheerioApp: App {
     private let container: ModelContainer
 
     init() {
+        // Ahead of everything else: if this copy is somewhere Sparkle could
+        // never update it (a DMG mount, a translocated or still-quarantined
+        // path — see issue #56), settle that before spending any effort on a
+        // container or session that a relaunch or quit is about to discard.
+        // A dev build from a build directory reads as none of those and
+        // returns immediately.
+        LaunchLocationCheck.runIfNeeded()
+
         let session = CaptureSession()
         _captureSession = State(initialValue: session)
         _updater = State(initialValue: AppUpdater(session: session))
@@ -41,6 +49,15 @@ struct CheerioApp: App {
         Window("Cheerio", id: MenuBarView.mainWindowID) {
             ContentView()
                 .environment(captureSession)
+                // Delivered by `ActivateInstalledCopy`, from a *different* (DMG
+                // or translocated) launch of this same app asking this stable
+                // copy to check for updates — see `CheckForUpdatesRequest`.
+                // SwiftUI still delivers this even while the window itself is
+                // closed (e.g. launched straight to the menu bar): the scene
+                // exists, so its content's modifiers are live.
+                .onOpenURL { url in
+                    CheckForUpdatesRequest.handle(url, updater: updater)
+                }
         }
         .modelContainer(container)
         // On a first run, the onboarding window claims launch instead — it opens
