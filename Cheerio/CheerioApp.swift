@@ -240,6 +240,11 @@ struct ContentView: View {
             // Legacy rows carry no uuid, and the bundled MCP helper can't mint one
             // for them because it never writes. This process can.
             StorageMigration.backfillMeetingIDs(context: context)
+            // Catches whatever MeetingDeletion.delete's own best-effort removal
+            // didn't manage to remove — see AudioOrphanSweep for why that gap is
+            // otherwise permanent rather than something a later run cleans up on
+            // its own.
+            _ = try? AudioOrphanSweep.sweep(context: context)
             // Refresh only — never prompt here. The onboarding walkthrough's
             // calendar step is what's allowed to show the TCC dialog; this just
             // picks up whatever the user already decided, there or in System

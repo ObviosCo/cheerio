@@ -95,6 +95,25 @@ final class CaptureSession {
         meeting != self.meeting && !processingMeetingIDs.contains(meeting.persistentModelID)
     }
 
+    /// Call after successfully deleting a meeting, so this session stops holding
+    /// a reference to a model SwiftData just removed.
+    ///
+    /// `meeting` itself never needs checking here — `canDelete(_:)` already
+    /// forbids deleting the active recording, so this can only ever be
+    /// ``lastFinishedMeeting``. But that one *does* need it:
+    /// `NotificationService.recordingContext` reads
+    /// `lastFinishedMeeting?.calendarEventID` on a five-minute reconcile loop
+    /// that has no idea the meeting behind it might be gone, and this deletion
+    /// helper's own contract is that the model is unusable once its delete is
+    /// saved. Clearing the occurrence timestamp alongside it keeps the two in
+    /// the paired, both-or-neither state ``lastFinishedMeetingOccurrenceStart``
+    /// already documents.
+    func meetingWasDeleted(_ meetingID: PersistentIdentifier) {
+        guard lastFinishedMeeting?.persistentModelID == meetingID else { return }
+        lastFinishedMeeting = nil
+        lastFinishedMeetingOccurrenceStart = nil
+    }
+
     /// Live transcript lines for the UI. Volatile tail is replaced in place.
     private(set) var liveLines: [TranscriptionUpdate] = []
     private(set) var volatileLine: TranscriptionUpdate?

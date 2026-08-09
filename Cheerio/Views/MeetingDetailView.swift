@@ -286,8 +286,14 @@ struct MeetingDetailView: View {
 
     /// Commits the toolbar's "Delete" flow, after confirmation.
     private func delete() {
+        let meetingID = meeting.persistentModelID
         do {
-            try MeetingDeletion.delete(meeting, context: context)
+            // `context.container`, not `context` itself — see
+            // `MeetingDeletion.delete(meetingID:container:)` for why this needs
+            // its own context rather than the one this view shares with a
+            // possibly in-flight recording.
+            try MeetingDeletion.delete(meetingID: meetingID, container: context.container)
+            session.meetingWasDeleted(meetingID)
             onDelete()
         } catch {
             deleteError = error.localizedDescription

@@ -350,9 +350,15 @@ struct MeetingListView: View {
     private func performDelete() {
         guard let deletingMeeting else { return }
         defer { self.deletingMeeting = nil }
+        let meetingID = deletingMeeting.persistentModelID
         if selection == deletingMeeting { selection = nil }
         do {
-            try MeetingDeletion.delete(deletingMeeting, context: context)
+            // `context.container`, not `context` itself — see
+            // `MeetingDeletion.delete(meetingID:container:)` for why this needs
+            // its own context rather than the one this view shares with a
+            // possibly in-flight recording.
+            try MeetingDeletion.delete(meetingID: meetingID, container: context.container)
+            session.meetingWasDeleted(meetingID)
         } catch {
             deleteError = error.localizedDescription
         }

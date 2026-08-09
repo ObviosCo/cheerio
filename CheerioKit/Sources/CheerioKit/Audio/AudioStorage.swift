@@ -76,6 +76,14 @@ public enum AudioStorage {
         return (relativePath, url)
     }
 
+    /// Where every meeting's audio directory lives, without creating it —
+    /// `AudioOrphanSweep` needs to be able to tell "nothing has recorded audio
+    /// yet" apart from "the folder is missing," and creating it just to list it
+    /// would erase that distinction.
+    public static func meetingsDirectoryURL() throws -> URL {
+        try applicationSupport().appending(path: meetingsFolder, directoryHint: .isDirectory)
+    }
+
     /// Path component holding voice samples for enrolled speakers.
     private static let speakersFolder = "Speakers"
 
