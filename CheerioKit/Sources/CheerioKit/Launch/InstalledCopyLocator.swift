@@ -27,21 +27,38 @@ public enum InstalledCopyLocator {
         }
     }
 
+    /// The set ``find(among:acceptableBundleIdentifiers:preferredName:)`` should
+    /// treat as "this app," given the identifier the current process is actually
+    /// running under.
+    ///
+    /// Only a process running as `AudioStorage.isRunningAsOfficialBuild` gets
+    /// `legacyBundleIdentifier` added to its own — a fork built under its own
+    /// identifier matches only that identifier, even if the fork correctly
+    /// followed README.md's instructions and changed `AudioStorage.appBundleIdentifier`
+    /// to match (`isRunningAsOfficialBuild` deliberately never reads
+    /// `appBundleIdentifier` — see its doc comment for why comparing against that
+    /// one instead would defeat this gate entirely). Without this gate, a fork
+    /// launched from a DMG would find an unrelated, independently-installed
+    /// `app.cheerio.mac` copy, treat it as itself already installed, hand off to
+    /// that unrelated app, and quit — wrong twice over, since that copy isn't the
+    /// fork and the fork was never part of the rename the legacy identifier exists
+    /// for in the first place.
+    public static func acceptableBundleIdentifiers(
+        runningAs identifier: String, legacyBundleIdentifier: String = AudioStorage.legacyBundleIdentifier
+    ) -> Set<String> {
+        AudioStorage.isRunningAsOfficialBuild(identifier) ? [identifier, legacyBundleIdentifier] : [identifier]
+    }
+
     /// - Parameters:
     ///   - candidates: every `.app` bundle found in the directories being
     ///     searched.
     ///   - acceptableBundleIdentifiers: every identifier that counts as "this
-    ///     app" for matching purposes — not always a single value. During the
-    ///     `co.obvios.cheerio.mac` rename (#22), a new-identifier build
-    ///     launched from a DMG has to recognize an installed copy that hasn't
-    ///     relaunched since the rename and so still carries the old
-    ///     `app.cheerio.mac` identifier — see
-    ///     `AudioStorage.legacyBundleIdentifier`. Without that, this would
-    ///     return `nil`, the caller would offer to move to `/Applications`,
-    ///     and the move would fail because that path is already occupied by
-    ///     the very copy this should have found. Once every install has run
-    ///     the new build at least once, every candidate reports the same
-    ///     identifier and this is equivalent to matching on one.
+    ///     app" for matching purposes — not always a single value. See
+    ///     ``acceptableBundleIdentifiers(runningAs:legacyBundleIdentifier:)``
+    ///     for how a caller should build this set; passing just the running
+    ///     identifier is always correct too, it just misses the transitional
+    ///     match that helper adds during the `co.obvios.cheerio.mac` rename
+    ///     (#22).
     ///   - preferredName: the running bundle's own filename (e.g.
     ///     `"Cheerio.app"`). Breaks a tie among several identifier matches —
     ///     which can genuinely happen if an old copy was renamed rather than

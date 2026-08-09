@@ -38,13 +38,17 @@ enum InstalledCopyScan {
     /// `nil` if no `/Applications`-or-`~/Applications` bundle shares this
     /// app's bundle identifier — or, transitionally, the pre-`co.obvios`
     /// identifier, since an installed copy that hasn't relaunched since the
-    /// rename still carries that one. See
-    /// `InstalledCopyLocator.find(among:acceptableBundleIdentifiers:preferredName:)`.
+    /// rename still carries that one — but only when this process is actually
+    /// running as Cheerio's own canonical build. A fork built under its own
+    /// identifier matches only that identifier: it never shipped under the old
+    /// one, so an unrelated app that happens to use it is not "itself,
+    /// already installed." See
+    /// `InstalledCopyLocator.acceptableBundleIdentifiers(runningAs:)`.
     static func find() -> String? {
         guard let identifier = Bundle.main.bundleIdentifier else { return nil }
         return InstalledCopyLocator.find(
             among: candidates(in: searchDirectories()),
-            acceptableBundleIdentifiers: [identifier, AudioStorage.legacyBundleIdentifier],
+            acceptableBundleIdentifiers: InstalledCopyLocator.acceptableBundleIdentifiers(runningAs: identifier),
             preferredName: Bundle.main.bundleURL.lastPathComponent
         )
     }

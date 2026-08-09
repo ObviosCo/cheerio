@@ -30,6 +30,54 @@ public enum AudioStorage {
     /// who runs the helper before ever launching the new app.
     public static let legacyBundleIdentifier = "app.cheerio.mac"
 
+    /// The identifier Cheerio's own releases ship under — always
+    /// `"co.obvios.cheerio.mac"`, literally, **never** read from
+    /// ``appBundleIdentifier``.
+    ///
+    /// A fork is instructed (README.md's "Building your own fork" section) to
+    /// change ``appBundleIdentifier``'s value to its own identifier — that's the
+    /// constant the MCP helper and every container-path lookup are supposed to
+    /// follow. If ``isRunningAsOfficialBuild(_:)`` also compared against
+    /// ``appBundleIdentifier``, a *correctly configured* fork would set its own
+    /// identifier there, its runtime identifier would then equal
+    /// ``appBundleIdentifier`` by construction, and the check would come back
+    /// `true` — turning the `app.cheerio.mac` migration and the DMG handoff's
+    /// legacy match back on for a fork that never shipped under that identifier in
+    /// the first place. This constant exists so that outcome is impossible: it
+    /// names the one specific build the rename-only paths below are about, and
+    /// nothing a fork does to its own identity constant can move it.
+    ///
+    /// **Do not change this value in a fork.** It gates machinery that is
+    /// meaningless for a fork regardless of what identifier the fork uses — see
+    /// ``isRunningAsOfficialBuild(_:)``.
+    public static let officialBundleIdentifier = "co.obvios.cheerio.mac"
+
+    /// Whether the running process is Cheerio's own official build —
+    /// ``officialBundleIdentifier``, a fixed value, deliberately **not**
+    /// ``appBundleIdentifier`` — rather than a fork built under its own identifier.
+    ///
+    /// Everything that assumes a pre-existing ``legacyBundleIdentifier`` install
+    /// belongs to *this app* gates on this: `BundleIdentifierMigration` and
+    /// `UserDefaultsMigration` (a fork never shipped under the old identifier, so
+    /// there's nothing of its own to adopt there, and an unrelated app that happens
+    /// to use it isn't this one's data to touch), and the DMG launch-location
+    /// handoff's transitional identifier match (see
+    /// `InstalledCopyLocator.acceptableBundleIdentifiers(runningAs:)`). Without this
+    /// gate, a fork launched from a DMG could find an unrelated, independently
+    /// installed `app.cheerio.mac` copy, mistake it for itself already installed,
+    /// hand off to it, and quit.
+    ///
+    /// Comparing against ``appBundleIdentifier`` instead would be self-defeating:
+    /// see ``officialBundleIdentifier``'s doc comment for exactly why. Comparing
+    /// against this fixed constant instead means a fork answers `false` here no
+    /// matter what it did to ``appBundleIdentifier`` — the two constants are
+    /// intentionally independent, one fork-changeable, one not.
+    public static func isRunningAsOfficialBuild(
+        _ bundleIdentifier: String? = Bundle.main.bundleIdentifier
+    ) -> Bool {
+        bundleIdentifier == officialBundleIdentifier
+    }
+
     /// Overrides which identifier ``applicationSupport()`` resolves to, for the rest
     /// of the process's lifetime. `nil` (the default) means "use
     /// `Bundle.main.bundleIdentifier`, as always."
