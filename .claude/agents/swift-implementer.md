@@ -37,8 +37,11 @@ a piece of code exists the way it does, never *what* you just changed — no "ad
    otherwise, and this step is not optional.
 6. `xcodebuild build -project Cheerio.xcodeproj -scheme Cheerio -configuration Debug -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -quiet`
    — must succeed with no new warnings you introduced.
+7. Before committing: `grep` `README.md` for claims your change invalidates or should add —
+   a feature shipped, a limitation removed, a status line now wrong. Update it in the same
+   commit; a stale README claim is not a separate task for later.
 
-Do not report the task complete until all six steps pass. If a step fails, fix the cause, not
+Do not report the task complete until all seven steps pass. If a step fails, fix the cause, not
 the check.
 
 **Committing.** Commit with a message describing why, not a diff summary; end the trailer with
