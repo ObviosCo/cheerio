@@ -54,9 +54,10 @@ and a directive-capture mode ("Give Direction…" in the menu bar).
 - **Rough notes are first-class.** A scratchpad sits next to the live transcript during the
   meeting. What you bothered to type is the strongest signal about what mattered.
 - **Enhance locally.** Afterwards the on-device Foundation Model merges your rough notes with
-  the transcript into a summary, key points, decisions, and action items — each one attributed
-  to whoever committed to it, so what's yours to act on never gets confused with someone else's
-  follow-up. Long meetings are handled map-reduce style to fit the model's ~4k-token context
+  the transcript into a summary, key points, decisions, and action items — attributed to
+  whoever committed to them where the transcript supports it, and never promoted past the
+  evidence: anything unattributed or disputed lands as a follow-up rather than something an
+  agent might act on. Long meetings are handled map-reduce style to fit the model's ~4k-token context
   window.
 - **Ready for the agents already on your machine.** A bundled MCP server, a transcript-ready
   callback, and a directive-capture mode from the menu bar turn a finished meeting into
@@ -65,8 +66,8 @@ and a directive-capture mode ("Give Direction…" in the menu bar).
   below.
 - **Calendar-aware, optionally.** EventKit supplies the current event to title a recording and
   link it back. Denying calendar access costs you only the convenience.
-- **Nothing to configure before your first recording.** First launch walks through microphone
-  and calendar permissions and enrolling your voice. Recordings title themselves — from the
+- **Nothing to configure before your first recording.** First launch walks through the microphone,
+  system-audio, and calendar permissions and enrolling your voice. Recordings title themselves — from the
   calendar event, or generated from the transcript when there wasn't one — and any title is
   yours to change by hand.
 - **Library, search, and export.** Browse past meetings, search across titles, notes,
