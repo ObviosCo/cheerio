@@ -17,7 +17,7 @@ struct MeetingSpeakersSection: View {
     @Query(sort: \EnrolledSpeaker.enrolledAt) private var enrolled: [EnrolledSpeaker]
 
     @State private var enrolling: SpeakerSummary?
-    @State private var errorMessage: String?
+    @State private var saveFailure: SaveFailure?
 
     var body: some View {
         let summaries = meeting.speakerSummaries
@@ -56,10 +56,10 @@ struct MeetingSpeakersSection: View {
                     enroll(summary, as: name)
                 }
             }
-            .alert("Couldn't save the voice sample", isPresented: $errorMessage.presented()) {
-                Button("OK") { errorMessage = nil }
+            .alert(saveFailure?.title ?? "Couldn't save", isPresented: $saveFailure.presented()) {
+                Button("OK") { saveFailure = nil }
             } message: {
-                Text(errorMessage ?? "")
+                Text(saveFailure?.message ?? "")
             }
         }
     }
@@ -71,10 +71,13 @@ struct MeetingSpeakersSection: View {
             Text(summary.displayName)
                 .font(.callout.weight(.medium))
             if summary.isManual {
+                // Covers both ways a speaker ends up here — renamed by hand or a
+                // model-matched name confirmed as-is — so the icon doesn't claim a
+                // provenance ("named by hand") that a confirm never had.
                 Image(systemName: "hand.raised.fill")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                    .help("Named by hand")
+                    .help("Set by you")
             }
             Text("\(summary.lineCount) \(summary.lineCount == 1 ? "line" : "lines") · \(Int(summary.duration.rounded()))s")
                 .font(.caption)
@@ -160,7 +163,7 @@ struct MeetingSpeakersSection: View {
         do {
             try context.save()
         } catch {
-            errorMessage = error.localizedDescription
+            saveFailure = SaveFailure(title: "Couldn't rename this speaker", message: error.localizedDescription)
         }
     }
 
@@ -169,13 +172,20 @@ struct MeetingSpeakersSection: View {
     /// ``Meeting/confirmSpeaker(_:)``, which only ever flips
     /// ``TranscriptSegment/isSpeakerLabelManual``; the label, slot and action-item
     /// attribution it might own are all untouched, so unlike ``relabel(_:to:)`` there's
-    /// nothing else here to reconcile.
+    /// nothing else here to reconcile — only the flag itself to put back on failure.
+    ///
+    /// Captured before the mutation, the same way ``enroll(_:as:)`` captures
+    /// `priorLabels`: without it, a failed save would leave the ring gone and the
+    /// button told the user it failed, while a later autosave quietly persisted the
+    /// confirm anyway.
     private func confirm(_ summary: SpeakerSummary) {
+        let prior = meeting.segments.filter { summary.matches($0) }.map { ($0, $0.isSpeakerLabelManual) }
         guard meeting.confirmSpeaker(summary) > 0 else { return }
         do {
             try context.save()
         } catch {
-            errorMessage = error.localizedDescription
+            for (segment, wasManual) in prior { segment.isSpeakerLabelManual = wasManual }
+            saveFailure = SaveFailure(title: "Couldn't confirm this speaker", message: error.localizedDescription)
         }
     }
 
@@ -235,9 +245,19 @@ struct MeetingSpeakersSection: View {
             if let writtenSamplePath {
                 try? AudioStorage.removeFile(atRelativePath: writtenSamplePath)
             }
-            errorMessage = error.localizedDescription
+            saveFailure = SaveFailure(title: "Couldn't save the voice sample", message: error.localizedDescription)
         }
     }
+}
+
+/// What to say when a speaker-panel save fails. Three actions here can fail — rename,
+/// confirm, enroll — and each needs its own accurate title: routing all of them through
+/// one fixed string (as this used to) means a failed confirm gets told it's a voice
+/// sample problem.
+private struct SaveFailure: Identifiable {
+    let title: String
+    let message: String
+    var id: String { title + message }
 }
 
 extension SpeakerSummary {

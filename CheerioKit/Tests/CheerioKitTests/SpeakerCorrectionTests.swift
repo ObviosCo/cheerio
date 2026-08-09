@@ -114,6 +114,32 @@ import Testing
         #expect(meeting.speakerSummaries.first { $0.label == "Jackson" }?.isManual == true)
     }
 
+    /// The failure this guard exists for: an unlabelled meeting's "Me" is a channel
+    /// default, not a model guess, so there's nothing for Confirm to be settling.
+    /// Letting it through would set `isSpeakerLabelManual` on a `nil`-labelled line,
+    /// and `SpeakerLabeling.label` would then skip it forever.
+    @Test func confirmSpeakerRejectsAChannelDefaultSpeaker() {
+        let meeting = Meeting(title: "Old")
+        meeting.segments = [
+            TranscriptSegment(channel: .me, text: "hi", startTime: 0, endTime: 2),
+            TranscriptSegment(channel: .them, text: "hello", startTime: 2, endTime: 3),
+        ]
+
+        #expect(meeting.confirmSpeaker(summary(in: meeting, "Me")) == 0)
+        #expect(meeting.segments.allSatisfy { !$0.isSpeakerLabelManual })
+    }
+
+    /// A diarizer-generated "Speaker 3" is a voice the model separated out but never
+    /// named — the UI never rings it, and confirming it would be settling a guess that
+    /// was never made.
+    @Test func confirmSpeakerRejectsADiarizerGeneratedSpeaker() {
+        let meeting = splitSpeakerMeeting()
+
+        #expect(meeting.confirmSpeaker(summary(in: meeting, "Speaker 3")) == 0)
+        #expect(meeting.segments.first { $0.text == "Speaker 3" }?.isSpeakerLabelManual == false)
+        #expect(meeting.speakerSummaries.first { $0.label == "Speaker 3" }?.isManual == false)
+    }
+
     /// The guarantee a rename already gets: re-identification only ever overwrites
     /// segments that aren't ``TranscriptSegment/isSpeakerLabelManual`` (see the guard
     /// in `SpeakerLabeling.label`, in the app target). Confirming sets exactly that

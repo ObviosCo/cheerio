@@ -419,6 +419,17 @@ extension Meeting {
     /// and ``Meeting/isOwnerAttributed(_:ownerNames:)`` both key off the label and
     /// diarizer-generated-ness, neither of which this touches.
     ///
+    /// Only settles lines that could actually be showing the ring — a real,
+    /// non-diarizer-generated label. A channel-default line (no
+    /// ``TranscriptSegment/speakerLabel`` at all, still reading as the bare "Me"/"Them"
+    /// fallback) or a diarizer-generated one ("Speaker 2") is left alone and doesn't
+    /// count toward the return value: the UI never rings either of those, but a caller
+    /// that skipped that check and confirmed one anyway would set the manual bit on a
+    /// line with nothing to confirm — and ``SpeakerLabeling/label`` would then skip it
+    /// on every future identification pass, permanently hiding a voice nobody ever
+    /// actually identified. Enforced here rather than left to the UI guard so it holds
+    /// for every caller, not just this one screen.
+    ///
     /// Idempotent — confirming a speaker who's already partly hand-named only ever
     /// sets the bit on the remaining lines, never clears one that's already set — so
     /// there's no separate "unconfirm"; a wrong confirm is recoverable the same way a
@@ -427,7 +438,11 @@ extension Meeting {
     @discardableResult
     public func confirmSpeaker(_ speaker: SpeakerSummary) -> Int {
         var changed = 0
-        for segment in segments where speaker.matches(segment) && !segment.isSpeakerLabelManual {
+        for segment in segments where speaker.matches(segment) {
+            guard !segment.isSpeakerLabelManual,
+                let label = segment.speakerLabel,
+                !TranscriptSegment.isDiarizerGeneratedLabel(label)
+            else { continue }
             segment.isSpeakerLabelManual = true
             changed += 1
         }
