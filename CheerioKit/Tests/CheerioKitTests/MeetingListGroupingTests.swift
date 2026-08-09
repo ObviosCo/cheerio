@@ -14,8 +14,10 @@ import Testing
         return calendar
     }
 
-    private static func date(_ year: Int, _ month: Int, _ day: Int, hour: Int = 12, in calendar: Calendar) -> Date {
-        calendar.date(from: DateComponents(year: year, month: month, day: day, hour: hour))!
+    private static func date(
+        _ year: Int, _ month: Int, _ day: Int, hour: Int = 12, minute: Int = 0, in calendar: Calendar
+    ) -> Date {
+        calendar.date(from: DateComponents(year: year, month: month, day: day, hour: hour, minute: minute))!
     }
 
     @Test func todayAndYesterdayAreNamedRelativeToInjectedNow() {
@@ -105,7 +107,8 @@ import Testing
         let now = Self.date(2026, 8, 12, hour: 0, in: calendar)
         // 23:59 the day before "now"'s midnight — one minute of wall-clock time away
         // from "today," but a full calendar day away.
-        let lateLastNight = Meeting(title: "Late call", startedAt: Self.date(2026, 8, 11, hour: 23, in: calendar))
+        let lateLastNight = Meeting(
+            title: "Late call", startedAt: Self.date(2026, 8, 11, hour: 23, minute: 59, in: calendar))
 
         let sections = MeetingListGrouping.sections(for: [lateLastNight], now: now, calendar: calendar)
 
