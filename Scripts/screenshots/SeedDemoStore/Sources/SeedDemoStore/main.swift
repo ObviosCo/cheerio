@@ -25,10 +25,14 @@ let arguments = Array(CommandLine.arguments.dropFirst())
 guard let containerIndex = arguments.firstIndex(of: "--container"),
     containerIndex + 1 < arguments.count
 else {
-    FileHandle.standardError.write(Data("usage: SeedDemoStore --container <dir>\n".utf8))
+    FileHandle.standardError.write(Data("usage: SeedDemoStore --container <dir> [--skip-enrollment]\n".utf8))
     exit(2)
 }
 let container = URL(filePath: arguments[containerIndex + 1], directoryHint: .isDirectory)
+// For the no-enrollment capture (issue #125): a store with meetings but nobody
+// enrolled, which is exactly the "recorded without enrolling" case the empty
+// state's voice-enrollment prompt has to keep confronting rather than assume away.
+let skipEnrollment = arguments.contains("--skip-enrollment")
 
 // MARK: - Fake audio
 
@@ -495,19 +499,21 @@ let context = ModelContext(modelContainer)
 let calendar = Calendar.current
 let now = Date.now
 
-for (index, speaker) in [(owner, 41.0), ("Priya Raman", 36.0), ("Marcus Feld", 33.0), ("Dana Okafor", 22.0)]
-    .enumerated()
-{
-    let (name, duration) = speaker
-    let enrolled = EnrolledSpeaker(
-        name: name,
-        audioPath: "Speakers/demo-\(index).caf",
-        duration: duration,
-        // Enrollment order is the roster's only ordering, so space these out.
-        enrolledAt: now.addingTimeInterval(-Double(40 - index * 3) * 86_400)
-    )
-    enrolled.isMe = name == owner
-    context.insert(enrolled)
+if !skipEnrollment {
+    for (index, speaker) in [(owner, 41.0), ("Priya Raman", 36.0), ("Marcus Feld", 33.0), ("Dana Okafor", 22.0)]
+        .enumerated()
+    {
+        let (name, duration) = speaker
+        let enrolled = EnrolledSpeaker(
+            name: name,
+            audioPath: "Speakers/demo-\(index).caf",
+            duration: duration,
+            // Enrollment order is the roster's only ordering, so space these out.
+            enrolledAt: now.addingTimeInterval(-Double(40 - index * 3) * 86_400)
+        )
+        enrolled.isMe = name == owner
+        context.insert(enrolled)
+    }
 }
 
 for demo in demos {

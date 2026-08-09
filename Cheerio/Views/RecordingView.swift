@@ -93,21 +93,12 @@ struct RecordingView: View {
             showEnrollmentNudge = true
         }
         .sheet(isPresented: $showEnrollmentSheet) {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Add your voice")
-                    .font(.headline)
-                VoiceEnrollmentRecorder(markAsMe: true) { _ in
-                    showEnrollmentSheet = false
-                    // A successful enrollment resolves the reason the banner is up in
-                    // the first place — leave it showing and it reads as a bug: "I just
-                    // did what it asked, why is it still there?"
-                    showEnrollmentNudge = false
-                }
-                Button("Done") { showEnrollmentSheet = false }
-                    .buttonStyle(.bordered)
+            VoiceEnrollmentSheet {
+                // A successful enrollment resolves the reason the banner is up in
+                // the first place — leave it showing and it reads as a bug: "I just
+                // did what it asked, why is it still there?"
+                showEnrollmentNudge = false
             }
-            .padding(20)
-            .frame(width: 380)
         }
     }
 

@@ -212,11 +212,18 @@ struct ContentView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismiss) private var dismiss
+    @Query(sort: \EnrolledSpeaker.enrolledAt) private var enrolledSpeakers: [EnrolledSpeaker]
 
     /// The past meeting on show. Nil means "the live recording if there is one,
     /// otherwise the placeholder" — the split view's detail column owns this, because
     /// pushing onto a stack inside the sidebar only ever filled the sidebar.
     @State private var selectedMeeting: Meeting?
+    /// Session-only dismissal for ``VoiceEnrollmentPrompt`` (#125) — a plain `@State`
+    /// rather than `@AppStorage`, since the prompt is supposed to come back on every
+    /// launch for as long as ``enrolledSpeakers`` stays empty. Shared between the
+    /// dashboard's copy of the prompt and the detail banner below so dismissing
+    /// either one dismisses both for the rest of this run.
+    @State private var enrollmentPromptDismissed = false
 
     private let notifications = NotificationService.shared
 
@@ -360,17 +367,35 @@ struct ContentView: View {
 
     /// A selected meeting wins over the live view: mid-call you sometimes need to
     /// look something up in an earlier meeting, and the sidebar offers a way back.
+    ///
+    /// The enrollment banner above a selected meeting (#125) is a slim addition
+    /// here rather than the dashboard's full-width card: a meeting's own header,
+    /// notes and transcript are the reason this pane is open, and they need to stay
+    /// what the eye lands on — the banner only has to say the prompt hasn't been
+    /// forgotten, not compete with the content underneath it. The dashboard case
+    /// below is the one place this app has room to make the fuller case instead.
     @ViewBuilder private var detail: some View {
         if let selectedMeeting {
-            MeetingDetailView(meeting: selectedMeeting) { self.selectedMeeting = nil }
+            VStack(spacing: 0) {
+                // Gates the padding and the divider too, not just the prompt
+                // inside them — `VoiceEnrollmentPrompt` already renders nothing
+                // once dismissed, but leaving this condition on `enrolledSpeakers`
+                // alone would still stack that empty padding and a stray divider
+                // above the transcript for the rest of the session.
+                if enrolledSpeakers.isEmpty, !enrollmentPromptDismissed {
+                    VoiceEnrollmentPrompt(
+                        isDismissed: enrollmentPromptDismissed,
+                        onDismiss: { enrollmentPromptDismissed = true }
+                    )
+                    .padding(Theme.Space.x3)
+                    Divider()
+                }
+                MeetingDetailView(meeting: selectedMeeting) { self.selectedMeeting = nil }
+            }
         } else if session.state == .recording || session.state == .finishing {
             RecordingView()
         } else {
-            ContentUnavailableView(
-                "No meeting selected",
-                systemImage: "text.bubble",
-                description: Text("Select a past meeting or start recording.")
-            )
+            EmptyStateDashboardView(selection: $selectedMeeting, enrollmentPromptDismissed: $enrollmentPromptDismissed)
         }
     }
 }
