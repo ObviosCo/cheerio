@@ -54,6 +54,66 @@ final class CaptureSession {
     /// nil.
     private(set) var lastFinishedMeetingOccurrenceStart: Date?
 
+    /// Meetings with a background mutation in flight outside this session's own
+    /// pipeline — today, just `MeetingDetailView`'s manual "Re-identify speakers"
+    /// button. The pass this session runs itself at the end of a recording needs no
+    /// entry here: ``meeting`` stays set through `.finishing`, so ``canDelete(_:)``
+    /// already covers it.
+    ///
+    /// Keyed by `persistentModelID`, not the `Meeting` itself, on purpose — this is
+    /// the one piece of shared state every delete affordance consults, and holding
+    /// a `Meeting` here past a delete would be exactly the "still holding a model
+    /// SwiftData just removed" bug this exists to prevent.
+    ///
+    /// This is the app's one shared `@Observable`, which is why a cross-cutting
+    /// concern like "is anything mutating this meeting right now" lives here rather
+    /// than on a purpose-built type — the alternative costs a new object threaded
+    /// into every scene in `CheerioApp` for one small set.
+    private var processingMeetingIDs: Set<PersistentIdentifier> = []
+
+    /// Marks `meeting` as having a background mutation in flight. Call before the
+    /// first suspension point of whatever's about to `await` its way through
+    /// changing it, and unconditionally clear with ``endProcessing(_:)`` in a
+    /// `defer` — on the success path and the failure path alike, or a thrown error
+    /// leaves the meeting permanently undeletable.
+    func beginProcessing(_ meeting: Meeting) {
+        processingMeetingIDs.insert(meeting.persistentModelID)
+    }
+
+    func endProcessing(_ meeting: Meeting) {
+        processingMeetingIDs.remove(meeting.persistentModelID)
+    }
+
+    /// Whether every delete affordance should treat `meeting` as safe to remove
+    /// right now: not the meeting actively recording (``meeting`` stays set through
+    /// `.finishing`, so this covers that phase too), and nothing else has it
+    /// mid-mutation per ``beginProcessing(_:)``.
+    ///
+    /// A disabled button rather than cancel-and-await, for a first pass — see the
+    /// call sites in `MeetingListView` and `MeetingDetailView`.
+    func canDelete(_ meeting: Meeting) -> Bool {
+        meeting != self.meeting && !processingMeetingIDs.contains(meeting.persistentModelID)
+    }
+
+    /// Call after successfully deleting a meeting, so this session stops holding
+    /// a reference to a model SwiftData just removed.
+    ///
+    /// `meeting` itself never needs checking here — `canDelete(_:)` already
+    /// forbids deleting the active recording, so this can only ever be
+    /// ``lastFinishedMeeting``. But that one *does* need it:
+    /// `NotificationService.recordingContext` reads
+    /// `lastFinishedMeeting?.calendarEventID` on a five-minute reconcile loop
+    /// that has no idea the meeting behind it might be gone, and this deletion
+    /// helper's own contract is that the model is unusable once its delete is
+    /// saved. Clearing the occurrence timestamp alongside it keeps the two in
+    /// the paired, both-or-neither state ``lastFinishedMeetingOccurrenceStart``
+    /// already documents.
+    func meetingWasDeleted(_ meetingID: PersistentIdentifier) {
+        guard lastFinishedMeeting?.persistentModelID == meetingID else { return }
+        lastFinishedMeeting = nil
+        lastFinishedMeetingOccurrenceStart = nil
+    }
+
     /// Live transcript lines for the UI. Volatile tail is replaced in place.
     private(set) var liveLines: [TranscriptionUpdate] = []
     private(set) var volatileLine: TranscriptionUpdate?

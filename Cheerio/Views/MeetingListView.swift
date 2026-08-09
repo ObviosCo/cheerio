@@ -35,6 +35,11 @@ struct MeetingListView: View {
     /// tight with the directive badge and timestamp.
     @State private var renamingMeeting: Meeting?
     @State private var renameText = ""
+    /// The meeting a "Delete" context-menu choice is confirming. Same off-optional
+    /// pattern as ``renamingMeeting``, and for the same reason: nothing about the
+    /// row layout should change while a delete is pending confirmation.
+    @State private var deletingMeeting: Meeting?
+    @State private var deleteError: String?
 
     /// Persisted default for every future recording, following ``AudioRetention``'s
     /// `@AppStorage` pattern — `CaptureSession` reads `RecordingMode.current` fresh at
@@ -145,6 +150,21 @@ struct MeetingListView: View {
             Button("Cancel", role: .cancel) { renamingMeeting = nil }
             Button("Save") { applyRename() }
         }
+        .confirmationDialog(
+            DeleteMeetingConfirmation.title(for: deletingMeeting?.title ?? ""),
+            isPresented: $deletingMeeting.presented(),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) { performDelete() }
+            Button("Cancel", role: .cancel) { deletingMeeting = nil }
+        } message: {
+            Text(DeleteMeetingConfirmation.message)
+        }
+        .alert("Couldn't delete meeting", isPresented: $deleteError.presented()) {
+            Button("OK") { deleteError = nil }
+        } message: {
+            Text(deleteError ?? "")
+        }
         // Both alerts below read the session, not local state, so a recording started
         // from the menu bar can explain itself here.
         .alert("Couldn't start recording", isPresented: startFailed) {
@@ -198,6 +218,16 @@ struct MeetingListView: View {
                 renameText = meeting.title
                 renamingMeeting = meeting
             }
+            // Disabled rather than hidden: a meeting that's mid-recording is still
+            // the one you're most likely to right-click (it's at the top of the
+            // list), and a missing item there reads as a bug rather than a rule.
+            // `canDelete` also covers a relabel pass in flight from the detail
+            // view — this row has no view of that on its own, so it has to defer
+            // to the shared session state. See `CaptureSession.canDelete(_:)`.
+            Button("Delete", role: .destructive) {
+                deletingMeeting = meeting
+            }
+            .disabled(!session.canDelete(meeting))
         }
     }
 
@@ -311,6 +341,27 @@ struct MeetingListView: View {
         guard !trimmed.isEmpty else { return }
         renamingMeeting.rename(to: trimmed)
         try? context.save()
+    }
+
+    /// Commits the "Delete" context-menu flow, after confirmation. Clears
+    /// `selection` first when the deleted meeting is the one on screen — deleting
+    /// out from under the detail view would otherwise leave it holding a model
+    /// SwiftData just removed.
+    private func performDelete() {
+        guard let deletingMeeting else { return }
+        defer { self.deletingMeeting = nil }
+        let meetingID = deletingMeeting.persistentModelID
+        if selection == deletingMeeting { selection = nil }
+        do {
+            // `context.container`, not `context` itself — see
+            // `MeetingDeletion.delete(meetingID:container:)` for why this needs
+            // its own context rather than the one this view shares with a
+            // possibly in-flight recording.
+            try MeetingDeletion.delete(meetingID: meetingID, container: context.container)
+            session.meetingWasDeleted(meetingID)
+        } catch {
+            deleteError = error.localizedDescription
+        }
     }
 
     /// Keeps `now` — and through it, the "Today"/"Yesterday" section titles —
