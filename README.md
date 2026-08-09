@@ -74,7 +74,8 @@ and a directive-capture mode ("Give Direction…" in the menu bar).
   yours to change by hand.
 - **Library, search, and export.** Browse past meetings grouped by day — Today, Yesterday,
   then the weekday or the date — search across titles, notes, transcripts, and speaker names,
-  and export any meeting as Markdown.
+  rename or delete a meeting from the list or the meeting itself, and export any meeting as
+  Markdown.
 - **It comes to you when it matters.** A notification offers to record when a calendar meeting
   with other people starts (never twice for the same occurrence, never while already
   recording), and another one tells you when a finished meeting's notes are ready. Both

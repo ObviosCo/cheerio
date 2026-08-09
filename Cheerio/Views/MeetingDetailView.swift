@@ -4,11 +4,18 @@ import SwiftUI
 
 struct MeetingDetailView: View {
     let meeting: Meeting
+    /// Run after this meeting is deleted, so the caller can clear whatever
+    /// selection was pointing at it — this view owns no binding to that itself,
+    /// since `ContentView` passes it a plain `Meeting`, not a `Binding<Meeting?>`.
+    var onDelete: () -> Void = {}
 
     @Environment(\.modelContext) private var context
+    @Environment(CaptureSession.self) private var session
     @Query(sort: \EnrolledSpeaker.enrolledAt) private var enrolled: [EnrolledSpeaker]
     @State private var isRelabeling = false
     @State private var relabelError: String?
+    @State private var isDeleteConfirming = false
+    @State private var deleteError: String?
     /// Expanded by default: opening an old meeting is usually about re-reading what
     /// was said, and a collapsed disclosure made the transcript look like it was gone.
     @State private var isTranscriptExpanded = true
@@ -70,11 +77,42 @@ struct MeetingDetailView: View {
         } message: {
             Text(relabelError ?? "")
         }
+        .confirmationDialog(
+            DeleteMeetingConfirmation.title(for: meeting.title),
+            isPresented: $isDeleteConfirming,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) { delete() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(DeleteMeetingConfirmation.message)
+        }
+        .alert("Couldn't delete meeting", isPresented: $deleteError.presented()) {
+            Button("OK") { deleteError = nil }
+        } message: {
+            Text(deleteError ?? "")
+        }
         .toolbar {
             ToolbarItem {
                 ShareLink(item: exportMarkdown()) {
                     Label("Export", systemImage: "square.and.arrow.up")
                 }
+            }
+            ToolbarItem {
+                // Reachable even for the meeting currently recording (selecting it
+                // mid-call replaces the live view with this one) — `.disabled`
+                // rather than omitted, matching the library list's context menu, so
+                // the control doesn't appear to vanish depending on state.
+                // `canDelete` also covers this view's own "Re-identify speakers"
+                // pass: it mutates `meeting.segments` across an `await`, and a
+                // delete racing that would resume the pass against an already-
+                // deleted model. See `CaptureSession.canDelete(_:)`.
+                Button(role: .destructive) {
+                    isDeleteConfirming = true
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+                .disabled(!session.canDelete(meeting))
             }
         }
     }
@@ -224,7 +262,14 @@ struct MeetingDetailView: View {
     /// enrolled, and the audio stays on disk until retention purges it.
     private func relabel() async {
         isRelabeling = true
-        defer { isRelabeling = false }
+        // Before the first `await` below, so nothing can observe this meeting as
+        // deletable between that call starting and this line running. Cleared in
+        // the `defer`, which runs on the error path too — see `CaptureSession`.
+        session.beginProcessing(meeting)
+        defer {
+            isRelabeling = false
+            session.endProcessing(meeting)
+        }
         do {
             try await SpeakerLabeling.label(meeting: meeting, context: context)
             let ownerNames = SpeakerLabeling.ownerNames(context: context)
@@ -236,6 +281,22 @@ struct MeetingDetailView: View {
             try? context.save()
         } catch {
             relabelError = error.localizedDescription
+        }
+    }
+
+    /// Commits the toolbar's "Delete" flow, after confirmation.
+    private func delete() {
+        let meetingID = meeting.persistentModelID
+        do {
+            // `context.container`, not `context` itself — see
+            // `MeetingDeletion.delete(meetingID:container:)` for why this needs
+            // its own context rather than the one this view shares with a
+            // possibly in-flight recording.
+            try MeetingDeletion.delete(meetingID: meetingID, container: context.container)
+            session.meetingWasDeleted(meetingID)
+            onDelete()
+        } catch {
+            deleteError = error.localizedDescription
         }
     }
 
