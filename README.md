@@ -1,3 +1,5 @@
+<img src="Cheerio/Resources/Assets.xcassets/AppIcon.appiconset/icon_128.png" width="96" alt="The Cheerio app icon: a copper ring on deep navy">
+
 # Cheerio
 
 [![CI](https://github.com/ObviosCo/cheerio/actions/workflows/ci.yml/badge.svg)](https://github.com/ObviosCo/cheerio/actions/workflows/ci.yml)
@@ -310,7 +312,7 @@ unsandboxed. Hardened runtime stays on.
 ```
 cheerio/
 ├── project.yml       # XcodeGen config → generates Cheerio.xcodeproj
-├── Scripts/          # bootstrap.sh — fresh checkout → buildable, in one command
+├── Scripts/          # bootstrap.sh — fresh checkout → buildable; render-appicon.swift — app icon
 │   └── screenshots/  # Seeds demo meetings and photographs the app; makes site/img
 ├── CheerioKit/       # SwiftPM package: portable core (macOS + future iOS)
 │   └── Sources/CheerioKit/
