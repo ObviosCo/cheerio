@@ -220,26 +220,46 @@ struct MeetingDetailView: View {
     /// and re-deciding action-item ownership each time, which is a real feature on
     /// its own, not a side effect of making a text field writable; that's future
     /// work (see the PR this shipped in) if it's wanted at all.
+    ///
+    /// This view is reachable for the meeting actively recording too — selecting it
+    /// mid-call replaces `RecordingView` with this one (see the toolbar's delete
+    /// button below). `CaptureSession.stop()` later does `meeting.roughNotes =
+    /// roughNotes`, unconditionally copying its own transient scratchpad into the
+    /// model — a straight `meeting.roughNotes` binding here would let an edit made
+    /// from this view during that window get silently overwritten by that copy the
+    /// moment recording stops. Binding to `session.roughNotes` instead, exactly the
+    /// way `RecordingView` already does, means both views are windows onto the same
+    /// value rather than two separate ones racing to land last.
     private var roughNotes: some View {
-        VStack(alignment: .leading, spacing: Theme.Space.x1) {
+        @Bindable var session = session
+        let isLiveMeeting = session.meeting == meeting
+
+        // No explicit `context.save()` on the stored-model branch, which would be a
+        // synchronous SwiftData write on every character typed. This environment's
+        // `ModelContext` autosaves by default (unlike `MeetingQueryService`'s
+        // read-only one), so the plain write is picked up the same way any other
+        // field-level edit in this view is.
+        let storedRoughNotes = Binding(get: { meeting.roughNotes }, set: { meeting.roughNotes = $0 })
+
+        return VStack(alignment: .leading, spacing: Theme.Space.x1) {
             Text("Rough notes")
                 .font(.headline)
-            // A direct write to `meeting.roughNotes`, same as the header's title
-            // binding — no explicit `context.save()` per keystroke, which would be
-            // a synchronous SwiftData write on every character typed. This
-            // environment's `ModelContext` autosaves by default (unlike
-            // `MeetingQueryService`'s read-only one), so the plain write is picked
-            // up the same way any other field-level edit in this view is.
-            TextEditor(text: Binding(get: { meeting.roughNotes }, set: { meeting.roughNotes = $0 }))
+            TextEditor(text: isLiveMeeting ? $session.roughNotes : storedRoughNotes)
                 .font(.body)
                 .frame(minHeight: 80)
                 .scrollContentBackground(.hidden)
                 .padding(Theme.Space.x1)
                 .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: Theme.Radius.md))
                 .accessibilityLabel("Rough notes")
-            Text("Notes added here stay with the meeting, but the summary above reflects your notes as of when the meeting ended.")
+            // Only true once the meeting has actually ended and been enhanced —
+            // while it's still recording, nothing above has run yet to be stale.
+            if !isLiveMeeting {
+                Text(
+                    "Notes added here stay with the meeting, but the summary above reflects your notes as of when the meeting ended."
+                )
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            }
         }
     }
 
