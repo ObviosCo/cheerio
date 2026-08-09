@@ -127,8 +127,10 @@ public enum AudioStorage {
         containerOverride.withLock { $0 } ?? Bundle.main.bundleIdentifier ?? appBundleIdentifier
     }
 
-    /// The shared, user-level Application Support directory — NOT where we write.
-    /// Only used to migrate data written there before this was fixed.
+    /// The shared, user-level Application Support directory — the parent of
+    /// Cheerio's container, not a place we write files directly. Every path
+    /// resolution goes through here: the migration code to build paths to check or
+    /// move, and ``applicationSupport()`` on the normal write path.
     ///
     /// `create: false`: `BundleIdentifierMigration` and `StorageMigration` use this
     /// to build a path to check or move, never to write directly against, so there
