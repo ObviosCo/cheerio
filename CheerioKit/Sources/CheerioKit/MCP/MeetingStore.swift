@@ -64,19 +64,40 @@ public enum MeetingStore {
     }
 
     /// The store the helper should read: ``storePathEnvironmentKey`` if set,
-    /// otherwise the app's own store inside its Application Support container.
+    /// otherwise the app's own store inside its Application Support container —
+    /// falling back to the pre-`co.obvios` container if the current one doesn't
+    /// exist yet.
+    ///
+    /// That fallback matters because the helper is a separate, bare executable: it
+    /// has no `CheerioApp.init()` to run `BundleIdentifierMigration` for it, and a
+    /// user can run `cheerio-mcp` from a client that started before they ever
+    /// launched the rebuilt app. Without this, that user's history reads as "no
+    /// meetings" right up until they open Cheerio once — exactly the failure mode
+    /// this fallback exists to avoid. Once the app has run and migrated the
+    /// container, the new path exists and this never looks at the old one again.
     ///
     /// Resolves without creating anything, unlike ``AudioStorage/storeURL()``, whose
     /// caller is the app and for whom a missing container is a thing to fix.
     public static func resolveStoreURL(
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        fileManager: FileManager = .default
     ) throws -> URL {
         if let override = environment[storePathEnvironmentKey]?.trimmingCharacters(in: .whitespacesAndNewlines),
             !override.isEmpty
         {
             return URL(filePath: override)
         }
-        return try AudioStorage.containerURL().appending(path: AudioStorage.storeFileName)
+
+        let current = try AudioStorage.containerURL().appending(path: AudioStorage.storeFileName)
+        guard !fileManager.fileExists(atPath: current.path(percentEncoded: false)) else { return current }
+
+        if let legacy = try? AudioStorage.containerURL(bundleIdentifier: AudioStorage.legacyBundleIdentifier)
+            .appending(path: AudioStorage.storeFileName),
+            fileManager.fileExists(atPath: legacy.path(percentEncoded: false))
+        {
+            return legacy
+        }
+        return current
     }
 
     /// Opens `url` read-only, or throws a ``Failure`` explaining what to do about it.

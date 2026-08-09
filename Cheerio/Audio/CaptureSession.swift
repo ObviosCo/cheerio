@@ -120,7 +120,7 @@ final class CaptureSession {
 
     var roughNotes: String = ""
 
-    private let log = Logger(subsystem: "app.cheerio.mac", category: "CaptureSession")
+    private let log = Logger(subsystem: "co.obvios.cheerio.mac", category: "CaptureSession")
     private var micEngine: TranscriptionEngine?
     private var systemEngine: TranscriptionEngine?
     private var micCapture: MicrophoneCapture?

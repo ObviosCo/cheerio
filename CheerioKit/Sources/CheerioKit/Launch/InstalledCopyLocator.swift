@@ -30,8 +30,18 @@ public enum InstalledCopyLocator {
     /// - Parameters:
     ///   - candidates: every `.app` bundle found in the directories being
     ///     searched.
-    ///   - bundleIdentifier: the running app's own identifier — the only
-    ///     thing a candidate is matched on.
+    ///   - acceptableBundleIdentifiers: every identifier that counts as "this
+    ///     app" for matching purposes — not always a single value. During the
+    ///     `co.obvios.cheerio.mac` rename (#22), a new-identifier build
+    ///     launched from a DMG has to recognize an installed copy that hasn't
+    ///     relaunched since the rename and so still carries the old
+    ///     `app.cheerio.mac` identifier — see
+    ///     `AudioStorage.legacyBundleIdentifier`. Without that, this would
+    ///     return `nil`, the caller would offer to move to `/Applications`,
+    ///     and the move would fail because that path is already occupied by
+    ///     the very copy this should have found. Once every install has run
+    ///     the new build at least once, every candidate reports the same
+    ///     identifier and this is equivalent to matching on one.
     ///   - preferredName: the running bundle's own filename (e.g.
     ///     `"Cheerio.app"`). Breaks a tie among several identifier matches —
     ///     which can genuinely happen if an old copy was renamed rather than
@@ -39,9 +49,11 @@ public enum InstalledCopyLocator {
     ///     the more likely "real" install and the one a user would expect
     ///     "Cheerio Is Already Installed" to mean.
     public static func find(
-        among candidates: [Candidate], bundleIdentifier: String, preferredName: String
+        among candidates: [Candidate], acceptableBundleIdentifiers: Set<String>, preferredName: String
     ) -> String? {
-        let matches = candidates.filter { $0.bundleIdentifier == bundleIdentifier }
+        let matches = candidates.filter { candidate in
+            candidate.bundleIdentifier.map(acceptableBundleIdentifiers.contains) ?? false
+        }
         guard !matches.isEmpty else { return nil }
         if let exactNameMatch = matches.first(where: {
             URL(fileURLWithPath: $0.path).lastPathComponent == preferredName

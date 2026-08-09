@@ -26,7 +26,7 @@ import XCTest
 /// scratch home entirely.
 final class ScreenshotCaptureTests: XCTestCase {
     /// Where the workflow seeded the demo store, as a home directory — i.e. the
-    /// parent of `Library/Application Support/app.cheerio.mac`.
+    /// parent of `Library/Application Support/co.obvios.cheerio.mac`.
     ///
     /// `Scripts/screenshots/seed-store.sh` writes here by default and the workflow
     /// also passes it as `TEST_RUNNER_CHEERIO_SCREENSHOT_HOME` (xcodebuild forwards
@@ -197,7 +197,7 @@ final class ScreenshotCaptureTests: XCTestCase {
     /// Launches against the demo store the workflow seeded.
     private func launchSeeded(_ arguments: [String]) throws -> XCUIApplication {
         let home = ProcessInfo.processInfo.environment["CHEERIO_SCREENSHOT_HOME"] ?? Self.defaultSeededHome
-        let store = URL(filePath: home).appending(path: "Library/Application Support/app.cheerio.mac")
+        let store = URL(filePath: home).appending(path: "Library/Application Support/co.obvios.cheerio.mac")
         try XCTSkipUnless(
             FileManager.default.fileExists(atPath: store.path),
             """

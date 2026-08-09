@@ -2,10 +2,12 @@
 # Install: brew install xcodegen
 name: Cheerio
 options:
-  # TODO: change to your reverse-DNS prefix. Note this does NOT set the app's
-  # identifier on its own — PRODUCT_BUNDLE_IDENTIFIER below is set explicitly and
-  # wins, so change both or you'll still build as app.cheerio.mac.
-  bundleIdPrefix: app.cheerio
+  # Cheerio's real identifier, not a placeholder — resolved from app.cheerio (see
+  # issue #22's stack) to Obvios's own reverse-DNS prefix. Note this does NOT set
+  # the app's identifier on its own — PRODUCT_BUNDLE_IDENTIFIER below is set
+  # explicitly and wins, so change both if you ever change this again, or you'll
+  # build as co.obvios.cheerio.mac with a mismatched prefix everywhere else.
+  bundleIdPrefix: co.obvios
   deploymentTarget:
     macOS: "26.0"
   createIntermediateGroups: true
@@ -95,7 +97,7 @@ targets:
           subpath: Contents/Helpers
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: app.cheerio.mac
+        PRODUCT_BUNDLE_IDENTIFIER: co.obvios.cheerio.mac
         # Hand-maintained, not generated (GENERATE_INFOPLIST_FILE is off below), so
         # there are no `info:` properties here to add keys to. Sparkle's settings —
         # including the SUPublicEDKey slot a maintainer has to fill in once — live in
@@ -121,7 +123,7 @@ targets:
       - target: Cheerio
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: app.cheerio.mac.screenshots
+        PRODUCT_BUNDLE_IDENTIFIER: co.obvios.cheerio.mac.screenshots
         GENERATE_INFOPLIST_FILE: true
         # Set explicitly rather than left to the app-target dependency above:
         # it's what tells XCUIApplication() which app to launch, and a UI test

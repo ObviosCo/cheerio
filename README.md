@@ -262,10 +262,12 @@ macros.
 
 ### Before you run it
 
-- **Set your bundle identifier.** The effective one is `PRODUCT_BUNDLE_IDENTIFIER` in
-  `project.yml`, currently the placeholder `app.cheerio.mac`. Note that it overrides
-  `options.bundleIdPrefix`, so changing the prefix alone leaves you building with the
-  placeholder — change both.
+- **Building your own fork or a distributable of your own?** Change the bundle
+  identifier. The effective one is `PRODUCT_BUNDLE_IDENTIFIER` in `project.yml`, now
+  the project's real identifier (`co.obvios.cheerio.mac`), not a placeholder — note
+  that it overrides `options.bundleIdPrefix`, so changing the prefix alone leaves you
+  building under Obvios's. An ordinary local Debug build doesn't need this: Xcode
+  signs it ad hoc under whatever identifier is there.
 - **Grant microphone access on first record.** Prompted once; if you deny it, macOS won't ask
   again and you'll need System Settings → Privacy & Security.
 - **First launch downloads a speech model.** macOS fetches the `SpeechTranscriber` assets for

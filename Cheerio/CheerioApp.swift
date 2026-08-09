@@ -23,6 +23,23 @@ struct CheerioApp: App {
         // returns immediately.
         LaunchLocationCheck.runIfNeeded()
 
+        // Ahead of everything else that could touch Application Support — the
+        // session, the updater, and especially the store below — because moving a
+        // directory out from under an already-open SQLite file corrupts it, and
+        // reading meeting audio against the wrong container looks like data loss.
+        // See BundleIdentifierMigration's doc comment for the full ordering argument.
+        if BundleIdentifierMigration.migrateIfNeeded() == .failed {
+            // The old container is still there and the new one isn't: keep every
+            // path in this launch resolving against the old identifier rather than
+            // open an empty new container and present that as the library. The next
+            // launch retries the move on its own.
+            AudioStorage.setContainerOverride(AudioStorage.legacyBundleIdentifier)
+        }
+        // Independent of the above: the defaults domain follows Bundle.main's own
+        // identifier automatically, so this always targets the domain the app is
+        // actually running under, whichever container it ended up open against.
+        UserDefaultsMigration.migrateIfNeeded()
+
         let session = CaptureSession()
         _captureSession = State(initialValue: session)
         _updater = State(initialValue: AppUpdater(session: session))

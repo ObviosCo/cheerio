@@ -8,7 +8,7 @@ import OSLog
 final class MicrophoneCapture: @unchecked Sendable {
     private let engine = AVAudioEngine()
     private let onBuffer: @Sendable (sending AVAudioPCMBuffer) -> Void
-    private static let log = Logger(subsystem: "app.cheerio.mac", category: "MicrophoneCapture")
+    private static let log = Logger(subsystem: "co.obvios.cheerio.mac", category: "MicrophoneCapture")
 
     init(onBuffer: @escaping @Sendable (sending AVAudioPCMBuffer) -> Void) {
         self.onBuffer = onBuffer

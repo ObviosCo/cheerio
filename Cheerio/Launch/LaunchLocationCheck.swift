@@ -19,7 +19,7 @@ import OSLog
 /// `runIfNeeded()` is a silent no-op, exactly as issue #56 requires.
 @MainActor
 enum LaunchLocationCheck {
-    private static let log = Logger(subsystem: "app.cheerio.mac", category: "Launch")
+    private static let log = Logger(subsystem: "co.obvios.cheerio.mac", category: "Launch")
 
     /// May terminate the process — via `exit(0)`, not `NSApp.terminate(_:)`,
     /// because this runs from `CheerioApp.init()`, before there's a running

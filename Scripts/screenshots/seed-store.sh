@@ -24,7 +24,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # CheerioScreenshotTests falls back to this same literal when
 # CHEERIO_SCREENSHOT_HOME isn't set. Change one, change the other.
 HOME_DIR="/tmp/cheerio-screenshots-home"
-BUNDLE_ID="app.cheerio.mac"
+BUNDLE_ID="co.obvios.cheerio.mac"
 
 while [ $# -gt 0 ]; do
     case "$1" in

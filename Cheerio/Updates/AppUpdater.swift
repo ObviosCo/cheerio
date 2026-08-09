@@ -31,7 +31,7 @@ final class AppUpdater {
     /// Retained here because `SPUStandardUpdaterController` holds its delegate weakly.
     @ObservationIgnored private let policy: UpdatePolicy
 
-    @ObservationIgnored private let log = Logger(subsystem: "app.cheerio.mac", category: "Updates")
+    @ObservationIgnored private let log = Logger(subsystem: "co.obvios.cheerio.mac", category: "Updates")
 
     init(session: CaptureSession) {
         policy = UpdatePolicy(session: session)

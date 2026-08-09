@@ -52,7 +52,7 @@ public enum AudioRetention: Int, CaseIterable, Identifiable, Sendable {
 /// Applies the retention policy by deleting expired audio directories and clearing
 /// the corresponding `Meeting.audioDirectory` references.
 public enum AudioRetentionService {
-    private static let log = Logger(subsystem: "app.cheerio.mac", category: "AudioRetention")
+    private static let log = Logger(subsystem: "co.obvios.cheerio.mac", category: "AudioRetention")
 
     /// Call at launch and after each recording finishes.
     /// Returns the number of meetings whose audio was removed.
