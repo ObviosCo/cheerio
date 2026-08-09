@@ -70,4 +70,50 @@ import Testing
         #expect(MarkdownBlock.blocks(in: "").isEmpty)
         #expect(MarkdownBlock.blocks(in: "\n\n   \n").isEmpty)
     }
+
+    /// `MeetingDetailView` picks the rendered-vs-empty-state branch for rough notes
+    /// by asking `blocks(in:)` directly rather than checking `roughNotes.isEmpty` —
+    /// a whitespace-only note is non-empty as a string but must still parse to
+    /// nothing, or that check and this parser disagree about what "blank" means.
+    /// Locked in under `preservingLineBreaksInParagraphs: true` specifically,
+    /// since that's the exact call the view makes.
+    @Test func whitespaceOnlyNotesProduceNoBlocksEvenPreservingLineBreaks() {
+        #expect(MarkdownBlock.blocks(in: "   ", preservingLineBreaksInParagraphs: true).isEmpty)
+        #expect(MarkdownBlock.blocks(in: "\n\n   \n", preservingLineBreaksInParagraphs: true).isEmpty)
+    }
+
+    /// Rough notes typed as one thought per line, no blank line between them — the
+    /// shape `SeedDemoStore`'s demo data uses. Default joining would run all three
+    /// into one sentence; #108 is why `preservingLineBreaksInParagraphs` exists.
+    @Test func roughNotesKeepEachLineSeparateWhenPreserved() {
+        let notes = """
+            importer still 4x slower on the big fixture
+            19th is fixed — WWDC week after, nobody around
+            ask dana re: northgate timeline
+            """
+        #expect(
+            MarkdownBlock.blocks(in: notes, preservingLineBreaksInParagraphs: true) == [
+                .paragraph(
+                    "importer still 4x slower on the big fixture\n19th is fixed — WWDC week after, nobody around\nask dana re: northgate timeline"
+                )
+            ])
+        // Same input, default behavior: unchanged from before this parameter existed.
+        #expect(
+            MarkdownBlock.blocks(in: notes) == [
+                .paragraph(
+                    "importer still 4x slower on the big fixture 19th is fixed — WWDC week after, nobody around ask dana re: northgate timeline"
+                )
+            ])
+    }
+
+    /// The flag only changes paragraph joining — headings and list items, which
+    /// already end a paragraph on their own line, are unaffected.
+    @Test func preservingLineBreaksStillRecognizesHeadingsAndLists() {
+        #expect(
+            MarkdownBlock.blocks(in: "## Heading\n- item\nplain line", preservingLineBreaksInParagraphs: true) == [
+                .heading(level: 2, text: "Heading"),
+                .listItem(marker: "•", text: "item"),
+                .paragraph("plain line"),
+            ])
+    }
 }

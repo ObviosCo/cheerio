@@ -39,6 +39,13 @@ struct MeetingDetailView: View {
     /// pencil button next to the title instead of a right click.
     @State private var renamingMeeting: Meeting?
     @State private var renameText = ""
+    /// Rough notes render as Markdown once a meeting has ended (#108), with this as
+    /// the toggle back to the plain editor. Defaults to the rendered view — "write
+    /// it, see it rendered" only reads as delivered if rendered is what greets you
+    /// coming back to a meeting, not another editor. Reset to `false` alongside
+    /// ``isTranscriptExpanded`` below, for the same reason: this view is reused,
+    /// not recreated, across a sidebar selection change.
+    @State private var isEditingRoughNotes = false
 
     private var sortedSegments: [TranscriptSegment] {
         meeting.segments.sorted { $0.startTime < $1.startTime }
@@ -100,6 +107,7 @@ struct MeetingDetailView: View {
             // selection change, so the state has to be put back to collapsed here
             // rather than trusting the property initializer to have covered it.
             isTranscriptExpanded = ScreenshotMode.expandsTranscript
+            isEditingRoughNotes = false
             meeting.resolveSpeakerSlots(ownerNames: SpeakerLabeling.ownerNames(context: context))
             try? context.save()
         }
@@ -260,6 +268,17 @@ struct MeetingDetailView: View {
     /// moment recording stops. Binding to `session.roughNotes` instead, exactly the
     /// way `RecordingView` already does, means both views are windows onto the same
     /// value rather than two separate ones racing to land last.
+    ///
+    /// Markdown rendering (#108) is an Edit toggle, not live-as-you-type. While
+    /// recording, this is unconditionally the plain `TextEditor` below — typing
+    /// latency during a meeting is what `RecordingView`'s scratchpad protects, and
+    /// re-parsing Markdown on every keystroke would be at odds with that for a
+    /// field this view doesn't even own (`session.roughNotes` does; see above).
+    /// Once the meeting has ended, the default view is ``MarkdownNotesView`` —
+    /// the same block renderer the enhanced notes above already use, so headings
+    /// and lists render here too, not just the bold/italic `Text(markdown:)` gets
+    /// for free — and "Edit" swaps to the same plain editor a live meeting gets,
+    /// with "Done" swapping back.
     private var roughNotes: some View {
         @Bindable var session = session
         let isLiveMeeting = session.meeting == meeting
@@ -270,17 +289,48 @@ struct MeetingDetailView: View {
         // read-only one), so the plain write is picked up the same way any other
         // field-level edit in this view is.
         let storedRoughNotes = Binding(get: { meeting.roughNotes }, set: { meeting.roughNotes = $0 })
+        let isEditing = isLiveMeeting || isEditingRoughNotes
 
         return VStack(alignment: .leading, spacing: Theme.Space.x1) {
-            Text("Rough notes")
-                .font(.headline)
-            TextEditor(text: isLiveMeeting ? $session.roughNotes : storedRoughNotes)
-                .font(.body)
-                .frame(minHeight: 80)
-                .scrollContentBackground(.hidden)
-                .padding(Theme.Space.x1)
-                .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: Theme.Radius.md))
-                .accessibilityLabel("Rough notes")
+            HStack {
+                Text("Rough notes")
+                    .font(.headline)
+                Spacer()
+                // Nothing to toggle while recording — see the doc comment above.
+                if !isLiveMeeting {
+                    Button(isEditingRoughNotes ? "Done" : "Edit") {
+                        isEditingRoughNotes.toggle()
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+                }
+            }
+            if isEditing {
+                TextEditor(text: isLiveMeeting ? $session.roughNotes : storedRoughNotes)
+                    .font(.body)
+                    .frame(minHeight: 80)
+                    .scrollContentBackground(.hidden)
+                    .padding(Theme.Space.x1)
+                    .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: Theme.Radius.md))
+                    .accessibilityLabel("Rough notes")
+            } else if !MarkdownBlock.blocks(in: meeting.roughNotes, preservingLineBreaksInParagraphs: true).isEmpty {
+                // Checking `blocks(in:)` itself, not `meeting.roughNotes.isEmpty` —
+                // whitespace-only notes (a stray space, a blank line left over from
+                // an edit) are non-empty as a string but parse to zero blocks, and
+                // asking the parser directly is what keeps this in agreement with
+                // what it's about to render instead of guessing at "blank" with a
+                // second, separately-maintained trim check.
+                //
+                // `preservesLineBreaksInParagraphs: true` — see
+                // ``MarkdownBlock/blocks(in:preservingLineBreaksInParagraphs:)``.
+                // A rough note is typed as one line per thought with no blank line
+                // between them (see the demo seed data), unlike the summarizer's
+                // prose above, which wraps a sentence across lines on purpose.
+                MarkdownNotesView(markdown: meeting.roughNotes, preservesLineBreaksInParagraphs: true)
+            } else {
+                Text("No rough notes for this meeting yet.")
+                    .foregroundStyle(.secondary)
+            }
             // Only true once the meeting has actually ended and been enhanced —
             // while it's still recording, nothing above has run yet to be stale.
             if !isLiveMeeting {

@@ -1,7 +1,8 @@
 import CheerioKit
 import SwiftUI
 
-/// Renders the Markdown ``SummarizationEngine`` produces.
+/// Renders Markdown — the notes ``SummarizationEngine`` produces, and (#108) the
+/// rough notes typed by hand.
 ///
 /// `Text(LocalizedStringKey(markdown))` looks like it handles this, but it applies
 /// only inline markup — headings and bullets show up as literal "## " and "- ",
@@ -9,10 +10,23 @@ import SwiftUI
 /// ``MarkdownBlock`` and only inline markup is left to `Text`.
 struct MarkdownNotesView: View {
     let markdown: String
+    /// See ``MarkdownBlock/blocks(in:preservingLineBreaksInParagraphs:)`` — pass
+    /// `true` for rough notes, whose lines are separate thoughts with no blank
+    /// line between them. The enhanced-notes call site above leaves this `false`,
+    /// since the summarizer's prose wraps a sentence across lines on purpose.
+    var preservesLineBreaksInParagraphs = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(MarkdownBlock.blocks(in: markdown).enumerated()), id: \.offset) { _, block in
+            ForEach(
+                Array(
+                    MarkdownBlock.blocks(
+                        in: markdown,
+                        preservingLineBreaksInParagraphs: preservesLineBreaksInParagraphs
+                    ).enumerated()
+                ),
+                id: \.offset
+            ) { _, block in
                 view(for: block)
             }
         }
