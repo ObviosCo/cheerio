@@ -213,6 +213,16 @@ struct RecordingView: View {
                 .padding(.horizontal, 12)
                 .padding(.bottom, 12)
             }
+            // `RecordingView` is recreated, not just re-shown, every time
+            // `CheerioApp`'s detail branch swaps back to it from a selected
+            // meeting (`if/else` between two different view types drops the old
+            // one's state) — with no scroll history to restore, a fresh scroll
+            // view otherwise opens at its content's top, on the oldest lines,
+            // which is the opposite of "pinned as promised" for a meeting already
+            // well underway. Anchoring the default here means a freshly-created
+            // scroll view's very first layout already sits at the bottom, with
+            // no `onChange` needing to have fired first.
+            .defaultScrollAnchor(.bottom)
             .onScrollGeometryChange(for: Bool.self) { geometry in
                 geometry.contentOffset.y + geometry.containerSize.height
                     >= geometry.contentSize.height - Self.bottomFollowTolerance

@@ -17,14 +17,26 @@ import Testing
         #expect(marked == [0, 5])
     }
 
-    @Test func thePolicyComparesAgainstTheLastMarkNotEveryMinuteEverSeen() {
-        // Out-of-order arrival shouldn't happen for a sorted transcript, but this
-        // pins the actual comparison — "differs from the last mark," not "never
-        // marked before" — rather than leaving it implicit. A drop back to minute 0
-        // after minute 1 has already been marked reads as a new minute again.
+    @Test func aMinuteAlreadyStampedStaysUnstampedEvenIfRevisitedLater() {
+        // Once minute 1 has a stamp, a later entry that falls back into minute 0
+        // doesn't get a second one — the policy tracks every minute stamped so
+        // far, not just the most recent, which is what makes it safe for
+        // out-of-order arrival (see the live-transcript test below).
         let startTimes: [TimeInterval] = [0, 65, 30]
         let marked = TranscriptTimestamp.markedIndices(startTimes: startTimes)
-        #expect(marked == [0, 1, 2])
+        #expect(marked == [0, 1])
+    }
+
+    @Test func outOfOrderArrivalFromTwoChannelsStillStampsEachMinuteOnce() {
+        // The live transcript's mic and system channels finalize on independent
+        // schedules (`CaptureSession.startCapturing`'s two consumer tasks), so a
+        // 61s line can render before a 58s one. This is that interleaving,
+        // reduced to its minute boundaries: minute 0 arrives, minute 1 arrives,
+        // then minute 0 again — the third entry must not get a second minute-0
+        // stamp.
+        let startTimes: [TimeInterval] = [59, 61, 58]
+        let marked = TranscriptTimestamp.markedIndices(startTimes: startTimes)
+        #expect(marked == [0, 1])
     }
 
     @Test func emptyInputMarksNothing() {
