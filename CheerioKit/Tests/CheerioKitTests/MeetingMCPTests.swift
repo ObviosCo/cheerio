@@ -668,6 +668,23 @@ import Testing
         #expect(resolved == currentStore)
     }
 
+    /// The production incident (#126) traced to exactly this: a client invoking the
+    /// helper before the rebuilt app had ever launched, resolving where the store
+    /// *would* live, and — in the version of the helper running that morning —
+    /// leaving a bare directory behind at that path as a side effect of resolving
+    /// it. `AudioStorage.containerURL` is what `MeetingStore.resolveStoreURL` calls
+    /// to find both the current and legacy container, and it is documented to
+    /// "creat[e] nothing along the way" — this is what holds it to that. A random,
+    /// never-before-used identifier stands in for "the app has never run": nothing
+    /// on this machine could already have a container under it, so if resolving
+    /// its path ever brought one into being, this would be the test to catch it.
+    @Test func containerURLResolutionCreatesNothing() throws {
+        let probeIdentifier = "cheerio.test.probe.\(UUID().uuidString)"
+        let resolved = try AudioStorage.containerURL(bundleIdentifier: probeIdentifier)
+
+        #expect(!FileManager.default.fileExists(atPath: resolved.path))
+    }
+
     // MARK: - Client setup snippets
 
     @Test func theSnippetsPointAtTheHelperAndStayValidInAwkwardPaths() throws {

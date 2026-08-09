@@ -40,12 +40,25 @@ struct CheerioApp: App {
         // the fork-changeable one would make this gate true for any fork that
         // followed the README's own instructions.
         if AudioStorage.isRunningAsOfficialBuild() {
-            if BundleIdentifierMigration.migrateIfNeeded() == .failed {
+            switch BundleIdentifierMigration.migrateIfNeeded() {
+            case .failed:
                 // The old container is still there and the new one isn't: keep every
                 // path in this launch resolving against the old identifier rather than
                 // open an empty new container and present that as the library. The next
                 // launch retries the move on its own.
                 AudioStorage.setContainerOverride(AudioStorage.legacyBundleIdentifier)
+            case .storeStrandedInSibling(let directoryName):
+                // The real store never made it back to the new container, but its
+                // location is known — open it exactly there rather than either
+                // creating an empty new container (this shape only arises once `old`
+                // is already gone, so `.freshInstall`'s usual answer would be to
+                // create one) or falling back to `old`, which may not exist at all.
+                // The next launch's own stranded-store recovery gets another chance
+                // to restore the directory itself; this launch only needs to not
+                // lose the data in the meantime.
+                AudioStorage.setContainerOverride(directoryName)
+            case .freshInstall, .migrated, .bothExist:
+                break
             }
             // Independent of the above: the defaults domain follows Bundle.main's own
             // identifier automatically, so this always targets the domain the app is

@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import CheerioKit
@@ -44,5 +45,27 @@ import Testing
         // at runtime for that same build — deliberately the identical string, to
         // reproduce the scenario exactly.
         #expect(!AudioStorage.isRunningAsOfficialBuild(forksChosenIdentifier))
+    }
+
+    /// What `BundleIdentifierMigration.Outcome.storeStrandedInSibling` depends
+    /// on: `setContainerOverride` takes any directory name, not specifically a
+    /// bundle identifier, and everything built on `applicationSupport()` —
+    /// `storeURL()` included — resolves it exactly the same way either way,
+    /// with no shape validation to generalize. `CheerioApp.init` passes a
+    /// `pre-migration-*` sibling's own directory name here when the migration
+    /// reports that outcome; this is what makes doing so actually open the
+    /// real store sitting in that sibling, rather than a container by that
+    /// name that doesn't exist.
+    @Test func containerOverrideResolvesIntoAnArbitraryDirectoryNameNotJustABundleIdentifier() throws {
+        let siblingName = "cheerio.test.pre-migration-\(UUID().uuidString)"
+        AudioStorage.setContainerOverride(siblingName)
+        let store = try AudioStorage.storeURL()
+        defer {
+            try? FileManager.default.removeItem(at: store.deletingLastPathComponent())
+            AudioStorage.setContainerOverride(nil)
+        }
+
+        #expect(store.deletingLastPathComponent().lastPathComponent == siblingName)
+        #expect(store.lastPathComponent == AudioStorage.storeFileName)
     }
 }
