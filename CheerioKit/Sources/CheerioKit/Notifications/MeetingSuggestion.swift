@@ -238,6 +238,17 @@ public struct SuggestionLedger: Equatable, Sendable {
         entries = entries.filter { $0.value > cutoff }
     }
 
+    /// Un-records offers that were cancelled before delivery. Recording happens at
+    /// *scheduling* (there's no delivery callback), so when the app withdraws a
+    /// pending request — toggle flipped off, a recording started, the event moved —
+    /// the ledger entry must go with it, or a still-eligible occurrence stays
+    /// blocked for the full retention window over an offer nobody ever saw.
+    public mutating func remove(_ occurrenceKeys: some Sequence<String>) {
+        for key in occurrenceKeys {
+            entries[key] = nil
+        }
+    }
+
     /// Stored as seconds-since-reference-date rather than `Date`, because a
     /// `UserDefaults` value has to be a property-list type and a bare `Date` in a
     /// dictionary round-trips through `NSKeyedArchiver` in ways worth not depending

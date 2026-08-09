@@ -300,6 +300,11 @@ final class NotificationService {
         if !diff.toRemove.isEmpty {
             center.removePendingNotificationRequests(
                 withIdentifiers: diff.toRemove.map(Self.suggestionRequestID(occurrenceKey:)))
+            // A withdrawn offer was never seen — un-record it, or a still-eligible
+            // occurrence (a meeting moved and moved back, a toggle flipped off and
+            // on) stays blocked for the ledger's full retention window.
+            ledger.remove(diff.toRemove)
+            ledger.save()
         }
 
         return candidates.filter { diff.toAdd.contains($0.occurrenceKey) && !ledger.contains($0.occurrenceKey) }
@@ -374,6 +379,12 @@ final class NotificationService {
         let matching = pending.map(\.identifier).filter { $0.hasPrefix(prefix) }
         guard !matching.isEmpty else { return }
         center.removePendingNotificationRequests(withIdentifiers: matching)
+        // Withdrawn, not delivered — un-record so these occurrences can be offered
+        // again if they become eligible before they start (the identifier is the
+        // category prefix plus the occurrence key, so stripping the prefix recovers
+        // the ledger key).
+        ledger.remove(matching.map { String($0.dropFirst(Self.suggestionRequestPrefix.count)) })
+        ledger.save()
     }
 
     /// The reactive half of the suggestion toggle: `reconcileCalendarSuggestions`

@@ -231,6 +231,17 @@ import Testing
         #expect(ledger.occurrenceKeys == ["recent"])
     }
 
+    @Test func removingWithdrawnOffersFreesThemForRescheduling() {
+        // A cancelled-before-delivery offer must not block its occurrence for the
+        // retention window — un-recording it makes the occurrence eligible again.
+        var ledger = SuggestionLedger()
+        ledger.record("withdrawn", at: now)
+        ledger.record("delivered", at: now)
+        ledger.remove(["withdrawn", "never-recorded"])
+        #expect(!ledger.contains("withdrawn"))
+        #expect(ledger.contains("delivered"))
+    }
+
     @Test func roundTripsThroughUserDefaults() throws {
         let defaults = try #require(UserDefaults(suiteName: "MeetingSuggestionTests.\(UUID().uuidString)"))
         defer { defaults.removeObject(forKey: SuggestionLedger.defaultsKey) }
