@@ -32,7 +32,7 @@
   <section class="section">
     <div class="wrap wrap--narrow stack stack--4">
       <h1 class="page-title">Questions</h1>
-      <p class="lede">The ones worth answering before you install it, including the one that's genuinely awkward.</p>
+      <p class="lede">The ones worth answering before you install it.</p>
     </div>
   </section>
 
@@ -50,13 +50,13 @@
         <h2 class="sub-title">Can my own AI agents read my meetings?</h2>
         <p class="muted">Yes, two ways, both local. Point Settings&nbsp;→ Callback at any command and Cheerio runs it when a meeting finishes processing. The command gets the whole meeting as JSON on stdin and at the path in <code>CHEERIO_EXPORT_PATH</code>, with the meeting's ID, kind and title in the environment. Nothing from the transcript ever lands on the command line.</p>
         <p class="muted">There's also a small MCP server inside the app bundle, so an MCP client (Claude Code, Claude Desktop, Codex, anything that speaks the protocol) can look things up on demand. Five tools, all read-only: list meetings, search them, fetch one in full, fetch just the transcript, fetch the action items. It can't write, delete, start a recording or run a command. Your client launches it over a pipe. No networking path at all. The setup snippets are in Settings&nbsp;→ Agents.</p>
-        <p class="muted">Honestly, neither one is a feature so much as an admission. The file was already sitting on your Mac, and anything that can read a file could always read your meetings.</p>
+        <p class="muted">Anything that can read a file could always read your meetings. We just made it easier.</p>
       </div>
 
       <div class="stack stack--3" id="tension">
         <h2 class="sub-title">Isn't “nothing leaves your machine” at odds with “your agents can read this”?</h2>
-        <p class="muted">Fair question, and here's the seam. Cheerio never sends a transcript anywhere. If the command you name in the callback is an agent running locally, nothing changes hands and the guarantee holds end to end. If it's an agent backed by a cloud model, that agent forwards whatever you handed it. Usually that's the whole reason you pointed it there. But it's your decision, made in a text field, and it's the exact moment the local guarantee stops applying.</p>
-        <p class="muted">Cheerio's promise is about what Cheerio does. It doesn't quietly extend to a choice you make in Settings, and it would be dishonest to write it like it did.</p>
+        <p class="muted">Cheerio never sends a transcript anywhere. If the callback points at an agent running on your Mac, nothing leaves the machine. If it points at an agent backed by a cloud model, that agent uploads whatever you hand it. That's usually why you pointed it there, but it's your choice, not Cheerio's.</p>
+        <p class="muted">The promise covers what Cheerio does. What you wire it to is up to you.</p>
       </div>
 
     </div>
@@ -69,13 +69,13 @@
       <div class="stack stack--3" id="requirements">
         <h2 class="sub-title">What do I need to run it?</h2>
         <p class="muted">macOS 26 (Tahoe) or later, on an Apple Silicon Mac. There's no Intel build and there won't be one (the speaker model runs on the Neural Engine). Cheerio asks for microphone and system-audio recording permission; calendar access is optional; it powers meeting titles and the record-this-meeting nudge, and denying it costs you only those. Summaries and action items come from Apple's on-device language model, so you need Apple Intelligence-capable hardware with it switched on. Without it you still get the full transcript, just no write-up. On disk, the thing that grows is the audio, and that's what the retention setting bounds (seven days of it by default). Transcripts, notes and summaries are small text and stick around (everything lives in one folder you can delete or back up, covered under leaving below).</p>
-        <p class="muted">The version requirement isn't us being cautious. Transcription and summarizing use frameworks that arrived in macOS 26, and process taps on system audio are a recent Core Audio facility. On an older macOS there's nothing to build with.</p>
+        <p class="muted">Transcription and summarizing use frameworks that arrived in macOS 26, and the system-audio tap is a recent Core Audio facility. There's nothing to build on an older macOS.</p>
       </div>
 
       <div class="stack stack--3" id="apps">
         <h2 class="sub-title">Does it work with Zoom, Meet, Teams, or a meeting in a room?</h2>
-        <p class="muted">The capture side doesn't care, because it doesn't integrate with any of them. Cheerio records your mic and everything coming out of your Mac as two separate streams. Anything that makes sound gets captured, and nothing needs to support Cheerio first (including a phone on speaker, or a conversation across a desk with no software involved at all).</p>
-        <p class="muted">The honest caveat: in-person recording is verified end to end, and a live video call hasn't been through the same check yet. It captures the audio. The full path just hasn't been confirmed on a real Zoom or Meet call.</p>
+        <p class="muted">Yes. Cheerio records your mic and everything coming out of your Mac as two separate streams, so anything that makes sound gets captured. Nothing has to support Cheerio first. A phone on speaker or a conversation across a desk works the same way.</p>
+        <p class="muted">One caveat: in-person recording is verified end to end. A live Zoom or Meet call hasn't been through the same check yet.</p>
       </div>
 
       <div class="stack stack--3" id="speakers">
@@ -86,7 +86,7 @@
 
       <div class="stack stack--3" id="app-store">
         <h2 class="sub-title">Why isn't it on the Mac App Store?</h2>
-        <p class="muted">Because it can't be. Capturing system audio needs the App Sandbox turned off, and the App Store requires it on. That isn't a preference or a shortcut. A sandboxed build creates the audio tap successfully at every step, reports no error, prompts for nothing, and then records pure digital silence. We measured it on identical code: the sandboxed build peaked at 0.0, the unsandboxed one at −1.8&nbsp;dBFS.</p>
+        <p class="muted">Because it can't be. Capturing system audio needs the App Sandbox turned off, and the App Store requires it on. A sandboxed build creates the audio tap, reports no error, prompts for nothing, and records pure digital silence. We measured identical code both ways: 0.0 sandboxed, −1.8&nbsp;dBFS unsandboxed.</p>
         <p class="muted">It comes from <a href="download.html">this site</a> instead. Builds are Developer&nbsp;ID-signed and notarized by Apple, so the first open is macOS's ordinary downloaded-app confirmation, not a scary block or a right-click ceremony. After that the app updates itself.</p>
       </div>
     </div>
@@ -98,14 +98,14 @@
 
       <div class="stack stack--3" id="export">
         <h2 class="sub-title">Where can I send a finished meeting?</h2>
-        <p class="muted">Three routes, all yours to control. Export any meeting as Markdown and put the file wherever you keep things. Point the callback at a command and Cheerio hands the meeting to it as JSON the moment it's ready. Or let an MCP client read the library directly, on demand.</p>
-        <p class="muted">What doesn't exist yet: automatic export into a folder (an Obsidian vault, say) or any send-to-service integration. The callback is the general form of both, and it's a command line, so a two-line script gets you the folder version today.</p>
+        <p class="muted">Three ways. Export any meeting as Markdown and put the file wherever you keep things. Point the callback at a command and Cheerio hands it the meeting as JSON the moment it's ready. Or let an MCP client read the library directly.</p>
+        <p class="muted">What doesn't exist yet: automatic export into a folder (an Obsidian vault, say) or send-to-service integrations. The callback covers both today. It's a command line, so a two-line script gets you the folder version.</p>
       </div>
 
       <div class="stack stack--3" id="leaving">
         <h2 class="sub-title">What happens if I stop using it?</h2>
-        <p class="muted">You drag the app to the trash. No account to close, no subscription to cancel, nobody to email about deleting a copy on a server, because Cheerio never made one. (The one exception is the one you configured: anything a callback handed to a cloud-backed agent lives by that service's rules, not Cheerio's. Same seam as the agents question above.) Your meetings live in one folder, <code>~/Library/Application Support/app.cheerio.mac</code>. Delete it and they're gone. Back it up and they're safe. Take anything you want out as Markdown first; it's plain text that every other tool can already read.</p>
-        <p class="muted">That's the whole exit. It's also why there's no free trial, no onboarding funnel and no reactivation email. None of the machinery that would make leaving hard ever got built.</p>
+        <p class="muted">Drag the app to the trash. No account to close, no subscription to cancel, no server copy to chase down, because Cheerio never made one. (The exception is the one you configured: anything a callback handed to a cloud agent lives by that service's rules.) Your meetings are in <code>~/Library/Application Support/app.cheerio.mac</code>. Delete it and they're gone. Back it up and they're safe. Export anything you want as Markdown first.</p>
+        <p class="muted">That's it. There's no free trial, no onboarding funnel, no reactivation email, because none of that was ever built.</p>
       </div>
     </div>
   </section>
@@ -116,14 +116,14 @@
 
       <div class="stack stack--3" id="free">
         <h2 class="sub-title">Why is it free? What's the catch?</h2>
-        <p class="muted">Cheerio is built by <a href="https://obvios.co">Obvios</a>, a consultancy that works alongside companies learning to get real use out of AI. Building the small missing tools is part of that work, and Cheerio is one of them. We made it because the alternative was a subscription and an upload. It isn't a product line, it isn't funded by users, and it doesn't need to earn anything to keep existing.</p>
-        <p class="muted">The catch, such as it is, is the honest one: it's a single-user Mac app maintained by a small team, not a company with a support department. In exchange there's no account, no telemetry, no analytics, no crash reporting, and nothing to sell (including you, since your meetings never reach anybody who could).</p>
-        <p class="muted">If it's ever monetized, the constraint we've committed to is that monetization can't add a hoop. No sign-in for a paid tier, no sync that becomes the default path, no team feature that needs an account, no telemetry you can't switch off, no format only this app can read.</p>
+        <p class="muted">Cheerio is built by <a href="https://obvios.co">Obvios</a>, a consultancy that helps companies get real use out of AI. We built it because the alternative was a subscription and an upload. It isn't a product line, it isn't funded by users, and it doesn't need to earn anything to keep existing.</p>
+        <p class="muted">The catch: it's a single-user Mac app maintained by a small team, not a company with a support department. In exchange there's no account, no telemetry, no analytics, no crash reporting, and nothing to sell.</p>
+        <p class="muted">If it's ever monetized, the rule is that monetization can't add a hoop. No sign-in for a paid tier, no sync that becomes the default path, no team feature that needs an account, no telemetry you can't switch off, no format only this app can read.</p>
       </div>
 
       <div class="stack stack--3" id="name">
         <h2 class="sub-title">Why “Cheerio”?</h2>
-        <p class="muted">It's a breakfast joke, a goodbye, and a ring, in that order. <a href="./#the-name">The full confession is at the bottom of the homepage</a>.</p>
+        <p class="muted">It's a joke about breakfast. <a href="./#the-name">The longer story is at the bottom of the homepage</a>.</p>
       </div>
 
       <div class="stack stack--3" id="contributing">
@@ -137,7 +137,7 @@
     <div class="wrap wrap--narrow">
       <div class="card stack stack--4">
         <h2 class="sub-title">Still deciding?</h2>
-        <p class="muted">It's free, it's about a hundred megabytes, and it takes a walkthrough and a thirty-second voice sample to be useful. The fastest way to answer the rest of your questions is to have it running before your next meeting.</p>
+        <p class="muted">It's free, it's about a hundred megabytes, and setup is a walkthrough and a thirty-second voice sample. Try it on your next meeting.</p>
         <p class="button-row"><a class="button button--primary" href="download.html">Get Cheerio</a><a class="button button--secondary" href="./">Read the overview</a></p>
       </div>
     </div>
