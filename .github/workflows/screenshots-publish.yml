@@ -60,15 +60,20 @@ jobs:
     timeout-minutes: 15
     env:
       MARKER: "<!-- screenshot-previews -->"
-      # The artifact as downloaded — untrusted — and the validated copy the publish
-      # scripts are pointed at.
-      DOWNLOADED: ${{ runner.temp }}/downloaded
-      STAGING: ${{ runner.temp }}/screens
     steps:
       # No `ref:`, on purpose: for `workflow_run`, GITHUB_SHA is the tip of the default
       # branch, so this is the reviewed copy of the scripts below. Checking out the
       # pull request's head here would hand it the write token and undo the split.
       - uses: actions/checkout@v7
+
+      # The artifact as downloaded — untrusted — and the validated copy the publish
+      # scripts are pointed at. Set at runtime because `runner.*` isn't a valid
+      # context in job-level `env:` — GitHub rejects the whole workflow file for it
+      # (every push then shows a failed run named by this file's path, with no jobs).
+      - name: Working directories
+        run: |
+          echo "DOWNLOADED=$RUNNER_TEMP/downloaded" >> "$GITHUB_ENV"
+          echo "STAGING=$RUNNER_TEMP/screens" >> "$GITHUB_ENV"
 
       - name: Download the captures
         id: download
