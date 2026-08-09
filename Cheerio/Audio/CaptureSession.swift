@@ -508,15 +508,22 @@ final class CaptureSession {
             if meeting.shouldAutoTitle {
                 await autoTitle(meeting: meeting, context: context)
             }
-            // Re-synced here, not just once above and once at the very end: the
-            // callback below builds its `MeetingExport` from `meeting` as saved by
-            // the line right after this one, and diarization and enhancement — both
-            // awaits — sit between the first copy and this point. Skipping this one
-            // would let the callback ship a `roughNotes` that's stale relative to
-            // the `enhancedNotes` next to it in the same payload, which read the
-            // live property directly a few lines up. The copy at the end of this
-            // function is still needed too, for anything typed after this point but
-            // before `meeting` goes nil.
+            // Re-synced here, not just once above: the callback below builds its
+            // `MeetingExport` from `meeting` as saved by the line right after this
+            // one, and diarization and enhancement — both awaits — sit between the
+            // first copy and this point. Skipping this one would let the callback
+            // ship a `roughNotes` that's stale relative to the `enhancedNotes` next
+            // to it in the same payload, which read the live property directly a
+            // few lines up.
+            //
+            // This is the *last* copy that's needed, not just the second: from here
+            // to `meeting = nil` below, nothing in this function suspends —
+            // `fireTranscriptReadyCallback`, `notifyNotesReady`, and
+            // `AudioRetentionService.purge` are all synchronous, and `CaptureSession`
+            // is `@MainActor` — so nothing else can run a keystroke's binding setter
+            // in between. A copy repeated at the end would be dead code today. If a
+            // future `await` lands anywhere in that stretch, *that's* what needs a
+            // copy after it, not a blind one at the bottom.
             meeting.roughNotes = roughNotes
             try? context.save()
 
@@ -558,15 +565,6 @@ final class CaptureSession {
         micCapture = nil
         systemTap = nil
         recorder = nil
-        // A second copy, not a redundant one: `MeetingDetailView` binds its editor
-        // straight to `roughNotes` here for as long as `meeting == self.meeting`
-        // (see that view), which is true for this whole function, not just up to
-        // the copy above. Diarization and enhancement between here and there take
-        // real wall-clock time, so a keystroke landing in that window would
-        // otherwise update this property and then be silently dropped the moment
-        // `meeting` goes nil below and the view's binding switches back to
-        // whatever the model held as of the *first* copy.
-        meeting?.roughNotes = roughNotes
         lastFinishedMeeting = meeting
         lastFinishedMeetingOccurrenceStart = calendarEventOccurrenceStart
         meeting = nil
