@@ -218,6 +218,14 @@ struct MeetingListView: View {
                 renameText = meeting.title
                 renamingMeeting = meeting
             }
+            // See `Meeting.toggleKind()` for what conversion does and deliberately
+            // doesn't do (issue #107). Guarded the same way as "Delete" below —
+            // this mutates the same model a live recording or an in-flight relabel
+            // pass could be touching underneath it.
+            Button(convertLabel(for: meeting)) {
+                convertKind(of: meeting)
+            }
+            .disabled(!session.canDelete(meeting))
             // Disabled rather than hidden: a meeting that's mid-recording is still
             // the one you're most likely to right-click (it's at the top of the
             // list), and a missing item there reads as a bug rather than a rule.
@@ -250,10 +258,22 @@ struct MeetingListView: View {
             // Ad-hoc goes first: it's the common case, and burying it under a
             // calendar match is how a one-off got filed as "Connor - Chat coverage".
             Button {
-                startRecording(event: nil)
+                startRecording(event: nil, kind: .meeting)
             } label: {
                 Label("Start recording", systemImage: "record.circle")
                     .font(.body.weight(.medium))
+            }
+
+            // A separate button, not a mode toggle on the one above: this mirrors
+            // the menu bar's "Give Direction…" (issue #107 — directive capture
+            // previously existed only there), which is itself a second button
+            // rather than a picker for the same reason. Never offered against a
+            // calendar event, same as the menu bar: a directive is you talking to
+            // your agent, not a stand-in for whatever's on the calendar.
+            Button {
+                startRecording(event: nil, kind: .directive)
+            } label: {
+                Label("Give Direction…", systemImage: "text.bubble")
             }
 
             // A live calendar event is an offer, never a default.
@@ -343,6 +363,19 @@ struct MeetingListView: View {
         try? context.save()
     }
 
+    /// What the "Convert to…" context-menu item offers — the kind the meeting isn't,
+    /// since converting is always a toggle.
+    private func convertLabel(for meeting: Meeting) -> String {
+        meeting.kind == .directive ? "Convert to Meeting" : "Convert to Directive"
+    }
+
+    /// Commits the "Convert to…" context-menu flow. No confirmation, unlike Delete:
+    /// unlike a delete, this is trivially reversible by choosing the same item again.
+    private func convertKind(of meeting: Meeting) {
+        meeting.toggleKind()
+        try? context.save()
+    }
+
     /// Commits the "Delete" context-menu flow, after confirmation. Clears
     /// `selection` first when the deleted meeting is the one on screen — deleting
     /// out from under the detail view would otherwise leave it holding a model
@@ -411,7 +444,9 @@ struct MeetingListView: View {
         }
     }
 
-    private func startRecording(event: CalendarMeeting?) {
+    /// `kind` defaults to `.meeting` so the calendar-event call site (never offered
+    /// for a directive — see the button above) doesn't need to name it explicitly.
+    private func startRecording(event: CalendarMeeting?, kind: MeetingKind = .meeting) {
         Task {
             guard await MicrophoneCapture.permission() == .granted else {
                 // Re-asking can't help once it's been denied, so offer the only
@@ -424,9 +459,13 @@ struct MeetingListView: View {
             selection = nil
             do {
                 try await session.start(
-                    title: event?.title ?? "Meeting \(Date.now.formatted(date: .abbreviated, time: .shortened))",
+                    // Same placeholder wording as the menu bar's "Give Direction…" —
+                    // shared so the two entry points can't drift onto different text
+                    // for the same auto-generated title.
+                    title: event?.title ?? MenuBarView.autoTitle(for: kind),
                     calendarEventID: event?.id,
                     calendarEventOccurrenceStart: event?.startDate,
+                    kind: kind,
                     context: context
                 )
             } catch {

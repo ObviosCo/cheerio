@@ -102,4 +102,19 @@ import Testing
         let export = meeting.export(ownerNames: ["Jackson"])
         #expect(export.kind == .directive)
     }
+
+    @Test func convertedKindSurvivesExport() {
+        // Issue #107's "Convert to Directive"/"Convert to Meeting" action, read back
+        // through the same export the transcript-ready callback and MCP server both
+        // ship — `MeetingExport.kind` and `Meeting.toggleKind()` read and write the
+        // same `kindRaw`, so this pins that they can't drift apart.
+        let meeting = Self.makeMeeting()
+        #expect(meeting.kind == .meeting)
+
+        meeting.toggleKind()
+        #expect(meeting.export(ownerNames: ["Jackson"]).kind == .directive)
+
+        meeting.toggleKind()
+        #expect(meeting.export(ownerNames: ["Jackson"]).kind == .meeting)
+    }
 }

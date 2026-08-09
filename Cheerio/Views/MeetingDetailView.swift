@@ -99,6 +99,21 @@ struct MeetingDetailView: View {
                 }
             }
             ToolbarItem {
+                // Same action, and the same `canDelete` guard, as the library
+                // list's context menu item — see `Meeting.toggleKind()` for what
+                // it does and deliberately doesn't do (issue #107).
+                Button {
+                    meeting.toggleKind()
+                    save()
+                } label: {
+                    Label(
+                        meeting.kind == .directive ? "Convert to Meeting" : "Convert to Directive",
+                        systemImage: "arrow.triangle.2.circlepath"
+                    )
+                }
+                .disabled(!session.canDelete(meeting))
+            }
+            ToolbarItem {
                 // Reachable even for the meeting currently recording (selecting it
                 // mid-call replaces the live view with this one) — `.disabled`
                 // rather than omitted, matching the library list's context menu, so

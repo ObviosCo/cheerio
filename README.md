@@ -36,7 +36,9 @@ exactly what makes it a good prompt. Cheerio's job is to make that loop first-cl
 transcript locally, and let the agents already on your machine pick it up instead of you
 copying and pasting it in. The agent-facing surfaces for this all shipped in v26.8.9: a
 bundled MCP server (Settings → Agents), a transcript-ready callback (Settings → Callback),
-and a directive-capture mode ("Give Direction…" in the menu bar).
+and a directive-capture mode ("Give Direction…" in the menu bar, and in the main window's
+recording controls — a recording can also be relabeled as one or the other afterward, from
+its context menu or detail view).
 
 ## What it does
 
@@ -65,7 +67,8 @@ and a directive-capture mode ("Give Direction…" in the menu bar).
   agent might act on. Long meetings are handled map-reduce style to fit the model's ~4k-token context
   window.
 - **Ready for the agents already on your machine.** A bundled MCP server, a transcript-ready
-  callback, and a directive-capture mode from the menu bar turn a finished meeting into
+  callback, and a directive-capture mode — from the menu bar or the main window, and
+  convertible after the fact if you forgot to say so going in — turn a finished meeting into
   something an agent can act on without you copying and pasting — see
   [Use with Claude Desktop, Claude Code, or any MCP client](#use-with-claude-desktop-claude-code-or-any-mcp-client)
   below.

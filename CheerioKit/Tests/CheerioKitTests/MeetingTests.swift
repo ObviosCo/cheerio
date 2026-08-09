@@ -72,6 +72,44 @@ import Testing
         #expect(meeting.kind == .meeting)
     }
 
+    @Test func toggleKindFlipsMeetingToDirective() {
+        let meeting = Meeting(title: "Standup")
+        meeting.toggleKind()
+        #expect(meeting.kind == .directive)
+        #expect(meeting.kindRaw == "directive")
+    }
+
+    @Test func toggleKindFlipsDirectiveBackToMeeting() {
+        let meeting = Meeting(title: "Talking to my agent")
+        meeting.kind = .directive
+        meeting.toggleKind()
+        #expect(meeting.kind == .meeting)
+    }
+
+    @Test func toggleKindIsItsOwnInverse() {
+        let meeting = Meeting(title: "Standup")
+        meeting.toggleKind()
+        meeting.toggleKind()
+        #expect(meeting.kind == .meeting)
+    }
+
+    @Test func toggleKindTouchesNothingElse() {
+        // Conversion is mechanical (issue #107) — it must not clear notes, action
+        // items, or the transcript, even though the "other kind's prompt" concern
+        // the PR discusses is about future divergence, not anything read back here.
+        let meeting = Meeting(title: "Standup")
+        meeting.enhancedNotes = "## Summary\nAll good."
+        meeting.actionItems = [ActionItem(text: "Send the recap", isOwner: true, disposition: .actionable)]
+        let segment = TranscriptSegment(channel: .me, text: "Morning", startTime: 0, endTime: 1)
+        meeting.segments = [segment]
+
+        meeting.toggleKind()
+
+        #expect(meeting.enhancedNotes == "## Summary\nAll good.")
+        #expect(meeting.actionItems.count == 1)
+        #expect(meeting.segments.count == 1)
+    }
+
     @Test func stableIDBackfillsDistinctValuesOnAccess() {
         // Simulates two meetings that already existed in the store when `uuid` was
         // added: both start nil, as a lightweight-migrated row would.

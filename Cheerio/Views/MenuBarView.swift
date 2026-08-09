@@ -105,8 +105,10 @@ struct MenuBarView: View {
 
     /// A timestamped placeholder title, in the same "abbreviated date, short time"
     /// format regardless of kind — the difference is the label people scan for, not
-    /// the clock format.
-    private static func autoTitle(for kind: MeetingKind) -> String {
+    /// the clock format. Not `private`: `MeetingListView`'s matching start controls
+    /// (issue #107) use this too, so the two entry points can't drift onto different
+    /// wording for the same placeholder.
+    static func autoTitle(for kind: MeetingKind) -> String {
         let timestamp = Date.now.formatted(date: .abbreviated, time: .shortened)
         switch kind {
         case .meeting: return "Meeting \(timestamp)"
