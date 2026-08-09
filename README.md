@@ -316,7 +316,8 @@ macros.
   your locale once, per locale, when a recording starts.
 - **Enroll your voice in Settings.** Diarization returns names only for voices it has heard
   before. Samples need **at least 30 seconds** — shorter ones measurably cause the model to
-  split one person across two speaker slots.
+  split one person across two speaker slots. "Mic check" arms a live level meter before you
+  commit to a take, and saving a sample confirms it by name instead of quietly resetting the form.
 - **On a video call, switch to Video Call mode** (the picker next to Start Recording) so the
   mic runs acoustic echo cancellation. Headphones are still the safer choice until that's
   verified against a live call — see the echo issue below.

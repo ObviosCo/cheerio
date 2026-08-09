@@ -132,6 +132,24 @@ final class ScreenshotCaptureTests: XCTestCase {
         try captureSettings(tab: 2, titled: "Participants", named: "settings-participants")
     }
 
+    /// A dedicated capture rather than switching `settings-participants` itself
+    /// into this state: that one is what the site publishes, and the empty
+    /// "Add a voice" form is the more useful thing to show there.
+    ///
+    /// Nothing else reaches this: `VoiceEnrollmentRecorder`'s post-save
+    /// acknowledgment (issue #128) only exists after 30 seconds of real audio
+    /// and a write to the store, and "Permissions and recordings" above is
+    /// explicit that this harness presses no button that starts one —
+    /// `ScreenshotMode.showsVoiceEnrollmentConfirmation` is the only way in.
+    func testSettingsParticipantsConfirmed() throws {
+        try captureSettings(
+            tab: 2,
+            titled: "Participants",
+            named: "settings-participants-confirmed",
+            extraArguments: ["-screenshotVoiceEnrollmentConfirmed", "YES"]
+        )
+    }
+
     func testSettingsUpdates() throws {
         try captureSettings(tab: 3, titled: "Updates", named: "settings-updates")
     }

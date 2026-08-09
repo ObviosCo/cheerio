@@ -16,6 +16,7 @@ Cheerio/
       SpeakerTimelineBar.swift     who spoke when, across the whole meeting
       RecordingIndicator.swift     the three-signal rule, enforced
       StatusLabel.swift            semantic state + symbol + label
+      LevelMeterView.swift         live mic-level bar, pre-recording and during
   Resources/
     Assets.xcassets/               36 Color Sets, light + dark
 ```
