@@ -48,7 +48,7 @@ System ── CATap → aggregate device → IOProc ──► TranscriptionEngin
 
 > Gotcha: AVAudioEngine cannot be pointed at a tap-backed aggregate device. Use a raw IOProc and convert `AudioBufferList` → `AVAudioPCMBuffer` manually.
 
-**Mic:** plain `AVAudioEngine` input tap. Portable to iOS as-is.
+**Mic:** `AVAudioEngine` input tap, optionally with voice processing (`setVoiceProcessingEnabled(true)`) turned on first for acoustic echo cancellation — `RecordingMode.videoCall` opts in, `RecordingMode.inPerson` leaves it off, since AEC targets a far-end signal that doesn't exist in a room with no speakers playing anything back. It has to be flipped before the engine starts, and it can change what `inputNode.outputFormat(forBus:)` reports, so the tap's format is read after that call rather than assumed — everything downstream already derives its format from the buffer it's handed, not a fixed expectation. Portable to iOS as-is.
 
 Each stream is converted (`AVAudioConverter`) to `SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith:)` before feeding the analyzer. Raw audio is also written to disk (CAF) so transcription failures aren't fatal; retention is a setting.
 
