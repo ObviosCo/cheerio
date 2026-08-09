@@ -100,6 +100,53 @@
        it doesn't get an entry.
      ========================================================================== -->
 
+    <article class="release" id="v26-8-12">
+      <div class="stack stack--4">
+        <header class="stack stack--2">
+          <h2 class="release-version"><a href="#v26-8-12">26.8.12</a></h2>
+          <p class="release-meta">
+            <time datetime="2026-08-09">9 August 2026</time>
+            <span aria-hidden="true">·</span>
+            <a href="https://github.com/ObviosCo/cheerio/releases/tag/v26.8.12">Download</a>
+            <span aria-hidden="true">·</span>
+            <a href="https://github.com/ObviosCo/cheerio/compare/v26.8.11...v26.8.12">Changes since 26.8.11</a>
+          </p>
+        </header>
+        <p class="release-summary">Meetings are visible to your agents from the moment recording starts, and speaker names you confirm stay confirmed.</p>
+        <section class="stack stack--2">
+          <h3>Added</h3>
+          <ul>
+            <li>A recording shows up in the library and to MCP readers the moment it starts, marked in progress, with finalized lines landing within a couple of seconds. Agents no longer wait for a meeting to end to start reading it.</li>
+            <li>Confirm a speaker in one click. When the model matched a name and it's right, settle the whole speaker from the speakers panel instead of renaming line by line. The dotted "not checked" ring goes away because it was checked.</li>
+            <li>Delete a meeting, from the list or the meeting itself, with its transcript, notes, and retained audio.</li>
+            <li>If the app crashes mid-recording, the transcript survives up to the last saved line, and the meeting closes out cleanly on next launch.</li>
+          </ul>
+        </section>
+        <section class="stack stack--2">
+          <h3>Changed</h3>
+          <ul>
+            <li>The app's identifier is now co.obvios.cheerio.mac. Your meetings, settings, and enrollment move over automatically on first launch. One consequence you'll see: macOS re-asks for the microphone, system audio, calendar, and notification permissions once, because macOS ties permissions to the identifier.</li>
+            <li>Your meetings folder is now <code>~/Library/Application Support/co.obvios.cheerio.mac</code>.</li>
+          </ul>
+        </section>
+        <section class="stack stack--2">
+          <h3>Fixed</h3>
+          <ul>
+            <li>A transcript line longer than the summarizer's budget could produce a broken write-up; long lines now split cleanly and every piece keeps its speaker.</li>
+          </ul>
+        </section>
+        <section class="stack stack--2">
+          <h3>Known issues</h3>
+          <ul>
+            <li>The mic hears your speakers: on a call played out loud in In Person mode, the transcript says everything twice. Use headphones. Video Call mode's echo cancellation still hasn't been verified against real speaker playback.</li>
+            <li>The live transcript shows Me/Them during the meeting; names appear once it ends.</li>
+            <li>A very first launch can still flash an empty window frame for a moment.</li>
+            <li>Retained audio can't be played back from inside the app.</li>
+          </ul>
+        </section>
+      </div>
+    </article>
+
     <article class="release" id="v26-8-11">
       <div class="stack stack--4">
         <header class="stack stack--2">
