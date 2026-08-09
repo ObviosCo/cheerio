@@ -1,12 +1,14 @@
 import AVFoundation
 import CheerioKit
 import Foundation
+import OSLog
 
 /// Captures microphone audio via AVAudioEngine and delivers PCM buffers.
 /// This is the "Me" channel. Portable to iOS as-is (move to CheerioKit in v2).
 final class MicrophoneCapture: @unchecked Sendable {
     private let engine = AVAudioEngine()
     private let onBuffer: @Sendable (sending AVAudioPCMBuffer) -> Void
+    private static let log = Logger(subsystem: "app.cheerio.mac", category: "MicrophoneCapture")
 
     init(onBuffer: @escaping @Sendable (sending AVAudioPCMBuffer) -> Void) {
         self.onBuffer = onBuffer
@@ -35,8 +37,17 @@ final class MicrophoneCapture: @unchecked Sendable {
         }
     }
 
-    func start() throws {
+    /// `mode` decides whether to try enabling acoustic echo cancellation — never whether
+    /// capture starts. Voice processing has to be flipped before the engine starts, and it
+    /// can change what `outputFormat(forBus:)` reports, so the format is read *after* that
+    /// call, not assumed. Everything downstream (the converter feeding `SpeechAnalyzer`, the
+    /// CAF writer) already takes its format from the buffer it's handed rather than from a
+    /// fixed assumption, so whatever format voice processing settles on just flows through.
+    func start(mode: RecordingMode) throws {
         let input = engine.inputNode
+        if mode.echoCancellationEnabled {
+            enableEchoCancellation(on: input)
+        }
         let format = input.outputFormat(forBus: 0)
         input.installTap(onBus: 0, bufferSize: 4096, format: format) { [onBuffer] buffer, _ in
             // The tap recycles `buffer` after this returns; the transcription
@@ -46,6 +57,26 @@ final class MicrophoneCapture: @unchecked Sendable {
         }
         engine.prepare()
         try engine.start()
+    }
+
+    /// Best-effort: voice processing can reject a device or format outright, and failing the
+    /// whole recording over a nicety would be worse than the echo it's meant to remove — see
+    /// issue #5's design comment. Falls back to capturing without echo cancellation and logs
+    /// why, rather than throwing.
+    private func enableEchoCancellation(on input: AVAudioInputNode) {
+        do {
+            try input.setVoiceProcessingEnabled(true)
+            // AGC is a separate toggle from AEC and defaults to on once voice processing is
+            // enabled. Automatic gain on a meeting mic isn't obviously desirable — it can
+            // pump the level around as people vary in loudness — so it's turned off
+            // explicitly rather than left to ride along with AEC.
+            input.isVoiceProcessingAGCEnabled = false
+        } catch {
+            // .notice, not .info: .info-level os_log entries never reach `log show`, and this
+            // is exactly the kind of silent failure issue #5 warned against.
+            Self.log.notice(
+                "Voice processing unavailable, continuing without echo cancellation: \(error)")
+        }
     }
 
     func stop() {

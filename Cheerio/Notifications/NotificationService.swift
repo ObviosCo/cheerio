@@ -179,8 +179,13 @@ final class NotificationService {
 
         // No calendar access means no suggestions, silently and permanently — the
         // permission is optional by design and this is not a place to ask for it.
-        // `refreshAccessStatus` is the read that never prompts.
-        guard await CalendarService.shared.refreshAccessStatus() else { return }
+        // `refreshAccessStatus` is the read that never prompts. Same backstop as the
+        // disabled-toggle guard above: revoking access mid-day shouldn't leave
+        // whatever's already pending sitting in the system's queue.
+        guard await CalendarService.shared.refreshAccessStatus() else {
+            await removePendingSuggestionRequests(withPrefix: Self.suggestionRequestPrefix)
+            return
+        }
 
         // First diff pass, against whatever's true right now. Withdrawing a request
         // that no longer qualifies — its event was cancelled, deleted, moved, or
@@ -356,6 +361,45 @@ final class NotificationService {
             // offer is as good as a made one. Keyed by occurrence, not by the raw
             // event id — see `MeetingSuggestion.occurrenceKey`.
             ledger.record(suggestion.occurrenceKey, at: now)
+
+            // `add` suspends, so `recordingDidStart()` or the toggle-disabled observer
+            // can run and finish removing every pending suggestion request while this
+            // insert was still in flight — that removal would have missed the request
+            // this call just added, because it didn't exist yet. Recheck both gates now
+            // that we're back, and undo this one specific insert if either flipped,
+            // rather than trusting the state read before the `await` above. A nil
+            // trigger (an event caught inside the grace window) delivers immediately,
+            // so `add` returning is no guarantee this is still pending — it may
+            // already have been handed off to Notification Center, which is why both
+            // removals happen regardless of which one turns out to be a no-op.
+            guard !isRecording, NotificationSettings.suggestsRecording else {
+                // Whether the ledger entry survives depends on whether the offer was
+                // ever actually made: a still-pending request was never seen, so
+                // un-recording it lets the occurrence be offered again if it becomes
+                // eligible; a banner that already delivered counts under the
+                // never-ask-twice contract even though it's being cleared as stale.
+                //
+                // An immediate (nil-trigger) request is treated as delivered without
+                // asking Notification Center: it's handed straight off on `add`, and
+                // a delivered-list query can race the handoff and miss it. For a
+                // scheduled trigger the pending removal runs *first*, so by the time
+                // the delivered list is read the request can no longer transition
+                // into it — the answer is authoritative, not a snapshot.
+                center.removePendingNotificationRequests(withIdentifiers: [request.identifier])
+                let wasDelivered: Bool
+                if request.trigger == nil {
+                    wasDelivered = true
+                } else {
+                    wasDelivered = await center.deliveredNotifications()
+                        .contains { $0.request.identifier == request.identifier }
+                }
+                center.removeDeliveredNotifications(withIdentifiers: [request.identifier])
+                if !wasDelivered {
+                    ledger.remove([suggestion.occurrenceKey])
+                    ledger.save()
+                }
+                return
+            }
         } catch {
             log.error("Couldn't schedule a recording suggestion: \(error, privacy: .public)")
         }
@@ -371,20 +415,54 @@ final class NotificationService {
         "\(suggestionRequestPrefix)\(occurrenceKey)"
     }
 
-    /// Removes every pending suggestion request whose identifier starts with
-    /// `prefix` — the whole suggestion category when the toggle just went off, or
-    /// just one event's occurrences when a recording started against it.
+    /// Removes every pending *or already-delivered* suggestion request whose
+    /// identifier starts with `prefix` — the whole suggestion category when the
+    /// toggle just went off, or just one event's occurrences when a recording
+    /// started against it.
+    ///
+    /// Delivered notifications are swept for the same reason `schedule`'s own
+    /// post-add recheck clears them: a nil-trigger request (an event caught inside
+    /// the grace window) can be handed to Notification Center before whichever gate
+    /// this sweep is reacting to had even flipped. A banner already sitting there
+    /// for a meeting that's now recording, or for a feature just switched off, is
+    /// exactly what every caller of this function exists to prevent — clearing only
+    /// the pending queue would leave that banner visible and actionable.
     private func removePendingSuggestionRequests(withPrefix prefix: String) async {
+        // Order is the correctness here. The pending queue is snapshotted and
+        // cleared *first*, so a request caught in that snapshot can no longer fire;
+        // only then is the delivered list read, which makes it authoritative — a
+        // request that slipped from pending to delivered between the snapshot and
+        // the removal shows up in it rather than falling between two stale
+        // snapshots and leaving an actionable banner behind.
         let pending = await center.pendingNotificationRequests()
-        let matching = pending.map(\.identifier).filter { $0.hasPrefix(prefix) }
-        guard !matching.isEmpty else { return }
-        center.removePendingNotificationRequests(withIdentifiers: matching)
-        // Withdrawn, not delivered — un-record so these occurrences can be offered
-        // again if they become eligible before they start (the identifier is the
+        let pendingMatching = pending.map(\.identifier).filter { $0.hasPrefix(prefix) }
+        if !pendingMatching.isEmpty {
+            center.removePendingNotificationRequests(withIdentifiers: pendingMatching)
+        }
+
+        let delivered = await center.deliveredNotifications()
+        let deliveredMatching = delivered.map { $0.request.identifier }.filter { $0.hasPrefix(prefix) }
+        if !deliveredMatching.isEmpty {
+            center.removeDeliveredNotifications(withIdentifiers: deliveredMatching)
+        }
+
+        // Only requests that were withdrawn *unseen* get un-recorded from the
+        // ledger. A pending request the user never saw should be offerable again if
+        // its occurrence becomes eligible before it starts (the identifier is the
         // category prefix plus the occurrence key, so stripping the prefix recovers
-        // the ledger key).
-        ledger.remove(matching.map { String($0.dropFirst(Self.suggestionRequestPrefix.count)) })
-        ledger.save()
+        // the ledger key). A *delivered* banner was an offer made — the
+        // never-ask-twice contract counts it whether or not it was acted on — so
+        // anything in the delivered list keeps its entry even as the stale banner
+        // is cleared above, including a request that was pending in the first
+        // snapshot and fired before the removal landed.
+        let deliveredSet = Set(deliveredMatching)
+        let occurrenceKeys = pendingMatching.filter { !deliveredSet.contains($0) }.map {
+            String($0.dropFirst(Self.suggestionRequestPrefix.count))
+        }
+        if !occurrenceKeys.isEmpty {
+            ledger.remove(occurrenceKeys)
+            ledger.save()
+        }
     }
 
     /// The reactive half of the suggestion toggle: `reconcileCalendarSuggestions`

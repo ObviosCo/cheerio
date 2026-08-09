@@ -16,7 +16,7 @@ any of them exist yet, since docs describing the goal land ahead of the code tha
 
 ## State of the repo
 
-Builds and runs; the package test suite passes (`cd CheerioKit && swift test` — the count moves with every PR, so this file doesn't track it). **Not yet verified against a live call** — see issue #5.
+Builds and runs; the package test suite passes (`cd CheerioKit && swift test` — the count moves with every PR, so this file doesn't track it). Acoustic echo cancellation now runs behind `RecordingMode.videoCall` (#12), but it's **not yet verified against a live call** with real speaker playback — that measurement, not the code, is what still gates closing #5. Run `Scripts/aec-ab-measure.sh` against a real before/after recording to make the call.
 
 Two build warnings remain, both `Binding<Optional<Wrapped>>` captured in a `@Sendable` closure in `Views/Binding+Presented.swift`.
 
@@ -70,9 +70,10 @@ because it's ~93 MB, not because the license requires it.
 list; don't add a to-do section back here.
 
 The two worth knowing before you touch the audio path: **#5** (the mic hears your
-speakers, so calls transcribe twice — the one issue blocking real use on a video
-call) and **#9** (the live transcript can only show Me/Them, which looks like a
-bug and isn't).
+speakers, so calls transcribe twice — the fix landed behind `RecordingMode.videoCall`,
+but closing the issue needs a live A/B against real speaker playback, which hasn't
+happened yet) and **#9** (the live transcript can only show Me/Them, which looks
+like a bug and isn't).
 
 ## Agents
 

@@ -197,7 +197,10 @@ struct VoiceEnrollmentRecorder: View {
             pendingPath = relativePath
             self.recorder = recorder
             self.capture = capture
-            try capture.start()
+            // Always in-person: this is a close-mic'd reference sample of one voice with
+            // no speaker playback to cancel, and issue #5's design comment already flags
+            // AEC as liable to alter the very characteristics enrollment depends on.
+            try capture.start(mode: .inPerson)
             guard !Task.isCancelled else {
                 // Cancelled while the microphone was coming up: everything is
                 // published now, so the shared cleanup can unwind all of it.
