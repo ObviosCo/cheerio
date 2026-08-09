@@ -5,11 +5,12 @@ import SwiftUI
 /// The first-run walkthrough: welcome, explain-then-request each permission, enroll
 /// your voice, a look at enrolling teammates, then straight into a first recording.
 ///
-/// Shown automatically once (`CheerioApp` picks this window over the main one at
-/// launch via `defaultLaunchBehavior` until ``OnboardingState/hasCompleted`` flips),
-/// and re-openable afterward from Settings and the Help menu. Recording is never
-/// gated on any of this — every screen can be skipped, and `CaptureSession.start`
-/// doesn't know this window exists.
+/// Shown automatically once — `ContentView` hands off to this window itself, the
+/// moment its own `.task` runs, for as long as ``OnboardingState/hasCompleted`` is
+/// false (see #63: `.defaultLaunchBehavior` alone doesn't reliably keep the main
+/// window from claiming launch instead on macOS 26) — and re-openable afterward from
+/// Settings and the Help menu. Recording is never gated on any of this — every
+/// screen can be skipped, and `CaptureSession.start` doesn't know this window exists.
 struct OnboardingView: View {
     static let windowID = "onboarding"
 

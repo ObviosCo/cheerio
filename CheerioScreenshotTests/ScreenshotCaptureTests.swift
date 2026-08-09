@@ -120,8 +120,14 @@ final class ScreenshotCaptureTests: XCTestCase {
 
     /// The walkthrough as a first run actually reaches it: an empty home, and the
     /// completed flag off rather than absent (see the note on preferences above).
-    /// With the flag off the walkthrough window claims launch and the library window
-    /// is suppressed, so this is the one shot that isn't the app's main window.
+    ///
+    /// The library window's `.defaultLaunchBehavior` is unconditionally `.automatic`
+    /// (see #63 — conditioning it on the completed flag didn't reliably keep it from
+    /// claiming launch on macOS 26 anyway), so it can legitimately open first here and
+    /// hand off to the walkthrough itself rather than never appearing at all. That
+    /// handoff is what's awaited below, rather than just "some window exists" — with
+    /// both windows sharing this process for however briefly the handoff takes,
+    /// racing a screenshot against it is exactly the flakiness #63 was about.
     func testOnboardingWelcome() throws {
         let app = launch(
             home: try freshHome(),
@@ -131,10 +137,20 @@ final class ScreenshotCaptureTests: XCTestCase {
                 "-onboardingHasCompleted", "NO",
             ]
         )
+        // Title comes from `MeetingListView`'s `.navigationTitle("Cheerio")`, which
+        // applies with no meeting selected — true here since this is a fresh, empty
+        // store. Absent means the handoff had already finished before this query ran.
+        let library = app.windows["Cheerio"]
+        if library.waitForExistence(timeout: 5) {
+            XCTAssertTrue(
+                library.waitForNonExistence(timeout: Self.windowTimeout),
+                "The library window opened but never handed off to the walkthrough."
+            )
+        }
         // Matched positionally like the library, and for a stronger reason: the
         // walkthrough is `.hiddenTitleBar`, so matching it on "Welcome to Cheerio"
-        // would rest on a title no title bar is drawing. With the flag off it's also
-        // the only window the app opens.
+        // would rest on a title no title bar is drawing. With the handoff finished
+        // it's also the only window left.
         capture(soleWindow(of: app), named: "onboarding-welcome")
     }
 

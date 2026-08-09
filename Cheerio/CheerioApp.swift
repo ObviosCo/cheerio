@@ -43,10 +43,12 @@ struct CheerioApp: App {
                 .environment(captureSession)
         }
         .modelContainer(container)
-        // On a first run, the onboarding window claims launch instead — it opens
-        // this one itself once it closes (see `OnboardingView.onDisappear`).
-        // Evaluated once at process start, which is the only time it matters.
-        .defaultLaunchBehavior(OnboardingState.hasCompleted ? .automatic : .suppressed)
+        // Always automatic: on macOS 26, conditioning this on
+        // `OnboardingState.hasCompleted` (`.suppressed` on a first run) doesn't
+        // reliably keep this window from claiming launch anyway — see #63. Rather
+        // than fight that, `ContentView` embraces it and hands off to the
+        // walkthrough itself, explicitly, the moment its own `.task` runs.
+        .defaultLaunchBehavior(.automatic)
         .commands {
             // Where macOS apps put it: the app menu, right under "About Cheerio".
             CommandGroup(after: .appInfo) {
@@ -60,6 +62,11 @@ struct CheerioApp: App {
         // The first-run walkthrough. Re-openable later from Settings and the Help
         // menu above, which is why it's a real window rather than a launch-time-only
         // sheet.
+        //
+        // Always suppressed: this window only ever opens because something asked
+        // for it explicitly — `ContentView`'s first-run handoff, the Help menu
+        // command above, or Settings — never because macOS decided to restore it.
+        // That's what keeps a first run from ever showing both windows at once.
         Window("Welcome to Cheerio", id: OnboardingView.windowID) {
             OnboardingView()
                 .environment(captureSession)
@@ -67,7 +74,7 @@ struct CheerioApp: App {
         .modelContainer(container)
         .windowResizability(.contentSize)
         .windowStyle(.hiddenTitleBar)
-        .defaultLaunchBehavior(OnboardingState.hasCompleted ? .suppressed : .automatic)
+        .defaultLaunchBehavior(.suppressed)
 
         // Start and stop without surfacing the window — the state you need mid-call
         // is "is it recording", and that belongs in the menu bar.
@@ -117,6 +124,7 @@ struct ContentView: View {
     @Environment(CaptureSession.self) private var session
     @Environment(\.modelContext) private var context
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismiss) private var dismiss
 
     /// The past meeting on show. Nil means "the live recording if there is one,
     /// otherwise the placeholder" — the split view's detail column owns this, because
@@ -126,6 +134,29 @@ struct ContentView: View {
     private let notifications = NotificationService.shared
 
     var body: some View {
+        // This window's `.defaultLaunchBehavior` is unconditionally `.automatic` (see
+        // `CheerioApp`) because conditioning it on onboarding state doesn't reliably
+        // keep it from opening on a first run anyway — macOS 26, #63. So it embraces
+        // that: when onboarding isn't done, it renders nothing and hands off to the
+        // walkthrough instead of building the sidebar, running its `@Query`, and
+        // showing library UI a first-run user has no data for anyway.
+        if OnboardingState.hasCompleted {
+            library
+        } else {
+            Color.clear
+                .task {
+                    // Open-then-dismiss, not the other order: this mirrors
+                    // `OnboardingView.onDisappear`'s handoff back to this window, and
+                    // never leaves the app with zero windows and nothing that could
+                    // still open one — `MenuBarExtra`'s content is lazy, so it isn't a
+                    // reliable fallback for that.
+                    openWindow(id: OnboardingView.windowID)
+                    dismiss()
+                }
+        }
+    }
+
+    private var library: some View {
         NavigationSplitView {
             MeetingListView(selection: $selectedMeeting)
                 // The default sidebar is narrow enough that the two start buttons
