@@ -173,6 +173,7 @@ argument, read in `ScreenshotMode` in the app target:
 | `-screenshotWindowSize 1440x900` | Sizes the library window |
 | `-screenshotOpenSettings YES` | Opens Settings (the tab comes from `-com_apple_SwiftUI_Settings_selectedTabIndex`) |
 | `-screenshotOnboardingStep <n>` | Opens the walkthrough on step *n* |
+| `-screenshotExpandTranscript YES` | Opens the detail view's transcript disclosure, which otherwise starts collapsed (#104) — only `library-transcript` needs it |
 
 This is not the obvious design — the obvious one drives the real UI with AppleScript
 or XCUITest — and the launch-argument hooks exist because reaching a *state* this way
