@@ -89,6 +89,9 @@ and a directive-capture mode ("Give Direction…" in the menu bar).
 - **Audio retention you control.** Raw audio is written to disk per channel so a transcription
   failure isn't fatal, then purged on your schedule — discard immediately, 24 hours, 7 days,
   30 days, or keep forever. The default is 7 days.
+- **Play a meeting back.** While the audio is still on disk, the meeting detail view offers a
+  merged play/pause and scrubber over both channels — the affordance is simply absent, not
+  disabled, once retention has purged it.
 
 Full scope and non-goals: [`docs/SPEC.md`](docs/SPEC.md).
 
@@ -315,7 +318,9 @@ Known issues, roughly in priority order:
 - **Calendar is mostly read-only.** Recordings get their title and event ID from the current
   event, and a notification offers to record when a meeting starts — but "attach notes back to
   the event" isn't built.
-- **No playback.** Retained audio is written and purged but there's no UI to listen to it.
+- **No re-running transcription on retained audio.** Playback shipped in #14; the other half of
+  that issue — re-transcribing a meeting whose first pass came out empty or wrong, using the
+  same retained CAFs — hasn't.
 
 **No Mac App Store.** App Sandbox has to stay off: a sandboxed process tap is created with
 `noErr` at every step and then reads pure digital silence, with no permission prompt and no
@@ -363,8 +368,8 @@ UI, and a website: [`docs/DESIGN-HANDOFF.md`](docs/DESIGN-HANDOFF.md).
 ## Roadmap
 
 Near-term: a live A/B of acoustic echo cancellation against real speaker playback (the
-measurement that gates closing #5), an in-room vs. remote toggle per participant, and playback
-of retained audio.
+measurement that gates closing #5), an in-room vs. remote toggle per participant, and
+re-running transcription on retained audio (the other half of #14 — playback itself shipped).
 
 The actionable-transcripts work ([epic #22](https://github.com/ObviosCo/cheerio/issues/22))
 shipped in v26.8.9: owner-attributed action items, the transcript-ready callback, directive

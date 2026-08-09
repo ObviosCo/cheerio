@@ -1,3 +1,4 @@
+import AVFoundation
 import CheerioKit
 import Foundation
 import SwiftData
@@ -28,6 +29,39 @@ else {
     exit(2)
 }
 let container = URL(filePath: arguments[containerIndex + 1], directoryHint: .isDirectory)
+
+// MARK: - Fake audio
+
+/// A silent CAF, in the same interleaved stereo Float32 format the system-audio
+/// tap actually writes — good enough for the playback control (#14) to have
+/// something real to open. Content doesn't matter here; only that a file exists
+/// where the app expects one.
+func writeSilentCAF(to url: URL, seconds: Double) throws {
+    var asbd = AudioStreamBasicDescription(
+        mSampleRate: 48_000,
+        mFormatID: kAudioFormatLinearPCM,
+        mFormatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked,
+        mBytesPerPacket: 8,
+        mFramesPerPacket: 1,
+        mBytesPerFrame: 8,
+        mChannelsPerFrame: 2,
+        mBitsPerChannel: 32,
+        mReserved: 0
+    )
+    guard let format = AVAudioFormat(streamDescription: &asbd) else {
+        throw CocoaError(.fileWriteUnknown)
+    }
+    let file = try AVAudioFile(
+        forWriting: url, settings: format.settings, commonFormat: format.commonFormat,
+        interleaved: format.isInterleaved
+    )
+    guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(seconds * format.sampleRate))
+    else {
+        throw CocoaError(.fileWriteUnknown)
+    }
+    buffer.frameLength = buffer.frameCapacity
+    try file.write(from: buffer)
+}
 
 // MARK: - Cast
 
@@ -499,11 +533,17 @@ for demo in demos {
 
     if demo.hasAudio {
         let relativePath = "Meetings/\(UUID().uuidString)"
-        try FileManager.default.createDirectory(
-            at: container.appending(path: relativePath, directoryHint: .isDirectory),
-            withIntermediateDirectories: true
-        )
+        let directory = container.appending(path: relativePath, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         meeting.audioDirectory = relativePath
+        // Real files, not just the directory: the meeting detail view's playback
+        // control (#14) keys off files actually being on disk, not merely
+        // `audioDirectory` being set — a demo meeting with an empty directory would
+        // photograph the same as one whose audio was purged. Deliberately different
+        // lengths per channel, so the capture also shows the shorter channel simply
+        // running out first rather than both ending together.
+        try writeSilentCAF(to: directory.appending(path: "me.caf"), seconds: 6)
+        try writeSilentCAF(to: directory.appending(path: "them.caf"), seconds: 8)
     }
 
     context.insert(meeting)

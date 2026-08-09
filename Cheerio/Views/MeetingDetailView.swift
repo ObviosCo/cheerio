@@ -54,6 +54,11 @@ struct MeetingDetailView: View {
                 Divider()
                 roughNotes
 
+                if MeetingAudioPlayback.hasPlayableAudio(for: meeting) {
+                    Divider()
+                    MeetingAudioPlayerView(meeting: meeting)
+                }
+
                 if meeting.audioDirectory != nil {
                     Divider()
                     HStack(spacing: Theme.Space.x2) {
