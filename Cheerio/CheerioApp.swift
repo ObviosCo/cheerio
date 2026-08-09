@@ -80,9 +80,19 @@ struct CheerioApp: App {
     }
 
     var body: some Scene {
+        // `Scene` has no `.tint(_:)` of its own (unlike `View`) — each scene's root
+        // content view gets it individually below, which is still one token written
+        // once per scene rather than scattered across `Onboarding/` and `Settings/`.
+        // This is also why it can't wash out `RecordingRing`, which deliberately
+        // renders from `.foreground`, never `.tint` (see that type's doc comment),
+        // or a `role: .destructive` button, whose red is the button style's own
+        // default and not sourced from the ambient tint at all — only a control that
+        // explicitly reads `.tint` (`.borderedProminent`, `AnyShapeStyle(.tint)`)
+        // picks this up.
         Window("Cheerio", id: MenuBarView.mainWindowID) {
             ContentView()
                 .environment(captureSession)
+                .tint(Theme.Colors.accent)
                 // Delivered by `ActivateInstalledCopy`, from a *different* (DMG
                 // or translocated) launch of this same app asking this stable
                 // copy to check for updates — see `CheckForUpdatesRequest`.
@@ -121,6 +131,7 @@ struct CheerioApp: App {
         Window("Welcome to Cheerio", id: OnboardingView.windowID) {
             OnboardingView()
                 .environment(captureSession)
+                .tint(Theme.Colors.accent)
         }
         .modelContainer(container)
         .windowResizability(.contentSize)
@@ -138,6 +149,7 @@ struct CheerioApp: App {
             MenuBarView()
                 .environment(captureSession)
                 .environment(updater)
+                .tint(Theme.Colors.accent)
         } label: {
             Image(nsImage: captureSession.state.menuBarIcon)
                 // `NSImage.accessibilityDescription` doesn't propagate through
@@ -154,6 +166,7 @@ struct CheerioApp: App {
                 // finished — see `TranscriptCallbackSettingsView`.
                 .environment(captureSession)
                 .environment(updater)
+                .tint(Theme.Colors.accent)
         }
         .modelContainer(container)
     }
