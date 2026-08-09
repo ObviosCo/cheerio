@@ -161,7 +161,7 @@ LIBRARY_ARGS=(-onboardingHasCompleted YES -screenshotWindowSize 1440x900)
 
 step "Library"
 shot library -- "${LIBRARY_ARGS[@]}" -screenshotSelectMeeting 1
-shot library-transcript -- "${LIBRARY_ARGS[@]}" -screenshotSelectMeeting 2
+shot library-transcript -- "${LIBRARY_ARGS[@]}" -screenshotSelectMeeting 2 -screenshotExpandTranscript YES
 
 step "Onboarding"
 # `-screenshotOnboardingStep` both opens the walkthrough window and decides which

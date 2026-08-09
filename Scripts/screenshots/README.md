@@ -173,6 +173,7 @@ argument, read in `ScreenshotMode` in the app target:
 | `-screenshotWindowSize 1440x900` | Sizes the library window |
 | `-screenshotOpenSettings YES` | Opens Settings (the tab comes from `-com_apple_SwiftUI_Settings_selectedTabIndex`) |
 | `-screenshotOnboardingStep <n>` | Opens the walkthrough on step *n* |
+| `-screenshotExpandTranscript YES` | Opens the detail view's transcript disclosure, which otherwise starts collapsed (#104) — only `library-transcript` needs it |
 
 This is not the obvious design — the obvious one drives the real UI with AppleScript
 or XCUITest — and the launch-argument hooks exist because reaching a *state* this way
@@ -220,8 +221,9 @@ Updates tab photographs with both toggles off; that's the harness, not the defau
   writing a new shot, keep that order.
 - **The wrong window.** Settings takes the selected tab's name as its window title
   and the walkthrough is titled "Welcome to Cheerio", which is what
-  `--title-contains` matches on. The library window's title is the *selected
-  meeting's* name, so don't match it by title.
+  `--title-contains` matches on. The library window's title is always "Cheerio" —
+  the detail view no longer sets its own `navigationTitle` (#104, one title instead
+  of two) — so don't match it by title regardless.
 - **An empty detail pane.** `-screenshotSelectMeeting` is 1-based and indexes the
   sidebar's order, newest first.
 - **"came back a solid black frame" / "Screen Recording".** The process invoking
