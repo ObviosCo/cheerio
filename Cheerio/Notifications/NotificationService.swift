@@ -373,10 +373,19 @@ final class NotificationService {
             // already have been handed off to Notification Center, which is why both
             // removals happen regardless of which one turns out to be a no-op.
             guard !isRecording, NotificationSettings.suggestsRecording else {
+                // Whether the ledger entry survives depends on whether the offer was
+                // ever actually made: a still-pending request was never seen, so
+                // un-recording it lets the occurrence be offered again if it becomes
+                // eligible; a banner that already delivered counts under the
+                // never-ask-twice contract even though it's being cleared as stale.
+                let wasDelivered = await center.deliveredNotifications()
+                    .contains { $0.request.identifier == request.identifier }
                 center.removePendingNotificationRequests(withIdentifiers: [request.identifier])
                 center.removeDeliveredNotifications(withIdentifiers: [request.identifier])
-                ledger.remove([suggestion.occurrenceKey])
-                ledger.save()
+                if !wasDelivered {
+                    ledger.remove([suggestion.occurrenceKey])
+                    ledger.save()
+                }
                 return
             }
         } catch {
@@ -422,17 +431,22 @@ final class NotificationService {
             center.removeDeliveredNotifications(withIdentifiers: deliveredMatching)
         }
 
-        // Withdrawn, not acted on — un-record so these occurrences can be offered
-        // again if they become eligible before they start (the identifier is the
-        // category prefix plus the occurrence key, so stripping the prefix recovers
-        // the ledger key). An identifier can't be in both lists — it's either still
-        // pending or already delivered, never both — but the `Set` costs nothing and
-        // doesn't lean on that staying true.
-        let occurrenceKeys = Set(pendingMatching + deliveredMatching).map {
+        // Only pending requests get un-recorded from the ledger. A pending request
+        // was an offer the user never saw, so withdrawing it should let the
+        // occurrence be offered again if it becomes eligible before it starts (the
+        // identifier is the category prefix plus the occurrence key, so stripping
+        // the prefix recovers the ledger key). A *delivered* banner was an offer
+        // made — the ledger's never-ask-twice contract counts it whether or not it
+        // was acted on — so its entry stays even as the stale banner is cleared
+        // above; dropping it would invite the same suggestion to be scheduled again
+        // the moment recording stops or the toggle comes back on.
+        let occurrenceKeys = pendingMatching.map {
             String($0.dropFirst(Self.suggestionRequestPrefix.count))
         }
-        ledger.remove(occurrenceKeys)
-        ledger.save()
+        if !occurrenceKeys.isEmpty {
+            ledger.remove(occurrenceKeys)
+            ledger.save()
+        }
     }
 
     /// The reactive half of the suggestion toggle: `reconcileCalendarSuggestions`
