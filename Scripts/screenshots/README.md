@@ -124,6 +124,7 @@ size and fails, naming the mismatch, rather than let that through.
 | --- | --- |
 | `library` | The library with the richest meeting selected — notes, action items, follow-ups, speakers |
 | `library-transcript` | A shorter meeting, so the attributed transcript is on screen under the notes |
+| `library-empty-state` | Nothing selected — the empty-state dashboard (#124): upcoming events, this week's activity, the two start actions, a rotating tip |
 | `onboarding-welcome` … `onboarding-finish` | All seven walkthrough steps, in order |
 | `settings-participants`, `settings-updates`, `settings-callback` | Three of the six Settings tabs — the site uses these three; CI shoots all six |
 | `settings-participants-confirmed` | The same tab with `VoiceEnrollmentRecorder`'s post-save acknowledgment (issue #128) forced on via `ScreenshotMode` — nothing here saves a real sample, so this is the only way that state gets photographed |
@@ -131,13 +132,19 @@ size and fails, naming the mismatch, rather than let that through.
 Each one twice: `<name>-2x.png` straight off the Retina display, and `<name>.png`
 at half that, which is the 1×/2× pair `site/index.html`'s `srcset` wants.
 
-The CI pass shoots a different, overlapping set: `library`, `library-transcript`, all
-six Settings tabs, `settings-participants-confirmed`, and `onboarding-welcome` — one
-test per surface in `CheerioScreenshotTests`. It doesn't walk the whole walkthrough
-(seven launches to show what one screen already tells a reviewer), and it labels
-nothing `-2x`: a GitHub runner's display is 1x, so there's no second scale to name,
-only a width-capped `-preview` copy for the comment with the full-size file behind
-the link.
+The CI pass shoots a different, overlapping set: `library`, `library-transcript`,
+`library-empty-state`, all six Settings tabs, `settings-participants-confirmed`, and
+`onboarding-welcome` — one test per surface in `CheerioScreenshotTests`. It also shoots
+`library-empty-state-no-enrollment`
+against a second seeded store (`seed-store.sh --skip-enrollment`) — meetings exist, but
+nobody's enrolled, so issue #125's voice-enrollment prompt is on screen too, on top of
+the rest of the dashboard rather than in place of any part of it. `capture.sh` doesn't
+reproduce that one locally; it would mean seeding and
+launching against a second scratch home for a single shot the CI path already covers.
+It doesn't walk the whole walkthrough (seven launches to show what one screen already
+tells a reviewer), and it labels nothing `-2x`: a GitHub runner's display is 1x, so
+there's no second scale to name, only a width-capped `-preview` copy for the comment
+with the full-size file behind the link.
 
 ## The three things worth knowing
 

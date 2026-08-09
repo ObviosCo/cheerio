@@ -40,12 +40,25 @@ struct CheerioApp: App {
         // the fork-changeable one would make this gate true for any fork that
         // followed the README's own instructions.
         if AudioStorage.isRunningAsOfficialBuild() {
-            if BundleIdentifierMigration.migrateIfNeeded() == .failed {
+            switch BundleIdentifierMigration.migrateIfNeeded() {
+            case .failed:
                 // The old container is still there and the new one isn't: keep every
                 // path in this launch resolving against the old identifier rather than
                 // open an empty new container and present that as the library. The next
                 // launch retries the move on its own.
                 AudioStorage.setContainerOverride(AudioStorage.legacyBundleIdentifier)
+            case .storeStrandedInSibling(let directoryName):
+                // The real store never made it back to the new container, but its
+                // location is known — open it exactly there rather than either
+                // creating an empty new container (this shape only arises once `old`
+                // is already gone, so `.freshInstall`'s usual answer would be to
+                // create one) or falling back to `old`, which may not exist at all.
+                // The next launch's own stranded-store recovery gets another chance
+                // to restore the directory itself; this launch only needs to not
+                // lose the data in the meantime.
+                AudioStorage.setContainerOverride(directoryName)
+            case .freshInstall, .migrated, .bothExist:
+                break
             }
             // Independent of the above: the defaults domain follows Bundle.main's own
             // identifier automatically, so this always targets the domain the app is
@@ -212,11 +225,18 @@ struct ContentView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismiss) private var dismiss
+    @Query(sort: \EnrolledSpeaker.enrolledAt) private var enrolledSpeakers: [EnrolledSpeaker]
 
     /// The past meeting on show. Nil means "the live recording if there is one,
     /// otherwise the placeholder" — the split view's detail column owns this, because
     /// pushing onto a stack inside the sidebar only ever filled the sidebar.
     @State private var selectedMeeting: Meeting?
+    /// Session-only dismissal for ``VoiceEnrollmentPrompt`` (#125) — a plain `@State`
+    /// rather than `@AppStorage`, since the prompt is supposed to come back on every
+    /// launch for as long as ``enrolledSpeakers`` stays empty. Shared between the
+    /// dashboard's copy of the prompt and the detail banner below so dismissing
+    /// either one dismisses both for the rest of this run.
+    @State private var enrollmentPromptDismissed = false
 
     private let notifications = NotificationService.shared
 
@@ -360,17 +380,35 @@ struct ContentView: View {
 
     /// A selected meeting wins over the live view: mid-call you sometimes need to
     /// look something up in an earlier meeting, and the sidebar offers a way back.
+    ///
+    /// The enrollment banner above a selected meeting (#125) is a slim addition
+    /// here rather than the dashboard's full-width card: a meeting's own header,
+    /// notes and transcript are the reason this pane is open, and they need to stay
+    /// what the eye lands on — the banner only has to say the prompt hasn't been
+    /// forgotten, not compete with the content underneath it. The dashboard case
+    /// below is the one place this app has room to make the fuller case instead.
     @ViewBuilder private var detail: some View {
         if let selectedMeeting {
-            MeetingDetailView(meeting: selectedMeeting) { self.selectedMeeting = nil }
+            VStack(spacing: 0) {
+                // Gates the padding and the divider too, not just the prompt
+                // inside them — `VoiceEnrollmentPrompt` already renders nothing
+                // once dismissed, but leaving this condition on `enrolledSpeakers`
+                // alone would still stack that empty padding and a stray divider
+                // above the transcript for the rest of the session.
+                if enrolledSpeakers.isEmpty, !enrollmentPromptDismissed {
+                    VoiceEnrollmentPrompt(
+                        isDismissed: enrollmentPromptDismissed,
+                        onDismiss: { enrollmentPromptDismissed = true }
+                    )
+                    .padding(Theme.Space.x3)
+                    Divider()
+                }
+                MeetingDetailView(meeting: selectedMeeting) { self.selectedMeeting = nil }
+            }
         } else if session.state == .recording || session.state == .finishing {
             RecordingView()
         } else {
-            ContentUnavailableView(
-                "No meeting selected",
-                systemImage: "text.bubble",
-                description: Text("Select a past meeting or start recording.")
-            )
+            EmptyStateDashboardView(selection: $selectedMeeting, enrollmentPromptDismissed: $enrollmentPromptDismissed)
         }
     }
 }

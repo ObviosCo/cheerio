@@ -20,8 +20,8 @@ struct MeetingSpeakersSection: View {
     @State private var saveFailure: SaveFailure?
 
     var body: some View {
-        let summaries = meeting.speakerSummaries
-        if !summaries.isEmpty {
+        let talkTimes = meeting.speakerTalkTimes
+        if !talkTimes.isEmpty {
             GroupBox {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 8) {
@@ -31,10 +31,11 @@ struct MeetingSpeakersSection: View {
                         ParticipantRosterMenu(meeting: meeting)
                         Spacer()
                     }
+                    SpeakerTimelineBar(meeting: meeting)
                     Divider()
 
-                    ForEach(summaries) { summary in
-                        row(for: summary)
+                    ForEach(talkTimes) { talkTime in
+                        row(for: talkTime)
                     }
                     Divider()
                     Text(
@@ -64,7 +65,8 @@ struct MeetingSpeakersSection: View {
         }
     }
 
-    private func row(for summary: SpeakerSummary) -> some View {
+    private func row(for talkTime: SpeakerTalkTime) -> some View {
+        let summary = talkTime.summary
         let chip = speaker(for: summary)
         return HStack(spacing: 8) {
             SpeakerChip(chip)
@@ -80,16 +82,40 @@ struct MeetingSpeakersSection: View {
                     .foregroundStyle(.secondary)
                     .help(summary.isManual ? "Named by hand" : "Confirmed by you")
             }
-            Text("\(summary.lineCount) \(summary.lineCount == 1 ? "line" : "lines") · \(Int(summary.duration.rounded()))s")
+            Text(talkTimeText(for: talkTime))
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
             Spacer()
 
+            rowMenu(for: summary, isModelMatched: chip.provenance == .modelMatched)
+        }
+    }
+
+    /// Duration and share of the meeting's total talk — replaces the old line-count
+    /// readout with the number that actually answers "who spoke how much."
+    /// `SpeakerTalkTime.proportion` is already the pure computation (see
+    /// `CheerioKit/Models/SpeakerTimeline.swift`); this only formats it.
+    private func talkTimeText(for talkTime: SpeakerTalkTime) -> String {
+        let duration = Duration.seconds(talkTime.summary.duration).formatted(
+            .units(allowed: [.hours, .minutes, .seconds], width: .abbreviated, maximumUnitCount: 2)
+        )
+        let share = talkTime.proportion.formatted(.percent.precision(.fractionLength(0)))
+        return "\(duration) · \(share)"
+    }
+
+    /// Rename, confirm and enroll all sat inline before this — the panel's whole job
+    /// on a finished meeting is correcting the model, so those controls dominated a
+    /// view that should mostly be reporting what happened. One ellipsis per row keeps
+    /// every action reachable without them competing with the talk-time readout for
+    /// attention. Every save path below is unchanged; this only relocates the buttons
+    /// that trigger them.
+    private func rowMenu(for summary: SpeakerSummary, isModelMatched: Bool) -> some View {
+        Menu {
             // Only a `.modelMatched` row carries the ring, and only that row needs a
             // way to clear it — the model got this one right, so say so once instead
             // of retyping the same name it already guessed.
-            if chip.provenance == .modelMatched {
+            if isModelMatched {
                 Button("Confirm") { confirm(summary) }
                     .help("The model's name for this speaker is right — settle it and drop the ring.")
             }
@@ -108,7 +134,6 @@ struct MeetingSpeakersSection: View {
                     relabel(summary, to: nil)
                 }
             }
-            .fixedSize()
 
             Button("Use as voice sample") { enrolling = summary }
                 .disabled(meeting.audioDirectory == nil)
@@ -117,7 +142,12 @@ struct MeetingSpeakersSection: View {
                         ? "This meeting's audio has been deleted, so there's nothing to sample."
                         : "Save this speaker's audio from this meeting as their reference clip."
                 )
+        } label: {
+            Label("More for \(summary.displayName)", systemImage: "ellipsis.circle")
+                .labelStyle(.iconOnly)
         }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
     }
 
     /// Enrolled names plus the other speakers in this meeting — merging into a

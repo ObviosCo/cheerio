@@ -48,16 +48,21 @@ its context menu or detail view).
   call, nothing needs a meeting bot or a per-app integration, and no app-specific API has to
   support it first.
 - **Transcribe on-device.** Each stream gets its own `SpeechTranscriber`, which is where the
-  `Me` / `Them` split comes from. Live volatile results drive the in-meeting transcript; final
-  results are persisted with timestamps.
+  `Me` / `Them` split comes from. Live volatile results drive the in-meeting transcript, which
+  follows new lines as they arrive and lets you scroll back without losing your place; final
+  results are persisted with timestamps, shown sparsely — once per elapsed minute — so a long
+  meeting stays a quiet transcript, not a column of numbers, and there's a place to jump into it
+  from.
 - **Tell people apart by name.** The channel split can't distinguish three people in one room,
   and `SpeechTranscriber` exposes no speaker information at all. So a Sortformer diarization
   pass runs over the recorded audio after the meeting. Enroll a voice once and it comes back
   named instead of "Speaker 2"; pick who was in a given meeting from a per-meeting roster; fix
   any label by hand, and your correction outranks the model. Once a model-matched name looks
-  right, confirm the whole speaker in one action from the speakers panel instead of retyping it
-  line by line — a re-identification pass leaves confirmed lines alone, the same as hand-named
-  ones.
+  right, confirm it in one action instead of retyping it line by line — a re-identification pass
+  leaves confirmed lines alone, the same as hand-named ones. Rename, confirm, and save a voice
+  sample all live behind a per-speaker menu now, so the panel's foreground is talk time (a
+  duration and a share of the meeting, per speaker) and a colour-coded timeline of who spoke
+  when, not the correction controls themselves.
 - **Rough notes are first-class.** A scratchpad sits next to the live transcript during the
   meeting. What you bothered to type is the strongest signal about what mattered. Still editable
   from the meeting's detail view afterward, for the follow-up thought that occurs to you once the
@@ -86,6 +91,12 @@ its context menu or detail view).
   then the weekday or the date — search across titles, notes, transcripts, and speaker names,
   rename or delete a meeting from the list or the meeting itself, and export any meeting as
   Markdown.
+- **Nothing selected still shows something useful.** With no meeting open, the main window
+  shows this week's upcoming calendar events (when access is granted), how many meetings and
+  minutes you've recorded this week, how many follow-ups are still open, the two start actions,
+  and a rotating tip. If no voice is enrolled yet, a prompt to fix that leads the way — it comes
+  back every launch, in the empty state or as a banner above whatever meeting you do have open,
+  until at least one voice is enrolled.
 - **It comes to you when it matters.** A notification offers to record when a calendar meeting
   with other people starts (never twice for the same occurrence, never while already
   recording), and another one tells you when a finished meeting's notes are ready. Both
