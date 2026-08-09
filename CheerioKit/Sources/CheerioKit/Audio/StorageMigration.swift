@@ -115,12 +115,13 @@ public enum StorageMigration {
     /// the app that was recording it is gone.
     ///
     /// `excluding` is whatever meeting the caller is actually recording right now,
-    /// if any. This has to run from ``ContentView``'s `.task`, which re-executes
-    /// every time the main window opens — not only at first launch, since closing
-    /// that window and reopening it later while a recording continues (the menu
-    /// bar keeps running one) is ordinary use — so without excluding the live
-    /// meeting, reopening the window mid-call would read that meeting as
-    /// abandoned and close it out from under the person still talking into it.
+    /// if any. This runs once, from `CheerioApp.init()`, before either window
+    /// exists and before any new recording can start — a placement chosen so a
+    /// crash during a pre-onboarding menu-bar recording is still recovered. The
+    /// `excluding` argument stays even so: launch ordering is an implementation
+    /// detail of the caller, and any future repeated caller (or a launch that
+    /// somehow races a recording) must never close the meeting someone is still
+    /// talking into.
     ///
     /// The `endedAt` assigned is the last transcribed moment (`startedAt` plus the
     /// latest segment's `endTime`), not "now": the app may not relaunch until long
