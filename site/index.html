@@ -290,7 +290,7 @@
       <ul class="stack stack--4" style="padding-left:var(--ch-space-5);max-width:64ch">
         <li><strong>Four voices per audio channel.</strong> A hard limit of the speaker model. Past four, extra people get merged into slots that are already taken — and the app tells you who it left out rather than dropping them quietly.</li>
         <li><strong>Nothing records who was in the room.</strong> Each enrolled participant is checked against both channels, so someone who was only ever on the call can use up a slot on the microphone side, and the other way round.</li>
-        <li><strong>The calendar is read-only.</strong> A recording takes its title from the event you're in. Cheerio won't offer to record when a meeting starts, and won't attach the notes back to the event.</li>
+        <li><strong>The calendar is read-only.</strong> When you start a recording, Cheerio offers the event you're in so the meeting is titled and linked for you — but it won't come to you when a meeting starts, and it won't attach the notes back to the event afterwards.</li>
         <li><strong>Retained audio can't be played back.</strong> It's written, kept for as long as you asked, and purged — but there's no player, so the transcript is what you read.</li>
         <li><strong>One person, one Mac.</strong> No sharing, no sync, no phone app. Markdown export is how a meeting gets to anybody else.</li>
         <li><strong>Live video calls aren't verified yet.</strong> It captures any app's audio and in-person meetings are verified end to end; a real Zoom or Meet call hasn't been through the same check.</li>
@@ -330,7 +330,7 @@
     <div class="wrap">
       <div class="card stack stack--4">
         <h2 class="sub-title">Nothing here holds on to you</h2>
-        <p class="muted">No account to make. No subscription to cancel. No copy on a server to ask someone to delete. Your meetings are files in one folder on your Mac — take any of them out as Markdown whenever you like, and if you drag the app to the trash, that folder is the only thing left to delete after it. Nothing of yours is anywhere else, because it was never anywhere else.</p>
+        <p class="muted">No account to make. No subscription to cancel. No copy on a server to ask someone to delete. Your meetings are files in one folder on your Mac — take any of them out as Markdown whenever you like, and if you drag the app to the trash, that folder holds everything worth deleting after it: every recording, transcript, and note. (macOS keeps the usual few kilobytes of app preferences in its own preferences store, like it does for any app — settings, never your meetings.) Nothing of yours is anywhere else, because it was never anywhere else.</p>
         <p class="muted">That's a promise with a cost attached, and it's one we've decided to accept up front: if Cheerio is ever monetized, the monetization can't add a hoop. No sign-in for a paid tier, no sync that quietly becomes the default path, no team feature that needs an account, no telemetry you can't switch off, no format that only this app can read. A product that can't trap anybody has to be worth staying with.</p>
         <div class="stack stack--3">
           <p class="button-row"><a class="button button--primary" id="download-closing" href="https://github.com/ObviosCo/cheerio/releases/download/v26.8.9/Cheerio-26.8.9.dmg">Download for macOS</a><a class="button button--secondary" href="faq.html">Read the FAQ first</a></p>
