@@ -31,9 +31,11 @@
 #   killed.
 #
 # Why the app is driven by launch arguments rather than by a script clicking it:
-# synthetic clicks need macOS Accessibility permission and XCUITest needs developer
-# mode, neither of which a fresh machine or a CI runner has. See `ScreenshotMode` in
-# the app target for the four hooks, and README.md here for what that trades away.
+# synthetic clicks need macOS Accessibility permission granted to the automating
+# process, which a fresh machine hasn't got. See `ScreenshotMode` in the app target
+# for the four hooks, and README.md here for what that trades away. The CI capture
+# pass (CheerioScreenshotTests) uses the same hooks for the same reason — it could
+# click, being a UI test, and gets there in one launch instead.
 
 set -euo pipefail
 
@@ -48,7 +50,7 @@ while [ $# -gt 0 ]; do
         --app) APP="$2"; shift 2 ;;
         --out) OUT="$2"; shift 2 ;;
         --skip-build) SKIP_BUILD=1; shift ;;
-        -h|--help) sed -n '2,36p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        -h|--help) sed -n '2,38p' "${BASH_SOURCE[0]}"; exit 0 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
 done
@@ -106,15 +108,13 @@ cleanup() {
 }
 trap cleanup EXIT
 
-CONTAINER="${SCRATCH}/Library/Application Support/${BUNDLE_ID}"
-mkdir -p "$CONTAINER" "$OUT"
+mkdir -p "$OUT"
 
-# 3. Demo data. Built and run from source so the store always matches the schema
-#    the app is about to open.
+# 3. Demo data. seed-store.sh builds and runs the seeder from source, so the store
+#    always matches the schema the app is about to open — and so the CI capture pass
+#    photographs the same invented meetings this one does.
 step "Seeding the demo store"
-swift build --package-path "${HERE}/SeedDemoStore" >/dev/null
-"$(swift build --package-path "${HERE}/SeedDemoStore" --show-bin-path)/SeedDemoStore" \
-    --container "$CONTAINER" >/dev/null
+"${HERE}/seed-store.sh" --home "$SCRATCH" --bundle-id "$BUNDLE_ID" >/dev/null
 
 step "Compiling the window capturer"
 swiftc -O -o "${SCRATCH}/capture-window" "${HERE}/capture-window.swift"

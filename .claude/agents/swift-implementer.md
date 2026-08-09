@@ -28,9 +28,9 @@ a piece of code exists the way it does, never *what* you just changed — no "ad
 1. If `Cheerio/Resources/Models` **or** `Cheerio.xcodeproj` is missing, run
    `./Scripts/bootstrap.sh` first (fetches the diarization model, then `xcodegen generate` —
    that order is load-bearing; both are gitignored, so any fresh worktree lacks them).
-2. `swift format --in-place --recursive Cheerio CheerioMCP CheerioKit/Sources CheerioKit/Tests`
+2. `swift format --in-place --recursive Cheerio CheerioMCP CheerioScreenshotTests CheerioKit/Sources CheerioKit/Tests`
    (drop `CheerioMCP` if that directory doesn't exist).
-3. `swift format lint --recursive --strict Cheerio CheerioMCP CheerioKit/Sources CheerioKit/Tests`
+3. `swift format lint --recursive --strict Cheerio CheerioMCP CheerioScreenshotTests CheerioKit/Sources CheerioKit/Tests`
    (same caveat) — must exit 0.
 4. `swift test --package-path CheerioKit` — all suites must pass.
 5. If you added or removed any file: `xcodegen generate` — the build won't see new files
