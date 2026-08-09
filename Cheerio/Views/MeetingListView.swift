@@ -291,11 +291,12 @@ struct MeetingListView: View {
     ///
     /// Computing the boundary from `now` on every pass — rather than sleeping a
     /// fixed 24 hours — is what makes this correct across a Mac sleeping through
-    /// midnight: `Task.sleep` only counts elapsed wall-clock time while awake, so
-    /// a laptop that sleeps at 11 PM and wakes at 8 AM delivers this wake far
-    /// later than the boundary it was aimed at. Re-deriving "midnight" from the
-    /// real current time on wake, instead of trusting the stale target, is what
-    /// keeps the section titles right either way.
+    /// midnight. `Task.sleep(for:)` runs on `ContinuousClock`, which keeps
+    /// advancing through machine sleep — but a suspended process doesn't get to
+    /// run at the deadline, so the wake can be delivered well after the boundary
+    /// it was aimed at. Re-deriving "midnight" from the real current time on
+    /// every iteration, instead of trusting a stale target, keeps the section
+    /// titles right no matter how late the wake lands.
     private func midnightRollover() async {
         let calendar = Calendar.current
         while !Task.isCancelled {
