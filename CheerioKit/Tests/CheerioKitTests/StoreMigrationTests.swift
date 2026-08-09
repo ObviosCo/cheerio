@@ -45,13 +45,21 @@ import Testing
         #expect(meeting.title == "Fixture meeting")
         #expect(try context.fetchCount(FetchDescriptor<TranscriptSegment>()) == 1)
         // The migrated row's new field reads through the facade as empty, and
-        // writing through it persists.
+        // writing through it persists — proven by reopening the store in a
+        // fresh container, not by re-reading the same tracked object.
         #expect(meeting.speakerSlotAssigner.assignments.isEmpty)
         var assigner = meeting.speakerSlotAssigner
         _ = assigner.slot(for: "fixture-speaker", isYou: false)
         meeting.speakerSlotAssigner = assigner
         try context.save()
-        #expect(meeting.speakerSlotAssigner.assignments.count == 1)
+
+        let reopened = try ModelContainer(
+            for: Meeting.self, TranscriptSegment.self, EnrolledSpeaker.self,
+            configurations: ModelConfiguration(url: storeURL)
+        )
+        let freshContext = ModelContext(reopened)
+        let reloaded = try #require(try freshContext.fetch(FetchDescriptor<Meeting>()).first)
+        #expect(reloaded.speakerSlotAssigner.assignments.count == 1)
     }
 
     /// The facade must round-trip through the optional storage on a fresh model
