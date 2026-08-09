@@ -45,6 +45,12 @@ public final class Meeting {
     /// the right answer for an all-remote call, where priming anyone is pointless
     /// because the mic/system split already separates you from them.
     public var participantNames: [String]?
+    /// Speaker-to-colour slot assignments, stable across relaunches — the slot is
+    /// part of a speaker's identity, not a view detail, so it lives on the meeting
+    /// rather than on whatever view model happens to be rendering it today.
+    /// Defaulted so existing stores migrate additively, the same as
+    /// ``actionItems``. See ``SpeakerSlotAssigner``.
+    public var speakerSlotAssigner: SpeakerSlotAssigner = SpeakerSlotAssigner()
     /// Raw storage for ``kind``, following the same pattern as
     /// ``TranscriptSegment/channelRaw`` — a string survives an unrecognized future case
     /// better than an enum would. Defaulted so existing stores migrate additively.
@@ -219,6 +225,16 @@ public final class TranscriptSegment {
         let number = label.dropFirst("Speaker ".count)
         return !number.isEmpty && number.allSatisfy(\.isNumber)
     }
+
+    /// The identity key this segment's colour slot is filed under — matches
+    /// ``SpeakerSummary/id`` for the speaker this segment belongs to, so a rail
+    /// label built straight from one segment resolves to the same
+    /// ``SpeakerSlot`` as the "Who was here" row does for the whole speaker.
+    /// See ``Meeting/resolveSpeakerSlots(ownerNames:)``.
+    public var speakerSlotKey: String {
+        let scoped = TranscriptSegment.isDiarizerGeneratedLabel(speakerLabel) ? channel : nil
+        return scoped.map { "\(displayLabel)\u{1F}\($0.rawValue)" } ?? displayLabel
+    }
 }
 
 /// One speaker as they appear in a single meeting, keyed by the label shown on their
@@ -301,6 +317,37 @@ extension Meeting {
             )
         }
         .sorted { $0.duration > $1.duration }
+    }
+
+    /// Assigns a colour slot to every speaker in ``speakerSummaries`` who doesn't
+    /// already have one, in that order (most talkative first, so the common cases
+    /// land on the best-separated pairs), and pins the local channel to `.you`.
+    ///
+    /// A speaker who already has a slot keeps it — this only ever adds, never
+    /// reassigns, so calling it again after a rename or a fresh diarization pass
+    /// can't reshuffle a colour out from under someone mid-read. The one caveat:
+    /// an *unnamed* diarizer label ("Speaker 2") that a later pass renumbers or
+    /// matches to a name is, mechanically, a new key — the same churn that label
+    /// already has today, not something this introduces. Once a label is
+    /// enrolled, matched, or hand-typed, it's stable and so is its slot.
+    ///
+    /// `ownerNames` is whichever enrolled names have `isMe == true`, the same set
+    /// ``isOwnerAttributed(_:ownerNames:)`` uses — a summary counts as "you" when
+    /// its label names the owner directly (an enrolled "me" voice, diarized on
+    /// either channel), or when it's the bare, pre-diarization "Me" fallback.
+    ///
+    /// Deliberately *not* every summary scoped to the mic channel: once diarization
+    /// has split the mic channel into more than one voice (bleed-in from the far
+    /// end, issue #5's failure mode), a `Speaker N` there isn't necessarily you —
+    /// only a name match or the untouched channel default is unambiguous enough to
+    /// pin outside rotation.
+    @discardableResult
+    public func resolveSpeakerSlots(ownerNames: Set<String>) -> [String: SpeakerSlot] {
+        for summary in speakerSummaries {
+            let isYou = summary.label == "Me" || ownerNames.contains(summary.label)
+            speakerSlotAssigner.slot(for: summary.id, isYou: isYou)
+        }
+        return speakerSlotAssigner.assignments
     }
 
     /// Renames every line this speaker is on. Passing nil for `newLabel` reverts them

@@ -58,7 +58,9 @@ struct ParticipantsView: View {
                 }
                 Text(durationLabel(for: speaker))
                     .font(.caption)
-                    .foregroundStyle(speaker.hasEnoughAudio ? AnyShapeStyle(.secondary) : AnyShapeStyle(.orange))
+                    .foregroundStyle(
+                        speaker.hasEnoughAudio ? AnyShapeStyle(.secondary) : AnyShapeStyle(Theme.Colors.attention)
+                    )
             }
             Spacer()
             // You're in every meeting you record, so this voice is pre-selected and is

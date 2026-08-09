@@ -320,6 +320,7 @@ cheerio/
 ├── Cheerio/          # macOS app target
 │   ├── Audio/        # Mic capture, Core Audio process tap, capture session
 │   ├── Callback/     # Runs the transcript-ready callback command
+│   ├── Design/       # Colour, type, spacing, motion + speaker/recording/status components
 │   ├── Resources/    # Models/ — fetched, never committed
 │   ├── Updates/      # Sparkle: the app's only network access
 │   └── Views/        # SwiftUI, incl. Onboarding/ (first-run walkthrough)
