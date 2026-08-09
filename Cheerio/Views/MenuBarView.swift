@@ -13,6 +13,11 @@ struct MenuBarView: View {
     /// The calendar event happening right now, offered but never assumed.
     @State private var currentEvent: CalendarMeeting?
 
+    /// Same persisted key `MeetingListView`'s sidebar picker binds — this is a second
+    /// entry point onto the same setting, not a separate one, since the menu bar is
+    /// how `NotificationService` and a from-idle user both actually start a recording.
+    @AppStorage(RecordingMode.defaultsKey) private var recordingModeRaw = RecordingMode.default.rawValue
+
     var body: some View {
         Group {
             switch session.state {
@@ -26,6 +31,15 @@ struct MenuBarView: View {
                 // Never offered against a calendar event: a directive is you talking
                 // to your agent, not a stand-in for whatever's on the calendar.
                 Button("Give Direction…") { start(event: nil, kind: .directive) }
+
+                // A submenu, not a segmented control: this is `MenuBarExtra`'s default
+                // `.menu` style, which has no room for a segmented picker. Unadorned
+                // `Picker` already renders as a checkable submenu in that context.
+                Picker("Recording Mode", selection: $recordingModeRaw) {
+                    ForEach(RecordingMode.allCases) { mode in
+                        Text(mode.label).tag(mode.rawValue)
+                    }
+                }
 
             case .preparingModel:
                 Text("Preparing model…")

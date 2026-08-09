@@ -54,21 +54,35 @@ caf_after=""
 me_transcript=""
 them_transcript=""
 
+# Under `set -u`, reading $2 for a value-taking option with nothing after it is an
+# unbound-variable error, not this script's own usage message. Checking $# first
+# means a trailing `--caf-before` with no value gets the same fail() as any other
+# bad invocation, instead of a shell error a level below it.
+require_value() {
+    if [ $# -lt 2 ]; then
+        fail "$1 requires a value."
+    fi
+}
+
 while [ $# -gt 0 ]; do
     case "$1" in
         --caf-before)
+            require_value "$@"
             caf_before="$2"
             shift 2
             ;;
         --caf-after)
+            require_value "$@"
             caf_after="$2"
             shift 2
             ;;
         --me-transcript)
+            require_value "$@"
             me_transcript="$2"
             shift 2
             ;;
         --them-transcript)
+            require_value "$@"
             them_transcript="$2"
             shift 2
             ;;
