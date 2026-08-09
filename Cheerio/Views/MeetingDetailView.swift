@@ -16,9 +16,16 @@ struct MeetingDetailView: View {
     @State private var relabelError: String?
     @State private var isDeleteConfirming = false
     @State private var deleteError: String?
-    /// Expanded by default: opening an old meeting is usually about re-reading what
-    /// was said, and a collapsed disclosure made the transcript look like it was gone.
-    @State private var isTranscriptExpanded = true
+    /// Collapsed on every open (#104): opening a meeting was showing the transcript
+    /// in full alongside everything else, which read as too much at once. No
+    /// persistence — collapsed every time is the intended behavior, not a stand-in
+    /// for remembering the last state.
+    @State private var isTranscriptExpanded = false
+    /// Seeds and opens the shared rename alert (``renameMeetingAlert``) — the same
+    /// flow the library list's "Rename" context menu drives, triggered here by the
+    /// pencil button next to the title instead of a right click.
+    @State private var renamingMeeting: Meeting?
+    @State private var renameText = ""
 
     private var sortedSegments: [TranscriptSegment] {
         meeting.segments.sorted { $0.startTime < $1.startTime }
@@ -26,20 +33,21 @@ struct MeetingDetailView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            // One rule between every section (#104b): the same boundary
+            // `RecordingView` already draws between its header and its panes,
+            // applied consistently here instead of leaving some sections
+            // touching and others not.
+            VStack(alignment: .leading, spacing: Theme.Space.x6) {
                 header
+
                 notes
 
-                if !meeting.roughNotes.isEmpty {
-                    GroupBox("Your rough notes") {
-                        Text(meeting.roughNotes)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .textSelection(.enabled)
-                    }
-                }
+                Divider()
+                roughNotes
 
                 if meeting.audioDirectory != nil {
-                    HStack(spacing: 8) {
+                    Divider()
+                    HStack(spacing: Theme.Space.x2) {
                         Button {
                             Task { await relabel() }
                         } label: {
@@ -55,6 +63,7 @@ struct MeetingDetailView: View {
                     }
                 }
 
+                Divider()
                 MeetingSpeakersSection(meeting: meeting)
 
                 Divider()
@@ -63,7 +72,7 @@ struct MeetingDetailView: View {
             .padding()
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .navigationTitle(meeting.title)
+        .renameMeetingAlert(renamingMeeting: $renamingMeeting, text: $renameText, context: context)
         // Slot assignment is call-order dependent by design (Theme's speaker-identity
         // vocabulary): this is the first point a meeting not opened before might need
         // one resolved. Re-keyed per meeting so switching in the sidebar re-runs it,
@@ -117,20 +126,33 @@ struct MeetingDetailView: View {
         }
     }
 
-    /// The window title bar carries the meeting name, but the detail column needs its
-    /// own heading — and the date is how you tell two "Call with Mary" apart.
+    /// The one place the title renders (#104c) — no `.navigationTitle` alongside
+    /// it, unlike an earlier version of this view, which showed the same string
+    /// twice: once in the window's title bar and again here. `RecordingView`
+    /// sets no `navigationTitle` either, for the live equivalent of this same
+    /// heading, so this brings the finished-meeting view in line with it rather
+    /// than inventing a second convention.
     ///
-    /// Editable in place, the same affordance `RecordingView` offers live: a typo
-    /// like the one issue #32 was filed over ("Cheerio pivot to actionable
-    /// transcripts") is otherwise permanent once the meeting has ended. Routed
-    /// through `rename(to:)`, not a direct `$meeting.title` binding, so a rename
-    /// here retires `isTitleAutomatic` the same way it does mid-recording.
+    /// The pencil (#104d) is the visible half of a flow that already existed —
+    /// `MeetingListView`'s "Rename" context menu — surfaced here because a
+    /// context-menu-only affordance reads as "there is no edit button" rather
+    /// than "right-click to rename." Both drive the identical alert; see
+    /// `renameMeetingAlert`.
     private var header: some View {
         VStack(alignment: .leading, spacing: 2) {
-            TextField("Meeting name", text: Binding(get: { meeting.title }, set: { meeting.rename(to: $0) }))
-                .textFieldStyle(.plain)
-                .font(.title2.weight(.semibold))
-                .onSubmit { save() }
+            HStack(spacing: Theme.Space.x1) {
+                Text(meeting.title)
+                    .font(.title2.weight(.semibold))
+                Button {
+                    renameText = meeting.title
+                    renamingMeeting = meeting
+                } label: {
+                    Image(systemName: "pencil")
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+                .help("Rename meeting")
+            }
             Text(subtitle)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -165,6 +187,37 @@ struct MeetingDetailView: View {
                 systemImage: "sparkles"
             )
             .foregroundStyle(.secondary)
+        }
+    }
+
+    /// Notes stayed frozen once a meeting ended (#109) — this is the same
+    /// `roughNotes` field ``RecordingView`` writes live, just editable again after
+    /// the fact. A follow-up thought jotted the minute a call ends is otherwise
+    /// lost the moment the app is closed, which is exactly when it's most likely to
+    /// occur to someone.
+    ///
+    /// Editing here does **not** re-run summarization — the caption says so
+    /// outright rather than leaving it to be discovered. Re-enhancing on every
+    /// keystroke (or even on every edit) would mean re-running the on-device model
+    /// and re-deciding action-item ownership each time, which is a real feature on
+    /// its own, not a side effect of making a text field writable; that's future
+    /// work (see the PR this shipped in) if it's wanted at all.
+    private var roughNotes: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.x1) {
+            Text("Rough notes")
+                .font(.headline)
+            TextEditor(text: Binding(get: { meeting.roughNotes }, set: { meeting.roughNotes = $0 }))
+                .font(.body)
+                .frame(minHeight: 80)
+                .scrollContentBackground(.hidden)
+                .padding(Theme.Space.x1)
+                .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: Theme.Radius.md))
+                .onChange(of: meeting.roughNotes) {
+                    try? context.save()
+                }
+            Text("Notes added here stay with the meeting, but the summary above reflects your notes as of when the meeting ended.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -255,24 +308,7 @@ struct MeetingDetailView: View {
         return labels
     }
 
-    private func save() {
-        let ownerNames = SpeakerLabeling.ownerNames(context: context)
-        // Resolving slots before reconciling action items is order-independent —
-        // they read disjoint state — but both belong wherever a label just changed.
-        meeting.resolveSpeakerSlots(ownerNames: ownerNames)
-        // Correcting who said a line can change who owns an action item; the stored
-        // items must agree with what an export would now say (see
-        // Meeting.reconcileActionItems). Idempotent, so harmless for saves that
-        // didn't touch a label.
-        meeting.reconcileActionItems(ownerNames: ownerNames)
-        do {
-            try context.save()
-        } catch {
-            relabelError = error.localizedDescription
-        }
-    }
-
-    /// The same save, plus the rollback ``MeetingSpeakersSection/enroll(_:as:)`` and
+    /// The rollback ``MeetingSpeakersSection/enroll(_:as:)`` and
     /// ``MeetingSpeakersSection/confirm(_:)`` already get: a failed save must put a
     /// mutated segment back, or a later autosave persists an edit the person was just
     /// told had failed. All three of this menu's actions — rename, "Undo my change,"

@@ -145,11 +145,7 @@ struct MeetingListView: View {
         .onReceive(NotificationCenter.default.publisher(for: .NSSystemTimeZoneDidChange)) { _ in
             timeZoneID = TimeZone.current.identifier
         }
-        .alert("Rename meeting", isPresented: $renamingMeeting.presented()) {
-            TextField("Meeting name", text: $renameText)
-            Button("Cancel", role: .cancel) { renamingMeeting = nil }
-            Button("Save") { applyRename() }
-        }
+        .renameMeetingAlert(renamingMeeting: $renamingMeeting, text: $renameText, context: context)
         .confirmationDialog(
             DeleteMeetingConfirmation.title(for: deletingMeeting?.title ?? ""),
             isPresented: $deletingMeeting.presented(),
@@ -329,18 +325,6 @@ struct MeetingListView: View {
             get: { session.startFailure?.message != nil },
             set: { if !$0 { session.startFailure = nil } }
         )
-    }
-
-    /// Commits the "Rename" context-menu flow. Plain SwiftData write, same as the
-    /// live rename in `RecordingView` and the detail view — the only thing specific
-    /// to this affordance is where the new text came from.
-    private func applyRename() {
-        defer { renamingMeeting = nil }
-        guard let renamingMeeting else { return }
-        let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        renamingMeeting.rename(to: trimmed)
-        try? context.save()
     }
 
     /// Commits the "Delete" context-menu flow, after confirmation. Clears
