@@ -23,6 +23,10 @@ let package = Package(
             name: "CheerioKit",
             dependencies: [.product(name: "FluidAudio", package: "FluidAudio")]
         ),
-        .testTarget(name: "CheerioKitTests", dependencies: ["CheerioKit"]),
+        .testTarget(
+            name: "CheerioKitTests",
+            dependencies: ["CheerioKit"],
+            resources: [.copy("Fixtures")]
+        ),
     ]
 )
