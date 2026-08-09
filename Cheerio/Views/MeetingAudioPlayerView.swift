@@ -55,6 +55,16 @@ private struct MeetingAudioPlayerControls: View {
         isScrubbing ? scrubTime : model.currentTime
     }
 
+    /// Recording in progress (see the `.onChange` above) or the asset simply
+    /// hasn't finished loading yet — either way, nothing here should be
+    /// interactive. `model.play()` guards against the loading window
+    /// independently, but disabling the controls is the visible half of that
+    /// fix: without it, a tap in the gap between this view appearing and its
+    /// `.task` finishing looked like it did nothing, not like it was refused.
+    private var controlsDisabled: Bool {
+        session.state != .idle || !model.isReady
+    }
+
     private var controls: some View {
         HStack(spacing: Theme.Space.x3) {
             Button {
@@ -65,7 +75,7 @@ private struct MeetingAudioPlayerControls: View {
             }
             .buttonStyle(.borderless)
             .foregroundStyle(Theme.Colors.accent)
-            .disabled(session.state != .idle)
+            .disabled(controlsDisabled)
             .accessibilityLabel(model.isPlaying ? "Pause" : "Play")
 
             Text(AudioTimeFormatting.string(from: displayedTime))
@@ -90,7 +100,11 @@ private struct MeetingAudioPlayerControls: View {
                 }
             )
             .tint(Theme.Colors.accent)
-            .disabled(session.state != .idle)
+            .disabled(controlsDisabled)
+            // Otherwise indistinguishable from the elapsed/duration text either
+            // side of it to VoiceOver, which reads a bare `Slider` as a generic
+            // value control with no indication of what it moves.
+            .accessibilityLabel("Playback position")
 
             Text(AudioTimeFormatting.string(from: model.duration))
                 .chText(.elapsedTimer)

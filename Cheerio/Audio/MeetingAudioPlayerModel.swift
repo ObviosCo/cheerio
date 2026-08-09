@@ -27,6 +27,14 @@ final class MeetingAudioPlayerModel {
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
 
+    /// Whether `load(urls:)` has finished and there's a real `AVPlayer` behind
+    /// this model. `MeetingAudioPlayerView` disables the controls until this is
+    /// true, which is the fix for the window between this model existing and its
+    /// `.task` finishing — but `play()` below guards on it independently too,
+    /// so `isPlaying` can't end up true for a tap that lands in that window
+    /// regardless of what the view happened to be showing at the time.
+    var isReady: Bool { player != nil }
+
     /// Builds the merged composition and prepares an `AVPlayer` over it. Safe to
     /// call once per instance — `MeetingAudioPlayerView` creates a fresh model
     /// per meeting rather than reloading this one.
@@ -69,14 +77,18 @@ final class MeetingAudioPlayerModel {
         }
     }
 
+    /// No-op without a loaded player — `isPlaying` must never say something the
+    /// player itself can't back up, so this checks rather than trusting the
+    /// caller to have gone through `isReady` first.
     func play() {
-        player?.play()
+        guard let player else { return }
+        player.play()
         isPlaying = true
     }
 
     func pause() {
-        player?.pause()
         isPlaying = false
+        player?.pause()
     }
 
     /// Called on a recording starting and on this view disappearing — a paused
