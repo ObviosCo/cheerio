@@ -254,8 +254,12 @@ struct MeetingDetailView: View {
             // Only true once the meeting has actually ended and been enhanced —
             // while it's still recording, nothing above has run yet to be stale.
             if !isLiveMeeting {
+                // Doesn't assume a summary exists — enhancement can fail, or a
+                // recording can be abandoned before it ever finished — so this only
+                // states what's unconditionally true rather than claiming there's
+                // always something above for an edit to disagree with.
                 Text(
-                    "Notes added here stay with the meeting, but the summary above reflects your notes as of when the meeting ended."
+                    "Notes added here stay with the meeting. If a summary already ran above, it won't include edits made after the meeting ended."
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)

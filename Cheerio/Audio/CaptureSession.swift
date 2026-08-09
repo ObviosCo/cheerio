@@ -548,6 +548,15 @@ final class CaptureSession {
         micCapture = nil
         systemTap = nil
         recorder = nil
+        // A second copy, not a redundant one: `MeetingDetailView` binds its editor
+        // straight to `roughNotes` here for as long as `meeting == self.meeting`
+        // (see that view), which is true for this whole function, not just up to
+        // the copy above. Diarization and enhancement between here and there take
+        // real wall-clock time, so a keystroke landing in that window would
+        // otherwise update this property and then be silently dropped the moment
+        // `meeting` goes nil below and the view's binding switches back to
+        // whatever the model held as of the *first* copy.
+        meeting?.roughNotes = roughNotes
         lastFinishedMeeting = meeting
         lastFinishedMeetingOccurrenceStart = calendarEventOccurrenceStart
         meeting = nil
