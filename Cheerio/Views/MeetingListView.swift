@@ -19,6 +19,10 @@ struct MeetingListView: View {
     /// changing would keep showing yesterday's meetings under "Today" forever.
     /// `midnightRollover()` below is what actually advances this.
     @State private var now: Date = .now
+    /// Keyed into `midnightRollover()`'s `.task(id:)` below, so a time-zone change
+    /// restarts that loop instead of waiting out a deadline computed under the zone
+    /// it just left. Updated by the `NSSystemTimeZoneDidChange` observer.
+    @State private var timeZoneID = TimeZone.current.identifier
     /// The calendar event happening right now, offered as a title but never assumed.
     @State private var currentEvent: CalendarMeeting?
     /// A menu toggle rather than a section split: there aren't enough directives yet
@@ -121,8 +125,15 @@ struct MeetingListView: View {
                 try? await Task.sleep(for: .seconds(30))
             }
         }
-        .task {
+        .task(id: timeZoneID) {
             await midnightRollover()
+        }
+        // The other half of `midnightRollover()`'s time-zone handling: a zone
+        // change mid-sleep changes `timeZoneID`, which cancels the `.task(id:)`
+        // above and restarts it immediately under the new zone, rather than
+        // waiting out a deadline the old zone already computed.
+        .onReceive(NotificationCenter.default.publisher(for: .NSSystemTimeZoneDidChange)) { _ in
+            timeZoneID = TimeZone.current.identifier
         }
         .alert("Rename meeting", isPresented: $renamingMeeting.presented()) {
             TextField("Meeting name", text: $renameText)
@@ -298,11 +309,20 @@ struct MeetingListView: View {
     /// every iteration, instead of trusting a stale target, keeps the section
     /// titles right no matter how late the wake lands.
     ///
-    /// `Calendar.current` is re-read inside the loop, not hoisted above it, for the
-    /// same reason: it snapshots the system time zone at the moment it's read, and a
-    /// zone change mid-day (travel, a manual override) would otherwise keep this
-    /// scheduling against the old zone until whatever deadline that snapshot
-    /// produced finally passes.
+    /// Two separate mechanisms handle a time-zone change, because they cover two
+    /// different moments it can happen:
+    /// - **Mid-sleep** (travel, a manual override, while this loop is already
+    ///   parked in `Task.sleep`): re-reading `Calendar.current` on the next
+    ///   iteration is too late — the sleep already computed its deadline under the
+    ///   old zone, and nothing wakes it early. The view's `timeZoneID` state and its
+    ///   `NSSystemTimeZoneDidChange` observer exist for exactly this: changing
+    ///   `timeZoneID` cancels and restarts this `.task(id:)`, so the new zone takes
+    ///   effect immediately instead of waiting out the stale deadline.
+    /// - **Wake-after-suspend**, where the zone changed while the *process* wasn't
+    ///   running to receive that notification at all: `Calendar.current` is still
+    ///   re-read inside the loop below, not hoisted above it, so the restart this
+    ///   causes (see the next paragraph) re-derives the boundary under whatever zone
+    ///   is current the moment the Mac wakes.
     private func midnightRollover() async {
         while !Task.isCancelled {
             now = .now

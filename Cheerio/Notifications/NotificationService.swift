@@ -367,9 +367,14 @@ final class NotificationService {
             // insert was still in flight — that removal would have missed the request
             // this call just added, because it didn't exist yet. Recheck both gates now
             // that we're back, and undo this one specific insert if either flipped,
-            // rather than trusting the state read before the `await` above.
+            // rather than trusting the state read before the `await` above. A nil
+            // trigger (an event caught inside the grace window) delivers immediately,
+            // so `add` returning is no guarantee this is still pending — it may
+            // already have been handed off to Notification Center, which is why both
+            // removals happen regardless of which one turns out to be a no-op.
             guard !isRecording, NotificationSettings.suggestsRecording else {
                 center.removePendingNotificationRequests(withIdentifiers: [request.identifier])
+                center.removeDeliveredNotifications(withIdentifiers: [request.identifier])
                 ledger.remove([suggestion.occurrenceKey])
                 ledger.save()
                 return
@@ -389,19 +394,44 @@ final class NotificationService {
         "\(suggestionRequestPrefix)\(occurrenceKey)"
     }
 
-    /// Removes every pending suggestion request whose identifier starts with
-    /// `prefix` — the whole suggestion category when the toggle just went off, or
-    /// just one event's occurrences when a recording started against it.
+    /// Removes every pending *or already-delivered* suggestion request whose
+    /// identifier starts with `prefix` — the whole suggestion category when the
+    /// toggle just went off, or just one event's occurrences when a recording
+    /// started against it.
+    ///
+    /// Delivered notifications are swept for the same reason `schedule`'s own
+    /// post-add recheck clears them: a nil-trigger request (an event caught inside
+    /// the grace window) can be handed to Notification Center before whichever gate
+    /// this sweep is reacting to had even flipped. A banner already sitting there
+    /// for a meeting that's now recording, or for a feature just switched off, is
+    /// exactly what every caller of this function exists to prevent — clearing only
+    /// the pending queue would leave that banner visible and actionable.
     private func removePendingSuggestionRequests(withPrefix prefix: String) async {
         let pending = await center.pendingNotificationRequests()
-        let matching = pending.map(\.identifier).filter { $0.hasPrefix(prefix) }
-        guard !matching.isEmpty else { return }
-        center.removePendingNotificationRequests(withIdentifiers: matching)
-        // Withdrawn, not delivered — un-record so these occurrences can be offered
+        let pendingMatching = pending.map(\.identifier).filter { $0.hasPrefix(prefix) }
+
+        let delivered = await center.deliveredNotifications()
+        let deliveredMatching = delivered.map { $0.request.identifier }.filter { $0.hasPrefix(prefix) }
+
+        guard !pendingMatching.isEmpty || !deliveredMatching.isEmpty else { return }
+
+        if !pendingMatching.isEmpty {
+            center.removePendingNotificationRequests(withIdentifiers: pendingMatching)
+        }
+        if !deliveredMatching.isEmpty {
+            center.removeDeliveredNotifications(withIdentifiers: deliveredMatching)
+        }
+
+        // Withdrawn, not acted on — un-record so these occurrences can be offered
         // again if they become eligible before they start (the identifier is the
         // category prefix plus the occurrence key, so stripping the prefix recovers
-        // the ledger key).
-        ledger.remove(matching.map { String($0.dropFirst(Self.suggestionRequestPrefix.count)) })
+        // the ledger key). An identifier can't be in both lists — it's either still
+        // pending or already delivered, never both — but the `Set` costs nothing and
+        // doesn't lean on that staying true.
+        let occurrenceKeys = Set(pendingMatching + deliveredMatching).map {
+            String($0.dropFirst(Self.suggestionRequestPrefix.count))
+        }
+        ledger.remove(occurrenceKeys)
         ledger.save()
     }
 
