@@ -78,6 +78,15 @@ final class MicrophoneCapture: @unchecked Sendable {
             // channel — ducking it would quietly attenuate the very signal the other
             // channel needs, and confound the #5 A/B measurement into the bargain. Pin it
             // to the minimum rather than leave the default active.
+            //
+            // `duckingLevel` and `enableAdvancedDucking` are independent per
+            // AVAudioIONode.h: the level sets the base attenuation regardless of the
+            // flag (the header documents the shipped default as *disabled* advanced
+            // ducking paired with `duckingLevel = .default`, which only makes sense if
+            // the level applies either way), and advanced ducking layers *additional*,
+            // voice-activity-driven attenuation on top. Leaving it `false` here is the
+            // right call, not a gap — turning it on would add ducking, not make `.min`
+            // "count".
             input.voiceProcessingOtherAudioDuckingConfiguration = AVAudioVoiceProcessingOtherAudioDuckingConfiguration(
                 enableAdvancedDucking: false,
                 duckingLevel: .min
