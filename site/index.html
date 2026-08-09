@@ -55,8 +55,8 @@
       <h1 class="claim">Free meeting notes that know who said what.</h1>
       <p class="lede">No bot joins the call. Cheerio records the meeting straight off your Mac's audio, transcribes it, names the people talking, and writes it up against the rough notes you typed. There's no pipeline. Nothing to upload, no queue, no service that has to be up. All of it runs on the machine in front of you.</p>
       <div class="stack stack--3">
-        <p class="button-row"><a class="button button--primary" id="download-primary" href="https://github.com/ObviosCo/cheerio/releases/download/v26.8.12/Cheerio-26.8.12.dmg">Download for macOS</a><a class="button button--secondary" href="download.html">What you'll need</a></p>
-        <p class="caption">Free and MIT-licensed. No account, no subscription, no tier above this one. <span id="download-version">Version 26.8.12</span>, for macOS 26 or later on Apple&nbsp;Silicon.</p>
+        <p class="button-row"><a class="button button--primary" id="download-primary" href="https://github.com/ObviosCo/cheerio/releases/download/v26.8.13/Cheerio-26.8.13.dmg">Download for macOS</a><a class="button button--secondary" href="download.html">What you'll need</a></p>
+        <p class="caption">Free and MIT-licensed. No account, no subscription, no tier above this one. <span id="download-version">Version 26.8.13</span>, for macOS 26 or later on Apple&nbsp;Silicon.</p>
       </div>
     </div>
   </section>
@@ -142,7 +142,7 @@
       <div class="stack stack--3">
         <p class="label">Getting started</p>
         <h2 class="section-title">A walkthrough, a voice sample, and headphones.</h2>
-        <p class="muted" style="max-width:60ch">A walkthrough runs the first time you open Cheerio: it explains each permission before asking for it, and about thirty seconds of you talking is what turns “Speaker&nbsp;1” into your name in every meeting afterwards. Every screen in it is skippable. Every screenshot on this page is a capture of the current build, against invented meetings.</p>
+        <p class="muted" style="max-width:60ch">A walkthrough runs the first time you open Cheerio: it explains each permission before asking for it, and about thirty seconds of you talking is what turns “Speaker&nbsp;1” into your name in every meeting afterwards. Every screen in it is skippable. Every screenshot on this page is a capture of the app, against invented meetings.</p>
       </div>
 
       <figure class="shot">
@@ -270,7 +270,7 @@
             </tr>
             <tr>
               <th scope="row">Playing the audio back</th>
-              <td>Not yet. Audio is kept on your schedule, but there's no player.</td>
+              <td>Yes, while the audio is retained. Both channels play as one meeting.</td>
               <td>Usually, with the transcript scrolling alongside.</td>
             </tr>
           </tbody>
@@ -291,7 +291,6 @@
         <li><strong>Four voices per audio channel.</strong> A hard limit of the speaker model. Past four, extra people get merged into slots that are already taken. When you pick more than four enrolled voices for a meeting, the app names which ones it couldn't prime, but a fifth voice in the room that was never enrolled just merges silently.</li>
         <li><strong>Who was in the room versus on the call isn't tracked.</strong> The per-meeting roster says who was there, but not which side of the call they were on, so a person you select is checked against both audio channels, and someone who was only ever remote can use up one of the four slots on the microphone side.</li>
         <li><strong>The calendar is mostly read-only.</strong> Cheerio offers the event you're in when you start a recording, and a notification offers to record when a meeting starts. But it won't attach the notes back to the event afterwards.</li>
-        <li><strong>Retained audio can't be played back.</strong> It's written, kept for as long as you asked, and purged. There's no player, so the transcript is what you read.</li>
         <li><strong>One person, one Mac.</strong> No sharing, no sync, no phone app. Markdown export is how a meeting gets to anybody else.</li>
         <li><strong>Live video calls aren't verified yet.</strong> It captures any app's audio and in-person meetings are verified end to end; a real Zoom or Meet call hasn't been through the same check.</li>
       </ul>
@@ -333,7 +332,7 @@
         <p class="muted">No account to make. No subscription to cancel. No copy on a server to ask someone to delete. Your meetings are files in one folder on your Mac. Take any of them out as Markdown whenever you like, and if you drag the app to the trash, that folder holds everything worth deleting after it: every recording, transcript, and note. (macOS keeps the usual few kilobytes of app preferences in its own preferences store, like it does for any app. Settings, never your meetings.) Nothing of yours is anywhere else, because Cheerio never sent it anywhere else. The one place a copy can exist is wherever you pointed the callback, and that copy answers to the service you chose, not to us.</p>
         <p class="muted">If Cheerio is ever monetized, the rule is that monetization can't add a hoop. No sign-in for a paid tier, no sync that quietly becomes the default path, no team feature that needs an account, no telemetry you can't switch off, no format that only this app can read.</p>
         <div class="stack stack--3">
-          <p class="button-row"><a class="button button--primary" id="download-closing" href="https://github.com/ObviosCo/cheerio/releases/download/v26.8.12/Cheerio-26.8.12.dmg">Download for macOS</a><a class="button button--secondary" href="faq.html">Read the FAQ first</a></p>
+          <p class="button-row"><a class="button button--primary" id="download-closing" href="https://github.com/ObviosCo/cheerio/releases/download/v26.8.13/Cheerio-26.8.13.dmg">Download for macOS</a><a class="button button--secondary" href="faq.html">Read the FAQ first</a></p>
           <p class="caption">Free, MIT-licensed, and it works before the next meeting. macOS 26 or later on Apple&nbsp;Silicon.</p>
         </div>
       </div>

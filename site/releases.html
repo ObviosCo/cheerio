@@ -100,6 +100,49 @@
        it doesn't get an entry.
      ========================================================================== -->
 
+    <article class="release" id="v26-8-13">
+      <div class="stack stack--4">
+        <header class="stack stack--2">
+          <h2 class="release-version"><a href="#v26-8-13">26.8.13</a></h2>
+          <p class="release-meta">
+            <time datetime="2026-08-09">9 August 2026</time>
+            <span aria-hidden="true">·</span>
+            <a href="https://github.com/ObviosCo/cheerio/releases/tag/v26.8.13">Download</a>
+            <span aria-hidden="true">·</span>
+            <a href="https://github.com/ObviosCo/cheerio/compare/v26.8.12...v26.8.13">Changes since 26.8.12</a>
+          </p>
+        </header>
+        <p class="release-summary">The UI overhaul: recorded as feedback in Cheerio, handed to the agents by Cheerio, shipped the same night.</p>
+        <section class="stack stack--2">
+          <h3>Added</h3>
+          <ul>
+            <li>Play back retained audio from the meeting view. Both channels play as one recording, with a scrubber. Playback pauses if you start recording.</li>
+            <li>Rough notes render as Markdown once the meeting ends (headings, lists, bold, links), with an Edit toggle back to plain text. Typing during a meeting is untouched.</li>
+            <li>Start a directive from the main window, not just the menu bar, and convert any meeting to a directive (or back) after the fact.</li>
+          </ul>
+        </section>
+        <section class="stack stack--2">
+          <h3>Changed</h3>
+          <ul>
+            <li>The whole app tints Cheerio's copper instead of system blue, onboarding included.</li>
+            <li>Library rows are lighter, sit below the day headers in the hierarchy, and show who was in the meeting instead of the time.</li>
+            <li>A meeting opens with one title (with a visible rename button), clear lines between sections, the transcript collapsed until you want it, and notes you can keep editing after the meeting ends.</li>
+            <li>The selected meeting reads as the main region; the sidebar recedes.</li>
+            <li>Speaker identification on a one-hour recording now uses a flat ~140 MB instead of over 2 GB.</li>
+          </ul>
+        </section>
+        <section class="stack stack--2">
+          <h3>Known issues</h3>
+          <ul>
+            <li>The mic hears your speakers: on a call played out loud in In Person mode, the transcript says everything twice. Use headphones. Video Call mode's echo cancellation still hasn't been verified against real speaker playback.</li>
+            <li>The live transcript shows Me/Them during the meeting; names appear once it ends.</li>
+            <li>Retained audio can't be re-transcribed from inside the app.</li>
+            <li>The website's screenshots are one release behind until the next capture pass.</li>
+          </ul>
+        </section>
+      </div>
+    </article>
+
     <article class="release" id="v26-8-12">
       <div class="stack stack--4">
         <header class="stack stack--2">
