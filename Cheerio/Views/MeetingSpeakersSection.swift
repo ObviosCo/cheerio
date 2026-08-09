@@ -3,7 +3,8 @@ import SwiftData
 import SwiftUI
 
 /// Correcting diarization after the fact: rename or merge the speakers in one
-/// meeting, and lift a speaker's audio out as an enrollment sample.
+/// meeting, confirm one the model already got right, and lift a speaker's audio
+/// out as an enrollment sample.
 ///
 /// Sortformer sometimes splits one person across two slots — observed on a 25s
 /// recording where a speaker's own turns came back as both "Glen" and "Speaker 3",
@@ -16,7 +17,7 @@ struct MeetingSpeakersSection: View {
     @Query(sort: \EnrolledSpeaker.enrolledAt) private var enrolled: [EnrolledSpeaker]
 
     @State private var enrolling: SpeakerSummary?
-    @State private var errorMessage: String?
+    @State private var saveFailure: SaveFailure?
 
     var body: some View {
         let summaries = meeting.speakerSummaries
@@ -37,7 +38,7 @@ struct MeetingSpeakersSection: View {
                     }
                     Divider()
                     Text(
-                        "Renaming a speaker updates every line they're on. Corrections stick — “Re-identify speakers” leaves hand-named lines alone."
+                        "Renaming or confirming a speaker updates every line they're on. Corrections stick — “Re-identify speakers” leaves hand-named and confirmed lines alone."
                     )
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -55,30 +56,43 @@ struct MeetingSpeakersSection: View {
                     enroll(summary, as: name)
                 }
             }
-            .alert("Couldn't save the voice sample", isPresented: $errorMessage.presented()) {
-                Button("OK") { errorMessage = nil }
+            .alert(saveFailure?.title ?? "Couldn't save", isPresented: $saveFailure.presented()) {
+                Button("OK") { saveFailure = nil }
             } message: {
-                Text(errorMessage ?? "")
+                Text(saveFailure?.message ?? "")
             }
         }
     }
 
     private func row(for summary: SpeakerSummary) -> some View {
-        HStack(spacing: 8) {
-            SpeakerChip(speaker(for: summary))
+        let chip = speaker(for: summary)
+        return HStack(spacing: 8) {
+            SpeakerChip(chip)
             Text(summary.displayName)
                 .font(.callout.weight(.medium))
-            if summary.isManual {
+            if summary.isSettled {
+                // Renamed and confirmed are now distinguishable states (see
+                // `TranscriptSegment.isSpeakerLabelConfirmed`), so the help text says
+                // which one actually happened instead of a wording vague enough to
+                // cover both.
                 Image(systemName: "hand.raised.fill")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                    .help("Named by hand")
+                    .help(summary.isManual ? "Named by hand" : "Confirmed by you")
             }
             Text("\(summary.lineCount) \(summary.lineCount == 1 ? "line" : "lines") · \(Int(summary.duration.rounded()))s")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
             Spacer()
+
+            // Only a `.modelMatched` row carries the ring, and only that row needs a
+            // way to clear it — the model got this one right, so say so once instead
+            // of retyping the same name it already guessed.
+            if chip.provenance == .modelMatched {
+                Button("Confirm") { confirm(summary) }
+                    .help("The model's name for this speaker is right — settle it and drop the ring.")
+            }
 
             Menu("Rename") {
                 let others = candidates(for: summary)
@@ -129,7 +143,7 @@ struct MeetingSpeakersSection: View {
     /// ``SpeakerSummary`` instead of a single ``TranscriptSegment``.
     private func speaker(for summary: SpeakerSummary) -> Speaker {
         let provenance = SpeakerProvenance(
-            isSpeakerLabelManual: summary.isManual,
+            isSettled: summary.isSettled,
             isDiarizerGeneratedLabel: TranscriptSegment.isDiarizerGeneratedLabel(summary.label),
             hasName: !summary.isGeneratedLabel
         )
@@ -150,7 +164,29 @@ struct MeetingSpeakersSection: View {
         do {
             try context.save()
         } catch {
-            errorMessage = error.localizedDescription
+            saveFailure = SaveFailure(title: "Couldn't rename this speaker", message: error.localizedDescription)
+        }
+    }
+
+    /// Settles a `.modelMatched` speaker in one move, without renaming it — the fix
+    /// for the ring otherwise never coming off an already-correct name. Rides
+    /// ``Meeting/confirmSpeaker(_:)``, which only ever flips
+    /// ``TranscriptSegment/isSpeakerLabelConfirmed``; the label, slot and action-item
+    /// attribution it might own are all untouched, so unlike ``relabel(_:to:)`` there's
+    /// nothing else here to reconcile — only the flag itself to put back on failure.
+    ///
+    /// Captured before the mutation, the same way ``enroll(_:as:)`` captures
+    /// `priorLabels`: without it, a failed save would leave the ring gone and the
+    /// button told the user it failed, while a later autosave quietly persisted the
+    /// confirm anyway.
+    private func confirm(_ summary: SpeakerSummary) {
+        let prior = meeting.segments.filter { summary.matches($0) }.map { ($0, $0.isSpeakerLabelConfirmed) }
+        guard meeting.confirmSpeaker(summary) > 0 else { return }
+        do {
+            try context.save()
+        } catch {
+            for (segment, wasConfirmed) in prior { segment.isSpeakerLabelConfirmed = wasConfirmed }
+            saveFailure = SaveFailure(title: "Couldn't confirm this speaker", message: error.localizedDescription)
         }
     }
 
@@ -161,7 +197,7 @@ struct MeetingSpeakersSection: View {
         // context — so a later autosave could commit part of what the user was just
         // told had failed.
         let priorLabels = meeting.segments.map {
-            ($0, $0.speakerLabel, $0.isSpeakerLabelManual)
+            ($0, $0.speakerLabel, $0.isSpeakerLabelManual, $0.isSpeakerLabelConfirmed)
         }
         // The reconciliation below mutates trust state too; a failed save must put
         // it back, or a later autosave commits part of an operation the user was
@@ -201,18 +237,29 @@ struct MeetingSpeakersSection: View {
             try context.save()
         } catch {
             if let insertedSpeaker { context.delete(insertedSpeaker) }
-            for (segment, label, wasManual) in priorLabels {
+            for (segment, label, wasManual, wasConfirmed) in priorLabels {
                 segment.speakerLabel = label
                 segment.isSpeakerLabelManual = wasManual
+                segment.isSpeakerLabelConfirmed = wasConfirmed
             }
             meeting.actionItems = priorActionItems
             meeting.speakerSlotAssigner = priorSlotAssigner
             if let writtenSamplePath {
                 try? AudioStorage.removeFile(atRelativePath: writtenSamplePath)
             }
-            errorMessage = error.localizedDescription
+            saveFailure = SaveFailure(title: "Couldn't save the voice sample", message: error.localizedDescription)
         }
     }
+}
+
+/// What to say when a speaker-panel save fails. Three actions here can fail — rename,
+/// confirm, enroll — and each needs its own accurate title: routing all of them through
+/// one fixed string (as this used to) means a failed confirm gets told it's a voice
+/// sample problem.
+private struct SaveFailure: Identifiable {
+    let title: String
+    let message: String
+    var id: String { title + message }
 }
 
 extension SpeakerSummary {

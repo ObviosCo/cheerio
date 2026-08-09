@@ -71,6 +71,126 @@ import Testing
         #expect(meeting.speakerSummaries.map(\.label) == ["Jackson", "Them"])
     }
 
+    @Test func confirmSpeakerFlipsOnlyThatSpeakersModelMatchedLines() {
+        let meeting = splitSpeakerMeeting()
+        let glen = summary(in: meeting, "Glen")
+        #expect(meeting.confirmSpeaker(glen) == 1)
+
+        // Confirmed, not manual — the whole point of the separate flag: a confirm
+        // never sets the bit that activates the transcript's destructive "Undo my
+        // change" (see `MeetingDetailView.speakerMenu`).
+        #expect(meeting.segments.first { $0.text == "Glen" }?.isSpeakerLabelConfirmed == true)
+        #expect(meeting.segments.first { $0.text == "Glen" }?.isSpeakerLabelManual == false)
+        // "and only that speaker's" — Jackson and Speaker 3 are untouched.
+        #expect(meeting.segments.filter { $0.text != "Glen" }.allSatisfy { !$0.isSpeakerLabelConfirmed })
+
+        // The panel's provenance summary reads `isSettled` for the ring and `isManual`
+        // for which help text to show — confirming must flip the former, not the latter.
+        let glenSummary = meeting.speakerSummaries.first { $0.label == "Glen" }
+        #expect(glenSummary?.isSettled == true)
+        #expect(glenSummary?.isManual == false)
+        #expect(meeting.speakerSummaries.first { $0.label == "Speaker 3" }?.isSettled == false)
+    }
+
+    @Test func confirmSpeakerIsIdempotent() {
+        let meeting = splitSpeakerMeeting()
+        #expect(meeting.confirmSpeaker(summary(in: meeting, "Glen")) == 1)
+        // Re-reading the summary after the first confirm, the way the panel would
+        // after a save — nothing left to flip, so nothing reports as changed.
+        #expect(meeting.confirmSpeaker(summary(in: meeting, "Glen")) == 0)
+        #expect(meeting.segments.first { $0.text == "Glen" }?.isSpeakerLabelConfirmed == true)
+    }
+
+    /// A speaker can carry both a hand-corrected line and a still-model-matched one —
+    /// the single corrected line from a `relabelSpeaker` merge, say. Confirming must
+    /// leave the already-manual line alone and only settle the rest — via the
+    /// confirmed flag, not the manual one, so the two lines stay tellable apart.
+    @Test func confirmSpeakerHandlesMixedManualAndModelLines() {
+        let meeting = Meeting(title: "Standup")
+        let modelLine = TranscriptSegment(channel: .me, text: "model", startTime: 0, endTime: 1)
+        modelLine.speakerLabel = "Jackson"
+        let manualLine = TranscriptSegment(channel: .me, text: "manual", startTime: 1, endTime: 2)
+        manualLine.assignSpeaker("Jackson")
+        meeting.segments = [modelLine, manualLine]
+
+        let jackson = summary(in: meeting, "Jackson")
+        #expect(jackson.isManual == false)
+        #expect(jackson.isSettled == false)
+
+        #expect(meeting.confirmSpeaker(jackson) == 1)
+        #expect(modelLine.isSpeakerLabelConfirmed)
+        #expect(!modelLine.isSpeakerLabelManual)
+        #expect(manualLine.isSpeakerLabelManual)
+        #expect(!manualLine.isSpeakerLabelConfirmed)
+
+        // Settled either way, but not uniformly manual — the panel's cue for showing
+        // "Confirmed by you" rather than "Named by hand".
+        let settled = meeting.speakerSummaries.first { $0.label == "Jackson" }
+        #expect(settled?.isSettled == true)
+        #expect(settled?.isManual == false)
+    }
+
+    /// The failure this guard exists for: an unlabelled meeting's "Me" is a channel
+    /// default, not a model guess, so there's nothing for Confirm to be settling.
+    /// Letting it through would set a settled bit on a `nil`-labelled line, and
+    /// `SpeakerLabeling.label` would then skip it forever.
+    @Test func confirmSpeakerRejectsAChannelDefaultSpeaker() {
+        let meeting = Meeting(title: "Old")
+        meeting.segments = [
+            TranscriptSegment(channel: .me, text: "hi", startTime: 0, endTime: 2),
+            TranscriptSegment(channel: .them, text: "hello", startTime: 2, endTime: 3),
+        ]
+
+        #expect(meeting.confirmSpeaker(summary(in: meeting, "Me")) == 0)
+        #expect(meeting.segments.allSatisfy { !$0.isSpeakerLabelManual && !$0.isSpeakerLabelConfirmed })
+    }
+
+    /// A diarizer-generated "Speaker 3" is a voice the model separated out but never
+    /// named — the UI never rings it, and confirming it would be settling a guess that
+    /// was never made.
+    @Test func confirmSpeakerRejectsADiarizerGeneratedSpeaker() {
+        let meeting = splitSpeakerMeeting()
+
+        #expect(meeting.confirmSpeaker(summary(in: meeting, "Speaker 3")) == 0)
+        let speaker3 = meeting.segments.first { $0.text == "Speaker 3" }
+        #expect(speaker3?.isSpeakerLabelManual == false)
+        #expect(speaker3?.isSpeakerLabelConfirmed == false)
+        #expect(meeting.speakerSummaries.first { $0.label == "Speaker 3" }?.isSettled == false)
+    }
+
+    /// The guarantee a rename already gets: re-identification only ever overwrites
+    /// segments that aren't settled — manual or confirmed (see the guard in
+    /// `SpeakerLabeling.label`, in the app target, which now checks both bits).
+    /// Confirming must survive a re-run the same way a hand rename does — mirroring
+    /// that guard here since the surrounding diarization pass isn't something
+    /// CheerioKit can run without the bundled model.
+    @Test func confirmedLinesSurviveReAttribution() {
+        let meeting = splitSpeakerMeeting()
+        #expect(meeting.confirmSpeaker(summary(in: meeting, "Glen")) == 1)
+
+        for segment in meeting.segments where !segment.isSpeakerLabelManual && !segment.isSpeakerLabelConfirmed {
+            segment.speakerLabel = "Speaker 9"
+        }
+
+        #expect(meeting.segments.first { $0.text == "Glen" }?.speakerLabel == "Glen")
+        #expect(meeting.speakerSummaries.first { $0.label == "Glen" }?.isSettled == true)
+    }
+
+    /// A rename replaces a confirmed label outright, so it must take over the manual
+    /// bit and drop the confirmed one — leaving both set would let a stale "confirmed"
+    /// outlive the label it was actually about.
+    @Test func renamingAConfirmedLineTakesOverAsManualAndClearsConfirmed() {
+        let meeting = splitSpeakerMeeting()
+        let glen = summary(in: meeting, "Glen")
+        #expect(meeting.confirmSpeaker(glen) == 1)
+
+        meeting.relabelSpeaker(glen, to: "Glenn")
+
+        let renamed = meeting.segments.first { $0.speakerLabel == "Glenn" }
+        #expect(renamed?.isSpeakerLabelManual == true)
+        #expect(renamed?.isSpeakerLabelConfirmed == false)
+    }
+
     @Test func rangesCoverOnlyTheRequestedSpeakerAndChannel() {
         let meeting = splitSpeakerMeeting()
         let ranges = meeting.ranges(for: summary(in: meeting, "Glen"))

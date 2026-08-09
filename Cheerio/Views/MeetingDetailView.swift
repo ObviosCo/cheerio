@@ -203,20 +203,34 @@ struct MeetingDetailView: View {
         Menu {
             ForEach(candidateLabels(for: segment), id: \.self) { label in
                 Button(label) {
+                    let prior = SegmentLabelState(segment)
                     segment.assignSpeaker(label)
-                    save()
+                    save(restoring: segment, to: prior)
                 }
             }
             if segment.isSpeakerLabelManual {
+                // Exclusive to a line someone actually retyped: it reverts to the
+                // capture channel, which would be the wrong action for a confirmed
+                // line below — that label was never wrong, only unconfirmed.
                 Divider()
                 Button("Undo my change") {
+                    let prior = SegmentLabelState(segment)
                     segment.assignSpeaker(nil)
-                    save()
+                    save(restoring: segment, to: prior)
+                }
+            } else if segment.isSpeakerLabelConfirmed {
+                // Non-destructive: the label stays, only the settled bit clears, so
+                // the ring comes back instead of the line reverting to Me/Them.
+                Divider()
+                Button("Unconfirm") {
+                    let prior = SegmentLabelState(segment)
+                    segment.isSpeakerLabelConfirmed = false
+                    save(restoring: segment, to: prior)
                 }
             }
         } label: {
             // A minimum-width rail, not a fixed 72pt one — `SpeakerRailLabel`'s
-            // provenance styling (bold, primary text for a manual label) already
+            // provenance styling (bold, primary text for a settled label) already
             // carries what the hand icon used to say on its own.
             SpeakerRailLabel(speaker(for: segment))
         }
@@ -254,6 +268,24 @@ struct MeetingDetailView: View {
         do {
             try context.save()
         } catch {
+            relabelError = error.localizedDescription
+        }
+    }
+
+    /// The same save, plus the rollback ``MeetingSpeakersSection/enroll(_:as:)`` and
+    /// ``MeetingSpeakersSection/confirm(_:)`` already get: a failed save must put a
+    /// mutated segment back, or a later autosave persists an edit the person was just
+    /// told had failed. All three of this menu's actions — rename, "Undo my change,"
+    /// "Unconfirm" — go through this, since all three mutate one segment's label state
+    /// and then save.
+    private func save(restoring segment: TranscriptSegment, to prior: SegmentLabelState) {
+        let ownerNames = SpeakerLabeling.ownerNames(context: context)
+        meeting.resolveSpeakerSlots(ownerNames: ownerNames)
+        meeting.reconcileActionItems(ownerNames: ownerNames)
+        do {
+            try context.save()
+        } catch {
+            prior.restore(to: segment)
             relabelError = error.localizedDescription
         }
     }
@@ -302,14 +334,14 @@ struct MeetingDetailView: View {
 
     /// The chip-and-name view model for one transcript line, reading provenance
     /// straight off the model rather than inventing it here — see
-    /// ``SpeakerProvenance/init(isSpeakerLabelManual:isDiarizerGeneratedLabel:hasName:)``.
+    /// ``SpeakerProvenance/init(isSettled:isDiarizerGeneratedLabel:hasName:)``.
     /// The slot itself is a lookup, not an assignment: ``Meeting/resolveSpeakerSlots(ownerNames:)``
     /// is what hands new slots out, at the points above where speakers actually resolve,
     /// so this stays a pure read safe to call from `body`.
     private func speaker(for segment: TranscriptSegment) -> Speaker {
         let isDiarizerGenerated = TranscriptSegment.isDiarizerGeneratedLabel(segment.speakerLabel)
         let provenance = SpeakerProvenance(
-            isSpeakerLabelManual: segment.isSpeakerLabelManual,
+            isSettled: segment.isSpeakerLabelManual || segment.isSpeakerLabelConfirmed,
             isDiarizerGeneratedLabel: isDiarizerGenerated,
             hasName: segment.speakerLabel != nil && !isDiarizerGenerated
         )
@@ -322,5 +354,25 @@ struct MeetingDetailView: View {
         if let notes = meeting.enhancedNotes { out += notes + "\n\n" }
         out += "## Transcript\n\(meeting.transcriptText)\n"
         return out
+    }
+}
+
+/// A snapshot of the three fields ``speakerMenu(for:)``'s actions can change on one
+/// segment, taken before the mutation so a failed save has something to put back.
+private struct SegmentLabelState {
+    let label: String?
+    let isManual: Bool
+    let isConfirmed: Bool
+
+    init(_ segment: TranscriptSegment) {
+        label = segment.speakerLabel
+        isManual = segment.isSpeakerLabelManual
+        isConfirmed = segment.isSpeakerLabelConfirmed
+    }
+
+    func restore(to segment: TranscriptSegment) {
+        segment.speakerLabel = label
+        segment.isSpeakerLabelManual = isManual
+        segment.isSpeakerLabelConfirmed = isConfirmed
     }
 }

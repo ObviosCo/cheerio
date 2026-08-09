@@ -59,11 +59,14 @@ code that asks which mode it's in will eventually get it wrong.
 
 ## Still open
 
-The inversion needs a way to confirm a whole speaker at once from the speakers
-panel, or every model-assigned name stays ringed forever and the mark stops
-meaning anything. That's an IA change, flagged in phase 2 and tracked as
-[#77](https://github.com/ObviosCo/cheerio/issues/77) — still unbuilt.
+Nothing, currently.
+
+The inversion's one flagged dependency — confirming a whole speaker at once
+from the speakers panel, so a correct model guess can leave the ring instead of
+staying marked forever — shipped as [#77](https://github.com/ObviosCo/cheerio/issues/77):
+`Meeting.confirmSpeaker(_:)` in CheerioKit, and the "Confirm" affordance next to
+Rename in `MeetingSpeakersSection`.
 
 `SpeakerSlotAssigner` persistence (storing slots with the meeting, not the
-view) is no longer on this list — it shipped in the same migration that
-brought this vocabulary into the app.
+view) shipped earlier, in the same migration that brought this vocabulary into
+the app.

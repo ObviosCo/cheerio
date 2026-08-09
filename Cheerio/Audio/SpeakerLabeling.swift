@@ -85,10 +85,14 @@ enum SpeakerLabeling {
                 )
             }
 
-            // Manually named lines are left alone: a person who corrected a label
-            // outranks the model, and clobbering that would make correcting pointless.
+            // Settled lines are left alone: a person's word outranks the model whether
+            // they retyped the label (isSpeakerLabelManual) or vouched for the model's
+            // guess as-is (isSpeakerLabelConfirmed) — clobbering either would make
+            // correcting or confirming anything pointless.
             for segment in meeting.segments
-            where segment.channel == channel && !segment.isSpeakerLabelManual {
+            where segment.channel == channel && !segment.isSpeakerLabelManual
+                && !segment.isSpeakerLabelConfirmed
+            {
                 segment.speakerLabel =
                     informative
                     ? SpeakerAttribution.dominantLabel(
