@@ -4,30 +4,36 @@
 # [Float] array before Sortformer ever ran — ~230 MB for a 60-minute side — and
 # now reads it in bounded windows instead.
 #
-#     Scripts/diarization-memory-measure.sh [--minutes N]
+#     Scripts/diarization-memory-measure.sh [--minutes N] [--model /path/to/Sortformer_v2.1.mlmodelc]
 #
-# Generates a synthetic mono 48 kHz CAF of the given length (default 60, matching
-# issue #7's own "Call with Mary" example) and runs the old and new loading
-# strategies as two separate processes, each printing its own peak resident set
-# size (`getrusage`'s `ru_maxrss`, which is a high-water mark that never drops
-# within a process — comparing two phases in one run would conflate them, so each
-# gets a clean baseline instead).
+# Generates a synthetic mono 48 kHz CAF of the given length (default 10, kept
+# short so the script is fast to run by default — pass --minutes 60 for the
+# number that matches issue #7's own "Call with Mary" framing, which takes a few
+# minutes since it's running real model inference, not a stand-in) and runs the
+# old and new loading strategies through the REAL bundled model and the REAL
+# production code, each as its own `swift test` process so `getrusage`'s
+# `ru_maxrss` — a high-water mark that never drops within a process — gives each
+# path a clean baseline instead of the second one inheriting the first's peak.
 #
-# Swift, not sox/ffmpeg, and no FluidAudio import: this isolates exactly the piece
-# issue #7 is about — the intermediate [Float] array — using plain AVFoundation.
-# The "old" script mirrors `AudioConverter.resampleAudioFile` (FluidAudio 0.15.5)
-# byte for byte; the "new" one mirrors `ChunkedAudioReader.read` (CheerioKit) plus
-# discarding each window once it's been "handed off", standing in for
-# `diarizer.addAudio(_:)` never retaining what it's given. Neither script touches
-# Sortformer or the bundled model — the model and the diarizer's own internal
-# state are unaffected by either path (see SpeakerAttributionService.swift); this
-# is measuring the one allocation that scales with recording length.
+# Earlier versions of this script measured a hand-rolled stand-in that read and
+# discarded raw audio without ever calling into FluidAudio — which validated that
+# *reading a file in windows* doesn't leak, but not that *diarizing* it doesn't:
+# SortformerDiarizer.addAudio(_:) alone doesn't drain its own internal buffers
+# (see SpeakerAttributionService.swift's comment on why `process(samples:)` is
+# required, not `addAudio`), so that version's flat "after" number would have
+# stayed flat even with that bug still in place. This version runs the actual
+# `SpeakerAttributionService.attribute` — the two `swift test` targets it drives
+# are `DiarizationMemoryTests.oldWholeFilePathPeakRSS` (mirrors the pre-fix
+# `AudioConverter.resampleAudioFile` + `SortformerDiarizer.processComplete` call,
+# via `DiarizationMemoryHarness`) and `.newWindowedPathPeakRSS` (calls
+# `SpeakerAttributionService.attribute` directly).
 #
 # Like aec-ab-measure.sh, this reports numbers and stops; there's no pass/fail.
 
 set -euo pipefail
 
-minutes=60
+minutes=10
+model=""
 
 require_value() {
     if [ $# -lt 2 ]; then
@@ -43,6 +49,11 @@ while [ $# -gt 0 ]; do
             minutes="$2"
             shift 2
             ;;
+        --model)
+            require_value "$@"
+            model="$2"
+            shift 2
+            ;;
         -h | --help)
             sed -n '2,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
             exit 0
@@ -53,6 +64,17 @@ while [ $# -gt 0 ]; do
             ;;
     esac
 done
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+if [ -z "$model" ]; then
+    model="${ROOT}/Cheerio/Resources/Models/Sortformer_v2.1.mlmodelc"
+fi
+if [ ! -d "$model" ]; then
+    echo "No model at $model — run ./Scripts/bootstrap.sh first, or pass --model." >&2
+    exit 1
+fi
 
 step() {
     printf '\033[34m→\033[0m %s\n' "$1"
@@ -96,72 +118,18 @@ print("  wrote \(written) frames (\(String(format: "%.1f", Double(written) / sam
 SWIFT
 
 echo
-step "Old path: whole-channel load (AudioConverter.resampleAudioFile's pattern)"
-swift - "$caf" <<'SWIFT'
-import AVFoundation
-import Foundation
-
-let path = CommandLine.arguments[1]
-let file = try AVAudioFile(forReading: URL(fileURLWithPath: path))
-let format = file.processingFormat
-
-// This is AudioConverter.resampleAudioFile (FluidAudio 0.15.5), reproduced
-// verbatim: it reads the file in chunks, but appends every one into a single
-// array that lives for the whole call. That array is the ~230 MB-for-60-minutes
-// allocation issue #7 is about — SpeakerAttributionService no longer builds it.
-let chunkSize = max(4096, Int(format.sampleRate))
-var monoSamples: [Float] = []
-monoSamples.reserveCapacity(Int(file.length))
-
-while file.framePosition < file.length {
-    let remaining = Int(file.length - file.framePosition)
-    let framesToRead = AVAudioFrameCount(min(chunkSize, remaining))
-    guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: framesToRead) else { break }
-    try file.read(into: buffer, frameCount: framesToRead)
-    guard buffer.frameLength > 0 else { break }
-    let data = buffer.floatChannelData![0]
-    monoSamples.append(contentsOf: UnsafeBufferPointer(start: data, count: Int(buffer.frameLength)))
-}
-
-var usage = rusage()
-getrusage(RUSAGE_SELF, &usage)
-print("  samples=\(monoSamples.count) peakRSS=\(usage.ru_maxrss) bytes")
-SWIFT
+step "Old path: whole-channel load + processComplete (DiarizationMemoryHarness.diarizeWholeFile)"
+old_output="$(cd "${ROOT}/CheerioKit" && CHEERIO_SORTFORMER_MODEL="$model" CHEERIO_DIARIZATION_MEMORY_AUDIO="$caf" swift test --filter oldWholeFilePathPeakRSS 2>&1)" \
+    || { echo "$old_output"; exit 1; }
+echo "$old_output" | grep -E "PEAK_RSS|passed after|FAIL" | sed 's/^/  /'
 
 echo
-step "New path: bounded windows, discarded after use (ChunkedAudioReader's pattern)"
-swift - "$caf" <<'SWIFT'
-import AVFoundation
-import Foundation
-
-let path = CommandLine.arguments[1]
-let file = try AVAudioFile(forReading: URL(fileURLWithPath: path))
-let windowFrames: AVAudioFrameCount = 1 << 20
-
-var totalSamples = 0
-// Guard on framePosition, not an empty read: AVAudioFile.read(into:) throws once
-// position has reached length rather than returning zero frames — and can also
-// return fewer frames than requested well before that point, so the next
-// iteration's `remaining` is computed from the actual position, not an assumed
-// stride (see ChunkedAudioReaderTests for a measured instance of the short read).
-while file.framePosition < file.length {
-    let remaining = file.length - file.framePosition
-    let framesToRead = AVAudioFrameCount(min(AVAudioFramePosition(windowFrames), remaining))
-    guard let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: framesToRead) else { break }
-    try file.read(into: buffer, frameCount: framesToRead)
-    guard buffer.frameLength > 0 else { break }
-    // Stand-in for handing the window straight to diarizer.addAudio(_:) and
-    // moving on: nothing from this window survives past this iteration.
-    let data = buffer.floatChannelData![0]
-    let chunk = Array(UnsafeBufferPointer(start: data, count: Int(buffer.frameLength)))
-    totalSamples += chunk.count
-}
-
-var usage = rusage()
-getrusage(RUSAGE_SELF, &usage)
-print("  samples=\(totalSamples) peakRSS=\(usage.ru_maxrss) bytes")
-SWIFT
+step "New path: SpeakerAttributionService.attribute (the real production call)"
+new_output="$(cd "${ROOT}/CheerioKit" && CHEERIO_SORTFORMER_MODEL="$model" CHEERIO_DIARIZATION_MEMORY_AUDIO="$caf" swift test --filter newWindowedPathPeakRSS 2>&1)" \
+    || { echo "$new_output"; exit 1; }
+echo "$new_output" | grep -E "PEAK_RSS|passed after|FAIL" | sed 's/^/  /'
 
 echo
-echo "Each path ran as its own process so ru_maxrss (a high-water mark that never"
-echo "drops within a process) reflects only that path, not whichever ran first."
+echo "Each path ran as its own 'swift test' process so ru_maxrss (a high-water"
+echo "mark that never drops within a process) reflects only that path, not"
+echo "whichever ran first. Both go through the real bundled model."
