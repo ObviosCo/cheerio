@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Download Cheerio</title>
-<meta name="description" content="Download Cheerio for macOS, or build it from source. Requires macOS 26 or later on Apple Silicon.">
+<meta name="description" content="Download Cheerio for macOS. Free and MIT-licensed, no account. Requires macOS 26 or later on Apple Silicon.">
 <link rel="icon" href="logo/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="site.css">
 </head>
@@ -19,6 +19,7 @@
       <ul>
         <li><a href="./">Overview</a></li>
         <li><a href="download.html" aria-current="page">Download</a></li>
+        <li><a href="faq.html">FAQ</a></li>
         <li><a href="releases.html">Release notes</a></li>
         <li><a href="https://github.com/ObviosCo/cheerio">GitHub</a></li>
       </ul>
@@ -31,7 +32,8 @@
   <section class="section">
     <div class="wrap wrap--narrow stack stack--6">
       <h1 class="page-title">Download Cheerio</h1>
-      <p class="lede">Cheerio isn't on the Mac App Store, and can't be — the App Sandbox has to be off for it to capture system audio at all, which makes the store unavailable. So it comes from here.</p>
+      <p class="lede">One download, and then it keeps itself up to date. Free and MIT-licensed: nothing to sign up for, nothing to buy afterwards, no tier above this one.</p>
+      <p class="small muted">It comes from here rather than the Mac App Store. It can't be there: capturing system audio needs the App Sandbox off, and the store requires it on. <a href="faq.html#app-store">The longer answer</a>.</p>
 
       <!-- ============================================================
            PUBLISHED BUILD
@@ -39,10 +41,10 @@
            Versions follow CalVer (calver.org): YY.MM.MICRO, tagged
            vYY.MM.MICRO — e.g. tag v26.8.1 → version 26.8.1. YY and MM come
            from the calendar and are never zero-padded; MICRO is a per-month
-           build counter picked by hand when cutting the tag. (The card below
-           still names v2026.8.8, a release that predates this scheme — its
-           tag and asset names don't change retroactively.) The release
-           workflow (.github/workflows/release.yml) publishes two versioned
+           build counter picked by hand when cutting the tag. (v2026.8.8, in
+           releases.html, predates this scheme — its tag and asset names don't
+           change retroactively, and it is the one release with no .dmg
+           asset.) The release workflow (.github/workflows/release.yml) publishes two versioned
            assets per release, both made from the same signed and stapled app:
            `Cheerio-<version>.dmg` and `Cheerio-<version>.zip`. Neither has a
            stable filename, so the href must name the exact version.
@@ -54,29 +56,15 @@
            updater downloads — but it is not what a person should click. See
            issue #55.
 
-           On each release, update the version, date, size, and both hrefs here,
-           and add an entry to releases.html.
-
-           !! ORDERING, read before merging !!
-           v2026.8.8 predates this workflow change and has NO .dmg asset — it
-           was released with the zip only. This page deploys on any push of
-           site/** to main (.github/workflows/pages.yml), so a DMG href below
-           would 404 the moment this merges, before any release carrying one
-           exists. So for now the primary button below points at the zip
-           instead — a working download beats an ideal one that 404s. The
-           caption right under it is written for the zip accordingly, not for
-           the DMG's drag-to-Applications flow.
-
-           RELEASE-DAY FLIP: once a release exists with a Cheerio-<version>.dmg
-           asset (the first CalVer tag — e.g. Cheerio-26.8.9.dmg — will have
-           one; see .github/workflows/release.yml), swap the button below back:
-             - href → .../Cheerio-<version>.dmg
-             - label → "Download Cheerio <version> (dmg)"
-             - caption → back to the drag-to-Applications wording (see this
-               file's git history right before this comment was added for the
-               exact text)
-           and add a plain zip link back as a secondary option, the way the
-           DMG-primary version of this card had one.
+           ON EACH RELEASE, in this order:
+             1. here — the heading version, the date, the size, and both hrefs
+                (dmg and zip) in the card below;
+             2. index.html — the hero button href, the hero caption's version,
+                and the closing card's href. The homepage links straight at the
+                DMG so the download is one click from it, which means a release
+                that only updates this page leaves the homepage pointing at the
+                previous version;
+             3. releases.html — a new entry, newest first.
            ============================================================ -->
       <div class="card stack stack--4">
         <div class="stack stack--2">
@@ -84,8 +72,8 @@
           <p class="muted">Released <time datetime="2026-08-08">8 August 2026</time> · Apple Silicon only · 100&nbsp;MB</p>
         </div>
         <p><a class="button button--primary" href="https://github.com/ObviosCo/cheerio/releases/download/v26.8.9/Cheerio-26.8.9.dmg">Download Cheerio 26.8.9</a></p>
-        <p class="caption">Open the DMG and drag Cheerio to Applications — that one gesture is what keeps the app able to update itself. Developer ID-signed and notarized by Apple. Prefer a zip? <a href="https://github.com/ObviosCo/cheerio/releases/download/v26.8.9/Cheerio-26.8.9.zip">It's on the release too</a>. <a href="releases.html#v26-8-9">What's in this release</a></p>
-        <p class="caption">Already have Cheerio? It updates itself — no need to download again.</p>
+        <p class="caption">Open the DMG and drag Cheerio to Applications. That one gesture is what keeps the app able to update itself. Developer ID-signed and notarized by Apple. Prefer a zip? <a href="https://github.com/ObviosCo/cheerio/releases/download/v26.8.9/Cheerio-26.8.9.zip">It's on the release too</a>. <a href="releases.html#v26-8-9">What's in this release</a></p>
+        <p class="caption">Already have Cheerio? It updates itself. No need to download again.</p>
       </div>
 
       <div class="table-scroll">
@@ -93,9 +81,9 @@
           <caption>What you need</caption>
           <tbody>
             <tr><th scope="row">macOS</th><td>26 (Tahoe) or later</td></tr>
-            <tr><th scope="row">Hardware</th><td>Apple Silicon. There is no Intel build — the speaker model runs on the Neural Engine.</td></tr>
+            <tr><th scope="row">Hardware</th><td>Apple Silicon. There's no Intel build (the speaker model runs on the Neural Engine).</td></tr>
             <tr><th scope="row">Permissions</th><td>Microphone and system audio recording. Calendar is optional and only affects meeting titles.</td></tr>
-            <tr><th scope="row">Disk</th><td>Space for retained audio, which you control — the default keeps seven days.</td></tr>
+            <tr><th scope="row">Disk</th><td>Space for retained audio, which you control. The default keeps seven days.</td></tr>
           </tbody>
         </table>
       </div>
@@ -112,7 +100,7 @@
       <ol class="stack stack--6" style="padding-left:var(--ch-space-5);max-width:60ch">
         <li>
           <h3 class="sub-title">Open it</h3>
-          <p class="muted">Open the download and drag Cheerio to your Applications folder, then open it from there. The build is signed and notarized, so it opens the way any app does — no warnings, no extra steps. Run it from your Downloads folder instead and macOS starts it under app translocation, a read-only mount where Cheerio can't update itself — though if you do, Cheerio notices and offers to move itself to Applications for you.</p>
+          <p class="muted">Open the download and drag Cheerio to your Applications folder, then open it from there. The build is signed and notarized, so the first open is macOS's ordinary downloaded-app confirmation, not a block you have to work around. After that it opens like anything else. Run it from your Downloads folder instead and macOS starts it under app translocation, a read-only mount where Cheerio can't update itself (if you do, Cheerio notices and offers to move itself to Applications for you).</p>
         </li>
         <li>
           <h3 class="sub-title">Grant the microphone</h3>
@@ -124,48 +112,26 @@
         </li>
         <li>
           <h3 class="sub-title">Updates take care of themselves</h3>
-          <p class="muted">Cheerio checks GitHub Releases once a day for a newer version and offers it to you. That check, and the download if you accept an update, are the only requests the app itself makes — nothing about you or your Mac goes with them, a check never starts while you're recording, and you can turn it off or switch it to install automatically in Settings&nbsp;→ Updates.</p>
+          <p class="muted">Cheerio checks GitHub Releases once a day for a newer version and offers it to you. That check, and the download if you accept an update, are the only requests the app itself makes. They carry no account, no analytics, and no system profile (your IP reaches GitHub the way it does for any web request, because that's how requests work). A check never starts while you're recording, though one already underway when you hit record does finish. You can turn the whole thing off, or switch it to install automatically, in Settings&nbsp;→ Updates.</p>
         </li>
         <li>
           <h3 class="sub-title">Enroll your voice</h3>
-          <p class="muted">In Settings&nbsp;→ Participants. Speaker identification only returns names for voices it has heard before, and samples need at least 30 seconds — shorter ones measurably cause one person to be split across two speakers.</p>
+          <p class="muted">The walkthrough asks for this on first run, and Settings&nbsp;→ Participants is where you add everyone else. Speaker identification only returns names for voices it has heard before, and samples need at least 30 seconds. Shorter ones measurably cause one person to get split across two speakers.</p>
         </li>
         <li>
           <h3 class="sub-title">Put headphones on</h3>
-          <p class="muted">Until echo cancellation lands, meeting audio playing out loud gets picked up by your microphone and the transcript says everything twice.</p>
+          <p class="muted">This is a setup step rather than a preference. Cheerio records your microphone and your Mac's output separately; with the meeting playing out loud, the microphone hears it too, both streams end up with the same words, and the transcript says everything twice. Headphones remove it completely. Echo cancellation on the mic input is in the works, but until it's proven against real speaker playback, headphones are the step.</p>
         </li>
       </ol>
-    </div>
-  </section>
-
-  <section class="section" id="build">
-    <div class="wrap wrap--narrow stack stack--6">
-      <div class="stack stack--3">
-        <p class="label">From source</p>
-        <h2 class="section-title">Build it yourself.</h2>
-        <p class="muted" style="max-width:60ch">You'll need macOS&nbsp;26, Xcode&nbsp;26, and <a href="https://github.com/yonaskolb/XcodeGen">XcodeGen</a> (<code>brew install xcodegen</code>). The Xcode project is generated rather than committed.</p>
-      </div>
-
-      <pre><code>git clone https://github.com/ObviosCo/cheerio.git &amp;&amp; cd cheerio
-./Scripts/bootstrap.sh
-open Cheerio.xcodeproj</code></pre>
-
-      <p class="muted"><code>bootstrap.sh</code> checks your toolchain, downloads the ~93&nbsp;MB speaker model that isn't committed to the repo, and generates the Xcode project — in that order, because the project file references the model and generation fails without it. Every step is safe to repeat. Then build and run the <code>Cheerio</code> scheme.</p>
-
-      <div class="notice">
-        <strong class="notice-label">Before you run it</strong>
-        <p class="muted">Set <code>PRODUCT_BUNDLE_IDENTIFIER</code> in <code>project.yml</code> — it's the placeholder <code>app.cheerio.mac</code>, and it overrides <code>options.bundleIdPrefix</code>, so changing the prefix alone leaves you building with the placeholder. Change both.</p>
-      </div>
-
-      <p class="small">Re-run <code>bootstrap.sh</code> after adding or removing source files, or the build won't see them. <a href="https://github.com/ObviosCo/cheerio#building">Full instructions are in the README.</a></p>
     </div>
   </section>
 
   <section class="section">
     <div class="wrap wrap--narrow">
       <div class="card stack stack--3">
-        <h2 class="sub-title">Licensing, in one paragraph</h2>
-        <p class="muted">Cheerio's source is MIT. It depends on <a href="https://github.com/FluidInference/FluidAudio">FluidAudio</a> (Apache&nbsp;2.0) and bundles NVIDIA's <a href="https://huggingface.co/FluidInference/diar-streaming-sortformer-coreml">Sortformer model</a> (©&nbsp;NVIDIA, <a href="https://creativecommons.org/licenses/by/4.0/">CC&nbsp;BY&nbsp;4.0</a>, Core&nbsp;ML conversion by FluidInference). The model is fetched by a script rather than committed, which keeps the source tree MIT while a built app bundles the CC-licensed model. Full attribution ships in <code>THIRD-PARTY-NOTICES.md</code> inside the app bundle — keep it with any build you redistribute.</p>
+        <h2 class="sub-title">If something goes wrong</h2>
+        <p class="muted">The <a href="faq.html">FAQ</a> covers what gets uploaded, how many people it can tell apart, and what happens if you stop using it. Each version's known issues ship alongside it in the <a href="releases.html">release notes</a>. Anything else (including anything that looks like a bug) belongs in <a href="https://github.com/ObviosCo/cheerio/issues">the issue tracker</a>. We read it.</p>
+        <p class="caption">Would rather build it yourself? The source, the toolchain requirements and the build steps are <a href="https://github.com/ObviosCo/cheerio#building">in the README</a>.</p>
       </div>
     </div>
   </section>
@@ -177,12 +143,13 @@ open Cheerio.xcodeproj</code></pre>
     <nav aria-label="Footer">
       <ul>
         <li><a href="./">Overview</a></li>
+        <li><a href="faq.html">FAQ</a></li>
         <li><a href="releases.html">Release notes</a></li>
         <li><a href="https://github.com/ObviosCo/cheerio">GitHub</a></li>
-        <li><a href="https://github.com/ObviosCo/cheerio/issues">Issues</a></li>
+        <li><a href="https://github.com/ObviosCo/cheerio/issues">Report a problem</a></li>
       </ul>
     </nav>
-    <p class="caption">Cheerio is MIT-licensed. It bundles the Sortformer diarization model (© NVIDIA, CC BY 4.0) — attribution travels in THIRD-PARTY-NOTICES.md with any build.</p>
+    <p class="caption">Cheerio is MIT-licensed. It bundles the Sortformer diarization model (© NVIDIA, CC BY 4.0); the attribution travels in THIRD-PARTY-NOTICES.md with any build.</p>
   </div>
 </footer>
 

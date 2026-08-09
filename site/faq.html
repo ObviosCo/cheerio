@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cheerio FAQ</title>
+<meta name="description" content="What gets uploaded, which Macs it runs on, why it's free, why it isn't on the App Store, and how your own agents read your meetings.">
+<link rel="icon" href="logo/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="wordmark" href="./">Cheeri<svg class="wordmark-ring" viewBox="0 0 100 100" width="16" height="16" aria-hidden="true" focusable="false"><circle cx="50" cy="50" r="37" fill="none" stroke="currentColor" stroke-width="26"/></svg><span class="visually-hidden">o</span></a>
+    <nav class="site-nav" aria-label="Main">
+      <ul>
+        <li><a href="./">Overview</a></li>
+        <li><a href="download.html">Download</a></li>
+        <li><a href="faq.html" aria-current="page">FAQ</a></li>
+        <li><a href="releases.html">Release notes</a></li>
+        <li><a href="https://github.com/ObviosCo/cheerio">GitHub</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+  <section class="section">
+    <div class="wrap wrap--narrow stack stack--4">
+      <h1 class="page-title">Questions</h1>
+      <p class="lede">The ones worth answering before you install it.</p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap wrap--narrow stack stack--8">
+      <p class="label">What leaves your Mac</p>
+
+      <div class="stack stack--3" id="uploads">
+        <h2 class="sub-title">What gets uploaded?</h2>
+        <p class="muted">Nothing from a meeting. Not the audio, not the transcript, not your notes, not the summary. Recording, transcription, speaker identification and the write-up all run on models on your Mac, and once the one-time speech-model download below has happened, the whole thing works in airplane mode.</p>
+        <p class="muted">The app makes exactly two kinds of network request, and both are about the app, not about you. It checks its GitHub Releases feed once a day for a newer version, and downloads that version if you say yes. No account, no analytics, no system profile attached to either one. A check never starts while you're recording, and you can turn the whole thing off in Settings&nbsp;→ Updates. Separately, macOS fetches Apple's speech model for your language the first time you record (once per language, and it's the OS doing it, not Cheerio).</p>
+      </div>
+
+      <div class="stack stack--3" id="agents">
+        <h2 class="sub-title">Can my own AI agents read my meetings?</h2>
+        <p class="muted">Yes, two ways, both local. Point Settings&nbsp;→ Callback at any command and Cheerio runs it when a meeting finishes processing. The command gets the whole meeting as JSON on stdin and at the path in <code>CHEERIO_EXPORT_PATH</code>, with the meeting's ID, kind and title in the environment. Nothing from the transcript ever lands on the command line.</p>
+        <p class="muted">There's also a small MCP server inside the app bundle, so an MCP client (Claude Code, Claude Desktop, Codex, anything that speaks the protocol) can look things up on demand. Five tools, all read-only: list meetings, search them, fetch one in full, fetch just the transcript, fetch the action items. It can't write, delete, start a recording or run a command. Your client launches it over a pipe. No networking path at all. The setup snippets are in Settings&nbsp;→ Agents.</p>
+        <p class="muted">Anything that can read a file could always read your meetings. We just made it easier.</p>
+      </div>
+
+      <div class="stack stack--3" id="tension">
+        <h2 class="sub-title">Isn't “nothing leaves your machine” at odds with “your agents can read this”?</h2>
+        <p class="muted">Cheerio never sends a transcript anywhere. If the callback points at an agent running on your Mac, nothing leaves the machine. If it points at an agent backed by a cloud model, that agent uploads whatever you hand it. That's usually why you pointed it there, but it's your choice, not Cheerio's.</p>
+        <p class="muted">The promise covers what Cheerio does. What you wire it to is up to you.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap wrap--narrow stack stack--8">
+      <p class="label">What it needs</p>
+
+      <div class="stack stack--3" id="requirements">
+        <h2 class="sub-title">What do I need to run it?</h2>
+        <p class="muted">macOS 26 (Tahoe) or later, on an Apple Silicon Mac. There's no Intel build and there won't be one (the speaker model runs on the Neural Engine). Cheerio asks for microphone and system-audio recording permission; calendar access is optional; it powers meeting titles and the record-this-meeting nudge, and denying it costs you only those. Summaries and action items come from Apple's on-device language model, so you need Apple Intelligence-capable hardware with it switched on. Without it you still get the full transcript, just no write-up. On disk, the thing that grows is the audio, and that's what the retention setting bounds (seven days of it by default). Transcripts, notes and summaries are small text and stick around (everything lives in one folder you can delete or back up, covered under leaving below).</p>
+        <p class="muted">Transcription and summarizing use frameworks that arrived in macOS 26, and the system-audio tap is a recent Core Audio facility. There's nothing to build on an older macOS.</p>
+      </div>
+
+      <div class="stack stack--3" id="apps">
+        <h2 class="sub-title">Does it work with Zoom, Meet, Teams, or a meeting in a room?</h2>
+        <p class="muted">Yes. Cheerio records your mic and everything coming out of your Mac as two separate streams, so anything that makes sound gets captured. Nothing has to support Cheerio first. A phone on speaker or a conversation across a desk works the same way.</p>
+        <p class="muted">One caveat: in-person recording is verified end to end. A live Zoom or Meet call hasn't been through the same check yet.</p>
+      </div>
+
+      <div class="stack stack--3" id="speakers">
+        <h2 class="sub-title">How many people can it tell apart?</h2>
+        <p class="muted">Four voices per audio channel. That's a hard limit of the speaker model, not a setting. A call with three people on the other end plus you is comfortable. A room of eight isn't; the extra voices get merged into slots that are already taken. The app can warn you about the roster (pick more than four enrolled voices for one meeting and it names which ones it couldn't check for), but a voice it was never told about just merges, silently. The model can't report someone it doesn't know exists.</p>
+        <p class="muted">Names only come back for voices you've enrolled, and samples want at least thirty seconds. Shorter ones measurably cause one person to get split across two speakers. Any label you fix by hand outranks the model and stays fixed.</p>
+      </div>
+
+      <div class="stack stack--3" id="app-store">
+        <h2 class="sub-title">Why isn't it on the Mac App Store?</h2>
+        <p class="muted">Because it can't be. Capturing system audio needs the App Sandbox turned off, and the App Store requires it on. A sandboxed build creates the audio tap, reports no error, prompts for nothing, and records pure digital silence. We measured identical code both ways: 0.0 sandboxed, −1.8&nbsp;dBFS unsandboxed.</p>
+        <p class="muted">It comes from <a href="download.html">this site</a> instead. Builds are Developer&nbsp;ID-signed and notarized by Apple, so the first open is macOS's ordinary downloaded-app confirmation, not a scary block or a right-click ceremony. After that the app updates itself.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap wrap--narrow stack stack--8">
+      <p class="label">Getting things out</p>
+
+      <div class="stack stack--3" id="export">
+        <h2 class="sub-title">Where can I send a finished meeting?</h2>
+        <p class="muted">Three ways. Export any meeting as Markdown and put the file wherever you keep things. Point the callback at a command and Cheerio hands it the meeting as JSON the moment it's ready. Or let an MCP client read the library directly.</p>
+        <p class="muted">What doesn't exist yet: automatic export into a folder (an Obsidian vault, say) or send-to-service integrations. The callback covers both today. It's a command line, so a two-line script gets you the folder version.</p>
+      </div>
+
+      <div class="stack stack--3" id="leaving">
+        <h2 class="sub-title">What happens if I stop using it?</h2>
+        <p class="muted">Drag the app to the trash. No account to close, no subscription to cancel, no server copy to chase down, because Cheerio never made one. (The exception is the one you configured: anything a callback handed to a cloud agent lives by that service's rules.) Your meetings are in <code>~/Library/Application Support/app.cheerio.mac</code>. Delete it and they're gone. Back it up and they're safe. Export anything you want as Markdown first.</p>
+        <p class="muted">That's it. There's no free trial, no onboarding funnel, no reactivation email, because none of that was ever built.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap wrap--narrow stack stack--8">
+      <p class="label">The project</p>
+
+      <div class="stack stack--3" id="free">
+        <h2 class="sub-title">Why is it free? What's the catch?</h2>
+        <p class="muted">Cheerio is built by <a href="https://obvios.co">Obvios</a>, a consultancy that helps companies get real use out of AI. We built it because the alternative was a subscription and an upload. It isn't a product line, it isn't funded by users, and it doesn't need to earn anything to keep existing.</p>
+        <p class="muted">The catch: it's a single-user Mac app maintained by a small team, not a company with a support department. In exchange there's no account, no telemetry, no analytics, no crash reporting, and nothing to sell.</p>
+        <p class="muted">If it's ever monetized, the rule is that monetization can't add a hoop. No sign-in for a paid tier, no sync that becomes the default path, no team feature that needs an account, no telemetry you can't switch off, no format only this app can read.</p>
+      </div>
+
+      <div class="stack stack--3" id="name">
+        <h2 class="sub-title">Why “Cheerio”?</h2>
+        <p class="muted">It's a joke about breakfast. <a href="./#the-name">The longer story is at the bottom of the homepage</a>.</p>
+      </div>
+
+      <div class="stack stack--3" id="contributing">
+        <h2 class="sub-title">Can I see the source, or fix something?</h2>
+        <p class="muted">All of it is on <a href="https://github.com/ObviosCo/cheerio">GitHub</a> under the MIT license, including the build instructions. Bugs and suggestions go in <a href="https://github.com/ObviosCo/cheerio/issues">the issues</a>.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap wrap--narrow">
+      <div class="card stack stack--4">
+        <h2 class="sub-title">Still deciding?</h2>
+        <p class="muted">It's free, it's about a hundred megabytes, and setup is a walkthrough and a thirty-second voice sample. Try it on your next meeting.</p>
+        <p class="button-row"><a class="button button--primary" href="download.html">Get Cheerio</a><a class="button button--secondary" href="./">Read the overview</a></p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap stack stack--4">
+    <nav aria-label="Footer">
+      <ul>
+        <li><a href="./">Overview</a></li>
+        <li><a href="download.html">Download</a></li>
+        <li><a href="releases.html">Release notes</a></li>
+        <li><a href="https://github.com/ObviosCo/cheerio">GitHub</a></li>
+        <li><a href="https://github.com/ObviosCo/cheerio/issues">Report a problem</a></li>
+      </ul>
+    </nav>
+    <p class="caption">Cheerio is MIT-licensed. It bundles the Sortformer diarization model (© NVIDIA, CC BY 4.0); the attribution travels in THIRD-PARTY-NOTICES.md with any build.</p>
+  </div>
+</footer>
+
+</body>
+</html>

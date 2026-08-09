@@ -19,6 +19,7 @@
       <ul>
         <li><a href="./">Overview</a></li>
         <li><a href="download.html">Download</a></li>
+        <li><a href="faq.html">FAQ</a></li>
         <li><a href="releases.html" aria-current="page">Release notes</a></li>
         <li><a href="https://github.com/ObviosCo/cheerio">GitHub</a></li>
       </ul>
@@ -31,7 +32,7 @@
   <section class="section">
     <div class="wrap wrap--narrow stack stack--4">
       <h1 class="page-title">Release notes</h1>
-      <p class="lede">Every version, newest first. Each one has a permanent link — right-click the version number to copy it.</p>
+      <p class="lede">Every version, newest first. Each one has a permanent link. Right-click the version number to copy it.</p>
     </div>
   </section>
 
@@ -115,9 +116,9 @@
         <section class="stack stack--2">
           <h3>Added</h3>
           <ul>
-            <li>Action items now say who committed to them: your own commitments are action items, everyone else's are follow-ups with a name to chase — and tools reading a meeting get the same distinction.</li>
+            <li>Action items now say who committed to them: your own commitments are action items, everyone else's are follow-ups with a name to chase, and tools reading a meeting get the same distinction.</li>
             <li>A transcript-ready callback: point Settings → Callback at any command and it runs when a meeting finishes processing, with the full transcript as JSON.</li>
-            <li>Give Direction… in the menu bar — record instructions for your AI assistant without pretending it's a meeting; directives are tagged and filterable in the library.</li>
+            <li>Give Direction… in the menu bar: record instructions for your AI assistant without pretending it's a meeting. Directives are tagged and filterable in the library.</li>
             <li>A bundled MCP server, so agents on this Mac can look up your meetings themselves. Setup snippets live in Settings → Agents.</li>
             <li>A first-run walkthrough that explains each permission before asking and gets your voice enrolled, so speakers come back named instead of "Speaker 2".</li>
             <li>Meetings can be renamed anywhere their title appears, and recordings left on the placeholder title name themselves from the transcript.</li>
@@ -165,7 +166,7 @@
               <li>Identifies speakers by name after the recording stops. Enroll a voice once in Settings&nbsp;→ Participants and it comes back named instead of <em>Speaker&nbsp;2</em>.</li>
               <li>Corrects a speaker on one line or across a whole meeting. Your correction outranks the model and survives re-running identification.</li>
               <li>A rough-notes scratchpad beside the live transcript, which becomes the first input to the summary rather than an afterthought.</li>
-              <li>Generates enhanced notes locally after the meeting — summary, key points, decisions, action items.</li>
+              <li>Generates enhanced notes locally after the meeting: summary, key points, decisions, action items.</li>
               <li>Titles recordings from your calendar, if you let it. Refusing calendar access costs you only the convenience.</li>
               <li>A searchable library across titles, notes, transcripts and speaker names, and Markdown export for any meeting.</li>
               <li>Audio retention you set: discard immediately, 24&nbsp;hours, 7&nbsp;days, 30&nbsp;days, or keep forever. Seven days is the default.</li>
@@ -177,7 +178,7 @@
             <h3>Known issues</h3>
             <ul>
               <li>Your microphone hears your speakers. With meeting audio playing out loud it lands in both channels and the transcript duplicates itself, which skews the summary. Use headphones until echo cancellation is in.</li>
-              <li>The live transcript shows <em>Me</em> and <em>Them</em>, not names — identification runs over the recording once it stops. In an in-person meeting everyone is on the microphone, so every live line reads <em>Me</em>. It looks like a failure and isn't.</li>
+              <li>The live transcript shows <em>Me</em> and <em>Them</em>, not names; identification runs over the recording once it stops. In an in-person meeting everyone is on the microphone, so every live line reads <em>Me</em>. It looks like a failure and isn't.</li>
               <li>At most four speakers per channel. That's a hard limit of the speaker model; beyond four, voices get merged into existing slots and the app tells you who it left out rather than dropping them quietly.</li>
               <li>Nothing records which side of a call someone was on, so each enrolled participant is checked against both channels and can use up a slot on the wrong one.</li>
               <li>Calendar is read-only. Recordings take their title from the current event, but suggesting a recording when a meeting starts, and attaching notes back to the event, aren't built.</li>
@@ -199,11 +200,12 @@
       <ul>
         <li><a href="./">Overview</a></li>
         <li><a href="download.html">Download</a></li>
+        <li><a href="faq.html">FAQ</a></li>
         <li><a href="https://github.com/ObviosCo/cheerio">GitHub</a></li>
-        <li><a href="https://github.com/ObviosCo/cheerio/issues">Issues</a></li>
+        <li><a href="https://github.com/ObviosCo/cheerio/issues">Report a problem</a></li>
       </ul>
     </nav>
-    <p class="caption">Cheerio is MIT-licensed. It bundles the Sortformer diarization model (© NVIDIA, CC BY 4.0) — attribution travels in THIRD-PARTY-NOTICES.md with any build.</p>
+    <p class="caption">Cheerio is MIT-licensed. It bundles the Sortformer diarization model (© NVIDIA, CC BY 4.0); the attribution travels in THIRD-PARTY-NOTICES.md with any build.</p>
   </div>
 </footer>
 
