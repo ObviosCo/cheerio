@@ -508,6 +508,16 @@ final class CaptureSession {
             if meeting.shouldAutoTitle {
                 await autoTitle(meeting: meeting, context: context)
             }
+            // Re-synced here, not just once above and once at the very end: the
+            // callback below builds its `MeetingExport` from `meeting` as saved by
+            // the line right after this one, and diarization and enhancement — both
+            // awaits — sit between the first copy and this point. Skipping this one
+            // would let the callback ship a `roughNotes` that's stale relative to
+            // the `enhancedNotes` next to it in the same payload, which read the
+            // live property directly a few lines up. The copy at the end of this
+            // function is still needed too, for anything typed after this point but
+            // before `meeting` goes nil.
+            meeting.roughNotes = roughNotes
             try? context.save()
 
             // The transcript is "ready" — issue #26's callback contract — right
