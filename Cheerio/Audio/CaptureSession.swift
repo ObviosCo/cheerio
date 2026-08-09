@@ -76,14 +76,19 @@ final class CaptureSession {
     ///
     /// Off the realtime audio path entirely — ``handle`` already runs on this
     /// (main) actor, not the audio callback, and this loop is a second, independent
-    /// task that only ever touches the `ModelContext`. The interval is a trade
-    /// between two readers: a second process (the MCP helper) watching an
-    /// in-progress meeting sees the transcript lag the live one by up to this much,
-    /// and a shorter interval spends more disk I/O contending with the same
-    /// context transcription is inserting into. Two seconds is short enough that
-    /// "in progress" reads as live, long enough that it coalesces the common case
-    /// of both channels finalizing a line within the same second or two of each
-    /// other into one save instead of two.
+    /// task that only ever touches the `ModelContext`. Bounds staleness for
+    /// *finalized* segments only: ``handle`` inserts a `TranscriptSegment` when an
+    /// update's `isFinal` is true, and this loop only ever saves what's already in
+    /// the context — ``volatileLine``, the line currently being spoken, is never
+    /// inserted at all, so a reader doesn't see it on this cadence or any other; it
+    /// appears only once transcription finalizes it. For what this does bound, the
+    /// interval is a trade between two readers: a second process (the MCP helper)
+    /// watching an in-progress meeting sees each finalized line within this long of
+    /// it finalizing, and a shorter interval spends more disk I/O contending with
+    /// the same context transcription is inserting into. Two seconds is short
+    /// enough that "in progress" reads as live, long enough that it coalesces the
+    /// common case of both channels finalizing a line within the same second or two
+    /// of each other into one save instead of two.
     private static let checkpointInterval: Duration = .seconds(2)
     /// When the current recording began, for the elapsed-time readout.
     private(set) var startedAt: Date?
