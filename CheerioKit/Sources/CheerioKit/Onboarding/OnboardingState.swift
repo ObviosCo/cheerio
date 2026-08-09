@@ -3,10 +3,22 @@ import Foundation
 /// Whether the first-run walkthrough has run, and whether the one-time "add your
 /// voice" nudge at the first recording has already been shown.
 ///
-/// Both are plain `UserDefaults` flags rather than SwiftData, so they're readable
-/// before the model container even opens (the app-launch scene selection in
-/// `CheerioApp` needs an answer before there's a `ModelContext` to ask), and
-/// portable to CheerioKit's future iOS target the same way ``AudioRetention`` is.
+/// Both are plain `UserDefaults` flags rather than SwiftData — portable to
+/// CheerioKit's future iOS target the same way ``AudioRetention`` is, and readable
+/// without a `ModelContext` (which `hasShownEnrollmentNudge` needs from inside a
+/// recording, well after the container exists anyway).
+///
+/// `hasCompleted` specifically drives which window a first run actually shows
+/// (#63): both of `CheerioApp`'s windows now have fixed, unconditional launch
+/// behavior — the library window `.automatic`, the walkthrough `.suppressed` — so
+/// this flag no longer has to be readable before the container opens to pick a
+/// scene at launch. Instead `ContentView.body` reads it, every time `body` runs,
+/// to decide whether to render the library or hand off — worth calling out because
+/// this value is a plain `UserDefaults` flag, not something SwiftUI can observe, so
+/// *where* it's read is what decides whether a rebuild sees a stale answer. Only the
+/// handoff itself — opening the walkthrough and dismissing this window — runs in
+/// `onAppear`, once `body` has already decided it's needed. `OnboardingView.onDisappear`
+/// sets the flag true and hands the library window back once the walkthrough finishes.
 public enum OnboardingState {
     public static let hasCompletedKey = "onboardingHasCompleted"
     public static let hasShownEnrollmentNudgeKey = "onboardingHasShownEnrollmentNudge"

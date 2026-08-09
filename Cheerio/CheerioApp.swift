@@ -60,10 +60,12 @@ struct CheerioApp: App {
                 }
         }
         .modelContainer(container)
-        // On a first run, the onboarding window claims launch instead — it opens
-        // this one itself once it closes (see `OnboardingView.onDisappear`).
-        // Evaluated once at process start, which is the only time it matters.
-        .defaultLaunchBehavior(OnboardingState.hasCompleted ? .automatic : .suppressed)
+        // Always automatic: on macOS 26, conditioning this on
+        // `OnboardingState.hasCompleted` (`.suppressed` on a first run) doesn't
+        // reliably keep this window from claiming launch anyway — see #63. Rather
+        // than fight that, `ContentView` embraces it and hands off to the
+        // walkthrough itself, explicitly, the moment its own `.task` runs.
+        .defaultLaunchBehavior(.automatic)
         .commands {
             // Where macOS apps put it: the app menu, right under "About Cheerio".
             CommandGroup(after: .appInfo) {
@@ -77,6 +79,11 @@ struct CheerioApp: App {
         // The first-run walkthrough. Re-openable later from Settings and the Help
         // menu above, which is why it's a real window rather than a launch-time-only
         // sheet.
+        //
+        // Always suppressed: this window only ever opens because something asked
+        // for it explicitly — `ContentView`'s first-run handoff, the Help menu
+        // command above, or Settings — never because macOS decided to restore it.
+        // That's what keeps a first run from ever showing both windows at once.
         Window("Welcome to Cheerio", id: OnboardingView.windowID) {
             OnboardingView()
                 .environment(captureSession)
@@ -84,7 +91,7 @@ struct CheerioApp: App {
         .modelContainer(container)
         .windowResizability(.contentSize)
         .windowStyle(.hiddenTitleBar)
-        .defaultLaunchBehavior(OnboardingState.hasCompleted ? .suppressed : .automatic)
+        .defaultLaunchBehavior(.suppressed)
 
         // Start and stop without surfacing the window — the state you need mid-call
         // is "is it recording", and that belongs in the menu bar.
@@ -134,6 +141,7 @@ struct ContentView: View {
     @Environment(CaptureSession.self) private var session
     @Environment(\.modelContext) private var context
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismiss) private var dismiss
 
     /// The past meeting on show. Nil means "the live recording if there is one,
     /// otherwise the placeholder" — the split view's detail column owns this, because
@@ -143,6 +151,50 @@ struct ContentView: View {
     private let notifications = NotificationService.shared
 
     var body: some View {
+        // Read right here, in `body`, to choose which branch renders — `hasCompleted`
+        // backs a plain, non-observable `UserDefaults` flag, so this is the one place
+        // in this view guaranteed to see a fresh answer; the `onAppear` below only
+        // acts on whatever `body` already decided, it doesn't re-check.
+        if OnboardingState.hasCompleted {
+            library
+        } else {
+            // This window's `.defaultLaunchBehavior` is unconditionally `.automatic`
+            // (see `CheerioApp`) because conditioning it on onboarding state doesn't
+            // reliably keep it from opening on a first run anyway — macOS 26, #63. So
+            // it renders nothing and hands off to the walkthrough instead of building
+            // the sidebar, running its `@Query`, and showing library UI a first-run
+            // user has no data for anyway. `dismiss()` runs before `openWindow`, not
+            // after, so the walkthrough is never presented alongside this window —
+            // only ever after it — and both happen in `onAppear` rather than `.task`,
+            // the earliest synchronous point in this view's lifecycle, to close the
+            // gap between this window's chrome appearing and this handoff firing as
+            // tightly as SwiftUI's public API allows. A momentary zero-window gap
+            // between the two calls is not a new state for this app — the menu bar
+            // is already the primary surface and recording never requires a window
+            // (see `docs/SPEC.md`) — so it isn't stranding anything that couldn't
+            // already happen from the menu bar alone.
+            //
+            // What this can't fix: `.automatic` puts this window's `NSWindow` on
+            // screen before any SwiftUI content code runs at all, so a first run can
+            // still flash this window's chrome, blank, for a moment — no public
+            // Window-scene API vetoes that from inside content. Documented as a known
+            // residual on #63 rather than chased further here: the alternative that
+            // would actually prevent it — suppressing both windows and deciding which
+            // one opens from the `MenuBarExtra` label's own eager view instead —
+            // replaces the launch mechanism this PR's CI run just confirmed works
+            // (every non-onboarding screenshot depends on `.automatic` reliably
+            // opening this window) with an unverified one, for every launch, to fix a
+            // one-time cosmetic flash — not a trade to make blind, with no way to run
+            // the app here to check it.
+            Color.clear
+                .onAppear {
+                    dismiss()
+                    openWindow(id: OnboardingView.windowID)
+                }
+        }
+    }
+
+    private var library: some View {
         NavigationSplitView {
             MeetingListView(selection: $selectedMeeting)
                 // The default sidebar is narrow enough that the two start buttons
