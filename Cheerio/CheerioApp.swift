@@ -47,7 +47,7 @@ struct CheerioApp: App {
         // `OnboardingState.hasCompleted` (`.suppressed` on a first run) doesn't
         // reliably keep this window from claiming launch anyway — see #63. Rather
         // than fight that, `ContentView` embraces it and hands off to the
-        // walkthrough itself, explicitly, the moment its own `.task` runs.
+        // walkthrough itself, explicitly, from its own `onAppear`.
         .defaultLaunchBehavior(.automatic)
         .commands {
             // Where macOS apps put it: the app menu, right under "About Cheerio".
