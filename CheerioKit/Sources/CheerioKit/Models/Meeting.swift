@@ -11,8 +11,10 @@ public enum SpeakerChannel: String, Codable, Sendable {
 
 /// What a recording is, so downstream agents can route on the difference.
 ///
-/// A directive session (talking instructions at your agent, alone) isn't a meeting —
-/// nothing here creates one yet, but the model needs the tag before anything can.
+/// A directive session (talking instructions at your agent, alone) isn't a meeting.
+/// Capture can start as either kind — the menu bar's "Give Direction…" and the main
+/// window's matching control (issue #107) both set it at record time — and
+/// ``Meeting/toggleKind()`` lets a person fix a mislabeled recording afterward.
 public enum MeetingKind: String, Codable, Sendable {
     case meeting
     case directive
@@ -141,6 +143,28 @@ public final class Meeting {
     /// door.
     public func applyGeneratedTitle(_ newTitle: String) {
         title = newTitle
+    }
+
+    /// Flips ``kind`` between ``MeetingKind/meeting`` and ``MeetingKind/directive`` —
+    /// the "Convert to Directive"/"Convert to Meeting" action (issue #107), for a
+    /// recording started as the wrong kind. Both kinds have the same start-time
+    /// controls now (menu bar and main window), but a person can still misjudge which
+    /// button they meant, or realize only partway through that a call was really them
+    /// dictating to their agent.
+    ///
+    /// Mechanical only: this changes ``kind`` (and, downstream, the badge, the
+    /// directives-only filter, and every exported `kind` field, since all three read
+    /// this same stored value) and nothing else. It deliberately does not re-run
+    /// ``enhancedNotes``. As of this writing ``SummarizationEngine`` doesn't yet branch
+    /// its prompt on kind at all, so nothing here is stale *today* — but the
+    /// conservative choice is made ahead of that seam existing anyway: a silent
+    /// re-enhancement on convert would spend a model pass nobody asked for and replace
+    /// notes the person may still want, and once the prompt does differ by kind, doing
+    /// it silently would turn a meeting's notes into directive-shaped ones (or back)
+    /// without anyone deciding that's wanted. Re-enhancement-on-convert is a deliberate
+    /// follow-up, not an oversight.
+    public func toggleKind() {
+        kind = kind == .meeting ? .directive : .meeting
     }
 
     /// A stable identifier for this meeting, usable across processes — unlike

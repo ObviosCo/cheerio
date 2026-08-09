@@ -16,6 +16,10 @@ struct MeetingDetailView: View {
     @State private var relabelError: String?
     @State private var isDeleteConfirming = false
     @State private var deleteError: String?
+    /// Set from `convertMeetingKind`'s return value — kept separate from
+    /// ``relabelError`` and ``deleteError`` so a failed kind flip gets its own
+    /// wording instead of borrowing either of theirs.
+    @State private var convertError: String?
     /// Collapsed on every open (#104): opening a meeting was showing the transcript
     /// in full alongside everything else, which read as too much at once. No
     /// persistence — collapsed every time is the intended behavior, not a stand-in
@@ -114,11 +118,32 @@ struct MeetingDetailView: View {
         } message: {
             Text(deleteError ?? "")
         }
+        .alert("Couldn't convert meeting", isPresented: $convertError.presented()) {
+            Button("OK") { convertError = nil }
+        } message: {
+            Text(convertError ?? "")
+        }
         .toolbar {
             ToolbarItem {
                 ShareLink(item: exportMarkdown()) {
                     Label("Export", systemImage: "square.and.arrow.up")
                 }
+            }
+            ToolbarItem {
+                // Same write, and the same `canDelete` guard, as the library
+                // list's context menu item — see `Meeting.toggleKind()` for what
+                // conversion does and deliberately doesn't do (issue #107), and
+                // `convertMeetingKind` for why both entry points share this call
+                // rather than each going through their own general-purpose save.
+                Button {
+                    convertError = convertMeetingKind(meeting, context: context)
+                } label: {
+                    Label(
+                        meeting.kind == .directive ? "Convert to Meeting" : "Convert to Directive",
+                        systemImage: "arrow.triangle.2.circlepath"
+                    )
+                }
+                .disabled(!session.canDelete(meeting))
             }
             ToolbarItem {
                 // Reachable even for the meeting currently recording (selecting it

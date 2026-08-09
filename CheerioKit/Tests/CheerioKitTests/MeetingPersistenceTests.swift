@@ -89,4 +89,30 @@ import Testing
         let meetings = try context.fetch(FetchDescriptor<Meeting>(sortBy: [SortDescriptor(\.title)]))
         #expect(meetings.map(\.kind) == [.meeting, .directive])
     }
+
+    /// The "Convert to Directive"/"Convert to Meeting" action (issue #107) is a plain
+    /// property write followed by whatever save the calling view already does — this
+    /// pins that ``Meeting/toggleKind()``'s write is durable, not just an in-memory
+    /// flip that a UI happens to render correctly until the next launch.
+    @Test func toggledKindPersistsAcrossReopen() throws {
+        let store = try TempStore()
+        defer { store.tearDown() }
+
+        do {
+            let container = try store.open()
+            let context = ModelContext(container)
+            let meeting = Meeting(title: "Standup that was actually a directive")
+            context.insert(meeting)
+            try context.save()
+            #expect(meeting.kind == .meeting)
+
+            meeting.toggleKind()
+            try context.save()
+        }
+
+        let container = try store.open()
+        let context = ModelContext(container)
+        let meetings = try context.fetch(FetchDescriptor<Meeting>())
+        #expect(meetings.map(\.kind) == [.directive])
+    }
 }
