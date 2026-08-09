@@ -20,14 +20,28 @@ extension MarkdownBlock {
     /// Only the constructs the summarizer actually emits are recognized; anything
     /// else stays a paragraph, so unexpected syntax degrades to plain text rather
     /// than vanishing.
-    public static func blocks(in markdown: String) -> [MarkdownBlock] {
+    ///
+    /// - Parameter preservingLineBreaksInParagraphs: how consecutive plain lines
+    ///   with no blank line between them join into one paragraph. `false` (the
+    ///   default, and what the summarizer's prose wants — see
+    ///   `MarkdownBlockTests.splitsSummarizerNotesIntoBlocks`) joins them with a
+    ///   space, same as real Markdown's soft break: the model wraps a sentence
+    ///   across lines with no visual meaning attached to where it wrapped. `true`
+    ///   is for rough notes, typed by a person as one thought per line with no
+    ///   blank line to separate them (see the demo seed data and #108) — space-
+    ///   joining those would run three distinct notes into one sentence, so this
+    ///   keeps the line break instead.
+    public static func blocks(in markdown: String, preservingLineBreaksInParagraphs: Bool = false)
+        -> [MarkdownBlock]
+    {
         var blocks: [MarkdownBlock] = []
         // Consecutive plain lines are one paragraph, as in Markdown proper.
         var paragraph: [String] = []
+        let lineJoiner = preservingLineBreaksInParagraphs ? "\n" : " "
 
         func flushParagraph() {
             guard !paragraph.isEmpty else { return }
-            blocks.append(.paragraph(paragraph.joined(separator: " ")))
+            blocks.append(.paragraph(paragraph.joined(separator: lineJoiner)))
             paragraph = []
         }
 

@@ -60,7 +60,8 @@ and a directive-capture mode ("Give Direction…" in the menu bar).
   meeting. What you bothered to type is the strongest signal about what mattered. Still editable
   from the meeting's detail view afterward, for the follow-up thought that occurs to you once the
   call ends — editing there doesn't re-run the enhancement pass below, which is stated outright
-  rather than left to be discovered.
+  rather than left to be discovered. Write in Markdown and it renders once the meeting's over —
+  headings, lists, bold, links — with an Edit toggle to get back to plain text.
 - **Enhance locally.** Afterwards the on-device Foundation Model merges your rough notes with
   the transcript into a summary, key points, decisions, and action items — attributed to
   whoever committed to them where the transcript supports it, and never promoted past the

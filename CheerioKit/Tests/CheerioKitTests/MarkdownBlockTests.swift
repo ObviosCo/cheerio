@@ -70,4 +70,39 @@ import Testing
         #expect(MarkdownBlock.blocks(in: "").isEmpty)
         #expect(MarkdownBlock.blocks(in: "\n\n   \n").isEmpty)
     }
+
+    /// Rough notes typed as one thought per line, no blank line between them — the
+    /// shape `SeedDemoStore`'s demo data uses. Default joining would run all three
+    /// into one sentence; #108 is why `preservingLineBreaksInParagraphs` exists.
+    @Test func roughNotesKeepEachLineSeparateWhenPreserved() {
+        let notes = """
+            importer still 4x slower on the big fixture
+            19th is fixed — WWDC week after, nobody around
+            ask dana re: northgate timeline
+            """
+        #expect(
+            MarkdownBlock.blocks(in: notes, preservingLineBreaksInParagraphs: true) == [
+                .paragraph(
+                    "importer still 4x slower on the big fixture\n19th is fixed — WWDC week after, nobody around\nask dana re: northgate timeline"
+                )
+            ])
+        // Same input, default behavior: unchanged from before this parameter existed.
+        #expect(
+            MarkdownBlock.blocks(in: notes) == [
+                .paragraph(
+                    "importer still 4x slower on the big fixture 19th is fixed — WWDC week after, nobody around ask dana re: northgate timeline"
+                )
+            ])
+    }
+
+    /// The flag only changes paragraph joining — headings and list items, which
+    /// already end a paragraph on their own line, are unaffected.
+    @Test func preservingLineBreaksStillRecognizesHeadingsAndLists() {
+        #expect(
+            MarkdownBlock.blocks(in: "## Heading\n- item\nplain line", preservingLineBreaksInParagraphs: true) == [
+                .heading(level: 2, text: "Heading"),
+                .listItem(marker: "•", text: "item"),
+                .paragraph("plain line"),
+            ])
+    }
 }
