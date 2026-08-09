@@ -184,16 +184,16 @@ struct MeetingListView: View {
         }
     }
 
-    /// One row in the grouped list. The date now lives in the section header, so the
-    /// subtitle only needs the time — that's true even in an absolute-date section,
-    /// whose header already spells the date out in full, so repeating it on every row
-    /// underneath would be redundant rather than disambiguating. Time-only is also
-    /// the simpler, consistent choice: no branching on which kind of section a row
-    /// happens to land in.
+    /// One row in the grouped list. The date already lives in the section header, so
+    /// the subtitle carries who was there instead — a meeting's title tells you what
+    /// it was, participants tell you who, and the two together are what you actually
+    /// scan a library for. The time of day answers neither, which is why it isn't a
+    /// fallback here: a meeting with no roster shows no subtitle at all rather than
+    /// something less interesting than the title above it.
     @ViewBuilder private func row(for meeting: Meeting) -> some View {
-        VStack(alignment: .leading) {
+        VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 4) {
-                Text(meeting.title).font(.headline)
+                Text(meeting.title).chText(.meetingTitle)
                 // Set via "Give Direction…" in the menu bar (see MenuBarView); also
                 // what the toolbar's "Directives only" toggle filters `visibleMeetings`
                 // on above.
@@ -205,9 +205,12 @@ struct MeetingListView: View {
                         .background(.tint.opacity(0.15), in: .capsule)
                 }
             }
-            Text(meeting.startedAt.formatted(date: .omitted, time: .shortened))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            if let participants = participantsSubtitle(for: meeting) {
+                Text(participants)
+                    .chText(.meetingSubtitle)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
         }
         // Without this the clickable area is only as wide as the title.
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -229,6 +232,17 @@ struct MeetingListView: View {
             }
             .disabled(!session.canDelete(meeting))
         }
+    }
+
+    /// Comma-joined participant names for a row's subtitle, or `nil` when the
+    /// meeting has none recorded — `nil` means the row shows no second line at all,
+    /// never a fallback to something else. `participantNames` is set from the
+    /// enrolled roster at capture start (`CaptureSession`) and editable afterward
+    /// (`ParticipantRosterMenu`), so an older or ad-hoc meeting can legitimately
+    /// have none.
+    private func participantsSubtitle(for meeting: Meeting) -> String? {
+        guard let names = meeting.participantNames, !names.isEmpty else { return nil }
+        return names.joined(separator: ", ")
     }
 
     /// Start and stop live in the same place so stopping is as findable as starting.

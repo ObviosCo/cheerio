@@ -11,7 +11,13 @@ public extension Theme {
     /// Every role stays on a semantic style so Dynamic Type keeps working.
     /// Never pin a point size.
     enum TextRole {
+        /// A meeting's name in the library row. Sits *below* the list's section
+        /// headers in visual priority — a row is one of many under a header, not a
+        /// heading itself — so this stays off `.headline`'s bold weight on purpose.
         case meetingTitle
+        /// The library row's second line: participant names when the meeting has
+        /// any, nothing otherwise. Never the time — the row's section header
+        /// already carries the day.
         case meetingSubtitle
         case sectionHeading
         case notesBody
@@ -37,7 +43,7 @@ private struct CheerioTextRole: ViewModifier {
     func body(content: Content) -> some View {
         switch role {
         case .meetingTitle:
-            content.font(.title2).fontWeight(.semibold)
+            content.font(.callout).fontWeight(.medium)
                 .foregroundStyle(Theme.Colors.textPrimary)
         case .meetingSubtitle:
             content.font(.caption)
