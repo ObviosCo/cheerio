@@ -12,6 +12,13 @@ struct MeetingListView: View {
     @Query(sort: \Meeting.startedAt, order: .reverse) private var meetings: [Meeting]
 
     @State private var searchText = ""
+    /// Drives `meetingSections`' "now" instead of sampling `Date.now` directly in
+    /// the computed property. A computed property only re-evaluates when SwiftUI
+    /// re-renders the view, which happens on state changes — not on the wall
+    /// clock — so a library window left open past midnight with nothing else
+    /// changing would keep showing yesterday's meetings under "Today" forever.
+    /// `midnightRollover()` below is what actually advances this.
+    @State private var now: Date = .now
     /// The calendar event happening right now, offered as a title but never assumed.
     @State private var currentEvent: CalendarMeeting?
     /// A menu toggle rather than a section split: there aren't enough directives yet
@@ -45,7 +52,7 @@ struct MeetingListView: View {
     /// hard-coded into date logic here, so a second axis (grouping by project, #1)
     /// only has to add a case, not a rewrite.
     private var meetingSections: [MeetingListSection] {
-        MeetingListGrouping.sections(for: visibleMeetings)
+        MeetingListGrouping.sections(for: visibleMeetings, now: now)
     }
 
     var body: some View {
@@ -113,6 +120,9 @@ struct MeetingListView: View {
                 currentEvent = await CalendarService.shared.currentMeeting()
                 try? await Task.sleep(for: .seconds(30))
             }
+        }
+        .task {
+            await midnightRollover()
         }
         .alert("Rename meeting", isPresented: $renamingMeeting.presented()) {
             TextField("Meeting name", text: $renameText)
@@ -270,6 +280,36 @@ struct MeetingListView: View {
         guard !trimmed.isEmpty else { return }
         renamingMeeting.rename(to: trimmed)
         try? context.save()
+    }
+
+    /// Keeps `now` — and through it, the "Today"/"Yesterday" section titles —
+    /// correct across midnight without anything else in the view needing to
+    /// change. `.task` re-syncs `now` the moment this fires (covering a window
+    /// reopened the next day, the `onAppear`-equivalent case), then loops:
+    /// compute the next local midnight from whatever `now` actually is, sleep
+    /// until then, update `now`, repeat.
+    ///
+    /// Computing the boundary from `now` on every pass — rather than sleeping a
+    /// fixed 24 hours — is what makes this correct across a Mac sleeping through
+    /// midnight: `Task.sleep` only counts elapsed wall-clock time while awake, so
+    /// a laptop that sleeps at 11 PM and wakes at 8 AM delivers this wake far
+    /// later than the boundary it was aimed at. Re-deriving "midnight" from the
+    /// real current time on wake, instead of trusting the stale target, is what
+    /// keeps the section titles right either way.
+    private func midnightRollover() async {
+        let calendar = Calendar.current
+        while !Task.isCancelled {
+            now = .now
+            guard
+                let nextMidnight = calendar.nextDate(
+                    after: now,
+                    matching: DateComponents(hour: 0, minute: 0, second: 0),
+                    matchingPolicy: .nextTime
+                )
+            else { return }
+            let interval = nextMidnight.timeIntervalSince(now)
+            try? await Task.sleep(for: .seconds(max(interval, 0)))
+        }
     }
 
     private func startRecording(event: CalendarMeeting?) {
