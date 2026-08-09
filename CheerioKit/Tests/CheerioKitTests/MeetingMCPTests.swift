@@ -500,10 +500,12 @@ import Testing
     /// the same file, and the helper's is opened once and kept — see
     /// `MeetingQueryService`'s own docs on why it still creates a fresh context per
     /// call. This starts a reader that way, then makes three separate writes the
-    /// same shape `CaptureSession` now makes — the initial insert-and-save at
-    /// recording start, a mid-call segment checkpoint, and the final save at
-    /// `stop()` — checking after each one that the long-lived reader's next call
-    /// sees it, without ever reopening its container.
+    /// same shape `CaptureSession` now makes — the first save once both capture
+    /// channels have actually started (not the bare insert moments before, which
+    /// `CaptureSession` can still unwind through its failed-start rollback), a
+    /// mid-call segment checkpoint, and the final save at `stop()` — checking
+    /// after each one that the long-lived reader's next call sees it, without
+    /// ever reopening its container.
     @Test func writesDuringRecordingAreVisibleToAReaderOpenedBeforeTheyHappened() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appending(path: "cheerio-mcp-live-\(UUID().uuidString)", directoryHint: .isDirectory)
@@ -522,8 +524,9 @@ import Testing
         // long-lived MCP helper process, not a fresh container per assertion.
         let reader = MeetingQueryService(container: try MeetingStore.openReadOnly(at: url))
 
-        // 1. `CaptureSession.startCapturing`: insert, assign `stableID`, save —
-        // before a single word has been transcribed.
+        // 1. `CaptureSession.startCapturing`: insert, then — once both capture
+        // channels are confirmed running — assign `stableID` and save. Before a
+        // single word has been transcribed either way.
         let meeting = Meeting(title: "Design review")
         writer.insert(meeting)
         let uuid = meeting.stableID

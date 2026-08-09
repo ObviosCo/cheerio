@@ -143,24 +143,13 @@ final class CaptureSession {
         if let me = SpeakerLabeling.allEnrolled(context: context).first(where: \.isMe) {
             meeting.participantNames = [me.name]
         }
+        // Inserted now but not yet saved — see the save right before `state =
+        // .recording` below for why persisting waits until both capture channels
+        // have actually started. The unsaved model is fine to use for the rest of
+        // this setup: everything between here and there only ever mutates it or
+        // reads it back from `self.meeting`, in this same context, on this same
+        // actor.
         context.insert(meeting)
-        // Persisted now, not left to whenever `stop()` next saves: a second process
-        // reading this store (the MCP helper) takes its own snapshot on each call,
-        // so a meeting that only exists in this context's in-memory changes is
-        // invisible to it for the entire recording. `stableID` is read here rather
-        // than left to backfill lazily, so the row that lands on disk already
-        // carries the same identifier `fireTranscriptReadyCallback` will hand out
-        // later — a reader that saw this meeting mid-call and one that sees it
-        // after `stop()` need to agree it's the same meeting.
-        _ = meeting.stableID
-        do {
-            try context.save()
-        } catch {
-            // Best-effort, like every checkpoint below: a failed save here doesn't
-            // stop the recording, it only means a reader won't see this meeting
-            // until the next one succeeds — at worst `stop()`'s own save.
-            log.error("Couldn't persist meeting at recording start: \(error)")
-        }
         self.meeting = meeting
         self.calendarEventOccurrenceStart = calendarEventOccurrenceStart
         self.startedAt = .now
@@ -182,7 +171,6 @@ final class CaptureSession {
                     }
                 })
         }
-        startCheckpointing(context: context)
 
         // Audio-to-disk is a safety net, not a requirement: if it can't be set up
         // the meeting still records and transcribes.
@@ -218,6 +206,38 @@ final class CaptureSession {
         // `RecordingMode` only ever decides the mic's echo cancellation.
         try micCapture.start(mode: .current)
         try systemTap.start()
+
+        // Persisted only now, not at `insert(meeting)` above: everything since
+        // then can still throw (either engine's `start()`, either capture source's
+        // `start()`), and `start()`'s catch block unwinds all of it through
+        // `rollbackFailedStart` on any of those. Saving before this point would
+        // let a second process (the MCP helper) observe a meeting for a recording
+        // that never actually happened — and worse, a *permanent* one if the
+        // rollback's own save then failed too, since nothing after that would ever
+        // try again. Deferred to exactly here, once nothing standing between this
+        // and `state = .recording` can still fail, saving is the last thing that
+        // can go wrong with starting a recording rather than one more thing that
+        // can leave a ghost row behind.
+        //
+        // `stableID` is read here rather than left to backfill lazily, so the row
+        // that lands on disk already carries the same identifier
+        // `fireTranscriptReadyCallback` will hand out later — a reader that saw
+        // this meeting mid-call and one that sees it after `stop()` need to agree
+        // it's the same meeting.
+        _ = meeting.stableID
+        do {
+            try context.save()
+        } catch {
+            // Best-effort, like every checkpoint below: a failed save here doesn't
+            // stop the recording, it only means a reader won't see this meeting
+            // until the next one succeeds — at worst `stop()`'s own save.
+            log.error("Couldn't persist meeting at recording start: \(error)")
+        }
+        // Started only now too: a checkpoint firing any earlier has nothing on
+        // disk yet to add to, and — if it fired before the save above, on a slow
+        // enough model or device — would save a meeting with no `stableID` at all,
+        // defeating the save above's entire point.
+        startCheckpointing(context: context)
 
         state = .recording
         log.info("Recording started: \(title, privacy: .public)")
@@ -290,7 +310,14 @@ final class CaptureSession {
 
         if let meeting {
             // Nothing was captured, so this would be an empty row in the library and an
-            // empty directory on disk.
+            // empty directory on disk. `startCapturing` only ever saves the meeting
+            // once nothing between there and `state = .recording` can still throw, so
+            // reaching this rollback means it never did — deleting an insert this
+            // context never saved needs no save of its own to undo, and this one is
+            // just belt-and-suspenders against that ordering changing later without
+            // this being noticed. Either way, no second process ever saw this row: the
+            // failure mode a save-then-delete-then-failed-save would risk (a
+            // permanently ghosted meeting nothing writes to again) can't happen here.
             if let relativePath = meeting.audioDirectory {
                 try? AudioStorage.removeDirectory(atRelativePath: relativePath)
             }
