@@ -82,7 +82,7 @@
 
       <div class="stack stack--4" style="max-width:60ch">
         <p>You know the shape of it. The meeting takes an hour, and then somebody has to write up what was decided, work out who owes what, send the summary, open the tickets, and remember the thing everyone agreed to without quite saying it. Having had the meeting is its own piece of work. It's also the part that slips.</p>
-        <p class="muted">That gap is what Cheerio is aimed at. Not a better recording of the conversation, a shorter distance between the conversation and the things it was supposed to cause.</p>
+        <p class="muted">Cheerio is aimed at that gap. Not a better recording of the meeting, a shorter distance between the meeting and the follow-through.</p>
         <p class="muted">It won't rescue a meeting that shouldn't have happened. Nothing will, and any product that says otherwise is selling you something. What it removes is the overhead on the meetings that had a point.</p>
       </div>
 
@@ -182,13 +182,13 @@
 
       <div class="stack stack--4" style="max-width:60ch">
         <p>When your meetings live on somebody else's servers, you can read them and the tools working on your behalf mostly can't. There's usually an API. It usually costs something, and it works inside limits set by a company that has to earn a living from the place your transcripts are sitting. That isn't anybody behaving badly. It's just what happens when the record of your meeting is an asset on someone else's balance sheet.</p>
-        <p class="muted">Cheerio doesn't close that gap by opening a door. There is no door. The transcript is a file on your disk, in your account, on your machine, in the same place as everything else you run. That's the entire mechanism, and it's why this isn't a platform pitch: there's nothing to integrate with, no account to connect, and no advantage claimed from your meetings piling up here rather than somewhere else.</p>
+        <p class="muted">Cheerio closes that gap by being a file on your disk, in your account, on your machine, in the same place as everything else you run. There's nothing to integrate with, no account to connect, no platform. Your meetings piling up here earn us nothing.</p>
         <p class="muted">Two things make it convenient instead of just possible. The <a href="#callback">callback</a> hands a finished meeting to any command you name, the moment it's ready. And a small MCP server ships inside the app bundle, so an agent that wants to look one thing up (<em>what did we decide about the pricing page</em>) can ask, instead of being handed everything. Five tools, all read-only: it can't write, delete, start a recording or run a command. Your MCP client launches it over a pipe, and it has no networking path at all. Anything that can read a file could already read your meetings; the server just saves it learning the format.</p>
       </div>
 
       <div class="card stack stack--3">
         <h3 class="sub-title">“Nothing leaves your machine” and “your agents can read this.” Pick one</h3>
-        <p class="muted">Both are true, and the seam between them is worth naming out loud. Cheerio never sends a transcript anywhere. Point the callback at an agent that runs in the cloud and that agent forwards whatever you hand it (usually the reason you pointed it there, but it's your decision, made in a text field, and it's the exact moment the local guarantee stops applying). Point it at something running on your Mac and nothing changes hands at all. Cheerio's promise covers what Cheerio does. Past that field it's yours to configure.</p>
+        <p class="muted">Both are true. Cheerio never sends a transcript anywhere. Point the callback at an agent on your Mac and nothing leaves the machine. Point it at an agent backed by a cloud model and that agent uploads whatever you hand it. That's usually why you pointed it there, but it's your choice, not Cheerio's. The promise covers what Cheerio does; what you wire it to is up to you.</p>
       </div>
     </div>
   </section>
@@ -197,8 +197,8 @@
     <div class="wrap">
       <div class="card stack stack--4">
         <h2 class="sub-title">Why it runs on your machine</h2>
-        <p class="muted">This is the reason the rest of the page is true, rather than a feature of its own. Every model Cheerio uses lives on your Mac: Apple's for speech and for summarizing, plus one bundled model for telling voices apart. macOS fetches the speech model for your language once, on your first recording. From then on, recording a meeting, transcribing it and writing it up need no network at all, and hold up with the machine in airplane mode. There's no pipeline to wait on because there's no pipeline. Nothing to send, nothing to check the status of, nothing that gets slower because somebody else is having a busy Tuesday.</p>
-        <p class="muted">Two asterisks, both about the app rather than your meetings. Cheerio checks its GitHub Releases feed once a day for a new version and downloads one if you say yes (ordinary HTTPS fetches with no account, no analytics and no system profile attached; a check never starts while a recording is running, though one already underway when you hit record does finish, and the whole thing switches off in Settings&nbsp;→ Updates). The other is macOS itself, fetching the speech model for your language the first time you record.</p>
+        <p class="muted">Every model Cheerio uses lives on your Mac: Apple's for speech and for summarizing, plus one bundled model for telling voices apart. macOS fetches the speech model for your language once, on your first recording. From then on, recording a meeting, transcribing it and writing it up need no network at all, and hold up with the machine in airplane mode. There's no pipeline to wait on because there's no pipeline. Nothing to send, nothing to check the status of.</p>
+        <p class="muted">Two exceptions, both about the app rather than your meetings. Cheerio checks its GitHub Releases feed once a day for a new version and downloads one if you say yes (ordinary HTTPS fetches with no account, no analytics and no system profile attached; a check never starts while a recording is running, though one already underway when you hit record does finish, and the whole thing switches off in Settings&nbsp;→ Updates). The other is macOS itself, fetching the speech model for your language the first time you record.</p>
       </div>
     </div>
   </section>
@@ -331,7 +331,7 @@
       <div class="card stack stack--4">
         <h2 class="sub-title">Nothing here holds on to you</h2>
         <p class="muted">No account to make. No subscription to cancel. No copy on a server to ask someone to delete. Your meetings are files in one folder on your Mac. Take any of them out as Markdown whenever you like, and if you drag the app to the trash, that folder holds everything worth deleting after it: every recording, transcript, and note. (macOS keeps the usual few kilobytes of app preferences in its own preferences store, like it does for any app. Settings, never your meetings.) Nothing of yours is anywhere else, because Cheerio never sent it anywhere else. The one place a copy can exist is wherever you pointed the callback, and that copy answers to the service you chose, not to us.</p>
-        <p class="muted">That's a promise with a cost attached, and we've decided to accept it up front: if Cheerio is ever monetized, the monetization can't add a hoop. No sign-in for a paid tier, no sync that quietly becomes the default path, no team feature that needs an account, no telemetry you can't switch off, no format that only this app can read. A product that can't trap anybody has to be worth staying with.</p>
+        <p class="muted">If Cheerio is ever monetized, the rule is that monetization can't add a hoop. No sign-in for a paid tier, no sync that quietly becomes the default path, no team feature that needs an account, no telemetry you can't switch off, no format that only this app can read.</p>
         <div class="stack stack--3">
           <p class="button-row"><a class="button button--primary" id="download-closing" href="https://github.com/ObviosCo/cheerio/releases/download/v26.8.9/Cheerio-26.8.9.dmg">Download for macOS</a><a class="button button--secondary" href="faq.html">Read the FAQ first</a></p>
           <p class="caption">Free, MIT-licensed, and it works before the next meeting. macOS 26 or later on Apple&nbsp;Silicon.</p>
