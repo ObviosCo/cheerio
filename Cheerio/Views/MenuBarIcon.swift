@@ -20,17 +20,14 @@ import CheerioKit
 /// result for light/dark menu bars and Control Center.
 enum MenuBarIcon {
     /// Menu-bar template images live on an 18×18pt grid
-    /// (docs/DESIGN-HANDOFF.md §2).
-    static let pointSize: CGFloat = 18
+    /// (docs/DESIGN-HANDOFF.md §2) — the same constant `RecordingRing` uses,
+    /// so the app's own recording ring and this monochrome one never drift apart.
+    static let pointSize: CGFloat = Theme.Layout.menuBarGlyph
 
-    /// Ring centerline radius and stroke thickness, as fractions of the
-    /// drawing's side length. These are the same ratios
-    /// `Scripts/render-appicon.swift`'s `spec(forPixels:)` uses for its
-    /// smallest slots (`radius: 27.0, stroke: 21.0` on a 100-unit grid) —
-    /// the thickest ring in that script, because that's the one already
-    /// tuned to stay legible at a size close to this one.
+    /// Ring centerline radius, as a fraction of the drawing's side length —
+    /// the same ratio `Scripts/render-appicon.swift`'s `spec(forPixels:)` uses
+    /// for its smallest slots (`radius: 27.0` on a 100-unit grid).
     private static let radiusFraction: CGFloat = 0.27
-    private static let strokeFraction: CGFloat = 0.21
 
     /// Renders the template image for one session state. Cheap enough to call
     /// on every state change — a handful of ellipses on an 18pt canvas — so
@@ -51,7 +48,9 @@ enum MenuBarIcon {
         let side = min(rect.width, rect.height)
         let center = CGPoint(x: rect.midX, y: rect.midY)
         let radius = side * radiusFraction
-        let stroke = side * strokeFraction
+        // Same formula `RecordingRing` strokes its own circle with, so the two
+        // rings stay proportionally identical wherever `menuBarGlyph` lands.
+        let stroke = max(1.5, side * 0.28)
         let outerRadius = radius + stroke / 2
         let innerRadius = radius - stroke / 2
 

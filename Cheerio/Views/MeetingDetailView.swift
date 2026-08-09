@@ -57,6 +57,14 @@ struct MeetingDetailView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .navigationTitle(meeting.title)
+        // Slot assignment is call-order dependent by design (Theme's speaker-identity
+        // vocabulary): this is the first point a meeting not opened before might need
+        // one resolved. Re-keyed per meeting so switching in the sidebar re-runs it,
+        // and a no-op for one that already has every current speaker slotted.
+        .task(id: meeting.persistentModelID) {
+            meeting.resolveSpeakerSlots(ownerNames: SpeakerLabeling.ownerNames(context: context))
+            try? context.save()
+        }
         .alert("Couldn't identify speakers", isPresented: $relabelError.presented()) {
             Button("OK") { relabelError = nil }
         } message: {
@@ -169,15 +177,10 @@ struct MeetingDetailView: View {
                 }
             }
         } label: {
-            HStack(spacing: 2) {
-                if segment.isSpeakerLabelManual {
-                    Image(systemName: "hand.raised.fill").font(.system(size: 7))
-                }
-                Text(segment.displayLabel)
-            }
-            .font(.caption.bold())
-            .foregroundStyle(segment.channel == .me ? .blue : .secondary)
-            .frame(width: 72, alignment: .trailing)
+            // A minimum-width rail, not a fixed 72pt one — `SpeakerRailLabel`'s
+            // provenance styling (bold, primary text for a manual label) already
+            // carries what the hand icon used to say on its own.
+            SpeakerRailLabel(speaker(for: segment))
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -201,11 +204,15 @@ struct MeetingDetailView: View {
     }
 
     private func save() {
+        let ownerNames = SpeakerLabeling.ownerNames(context: context)
+        // Resolving slots before reconciling action items is order-independent —
+        // they read disjoint state — but both belong wherever a label just changed.
+        meeting.resolveSpeakerSlots(ownerNames: ownerNames)
         // Correcting who said a line can change who owns an action item; the stored
         // items must agree with what an export would now say (see
         // Meeting.reconcileActionItems). Idempotent, so harmless for saves that
         // didn't touch a label.
-        meeting.reconcileActionItems(ownerNames: SpeakerLabeling.ownerNames(context: context))
+        meeting.reconcileActionItems(ownerNames: ownerNames)
         do {
             try context.save()
         } catch {
@@ -220,14 +227,33 @@ struct MeetingDetailView: View {
         defer { isRelabeling = false }
         do {
             try await SpeakerLabeling.label(meeting: meeting, context: context)
+            let ownerNames = SpeakerLabeling.ownerNames(context: context)
+            meeting.resolveSpeakerSlots(ownerNames: ownerNames)
             // A fresh diarization pass rewrites non-manual labels wholesale — the
             // same trust-state invalidation as a hand correction, so the persisted
             // items must be re-checked the same way (see Meeting.reconcileActionItems).
-            meeting.reconcileActionItems(ownerNames: SpeakerLabeling.ownerNames(context: context))
+            meeting.reconcileActionItems(ownerNames: ownerNames)
             try? context.save()
         } catch {
             relabelError = error.localizedDescription
         }
+    }
+
+    /// The chip-and-name view model for one transcript line, reading provenance
+    /// straight off the model rather than inventing it here — see
+    /// ``SpeakerProvenance/init(isSpeakerLabelManual:isDiarizerGeneratedLabel:hasName:)``.
+    /// The slot itself is a lookup, not an assignment: ``Meeting/resolveSpeakerSlots(ownerNames:)``
+    /// is what hands new slots out, at the points above where speakers actually resolve,
+    /// so this stays a pure read safe to call from `body`.
+    private func speaker(for segment: TranscriptSegment) -> Speaker {
+        let isDiarizerGenerated = TranscriptSegment.isDiarizerGeneratedLabel(segment.speakerLabel)
+        let provenance = SpeakerProvenance(
+            isSpeakerLabelManual: segment.isSpeakerLabelManual,
+            isDiarizerGeneratedLabel: isDiarizerGenerated,
+            hasName: segment.speakerLabel != nil && !isDiarizerGenerated
+        )
+        let slot = meeting.speakerSlotAssigner.assignments[segment.speakerSlotKey] ?? .unresolved
+        return Speaker(id: segment.speakerSlotKey, name: segment.displayLabel, slot: slot, provenance: provenance)
     }
 
     private func exportMarkdown() -> String {

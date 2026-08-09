@@ -363,9 +363,9 @@ struct TranscriptCallbackSettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         case .failed(let title, let detail):
-            Label("Failed for “\(title)”: \(detail)", systemImage: "exclamationmark.triangle")
-                .font(.caption)
-                .foregroundStyle(.orange)
+            // `.error`, not `.attention` — this is an actual failure of the command
+            // run, not a warning to notice and move past.
+            StatusLabel(.error, "Failed for “\(title)”: \(detail)")
                 .lineLimit(2)
         }
     }

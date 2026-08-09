@@ -105,8 +105,7 @@ struct OnboardingPermissionStepView: View {
                 .foregroundStyle(.green)
         case .denied:
             VStack(spacing: 4) {
-                Label("Access denied", systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
+                StatusLabel(.attention, "Access denied")
                 Text("You can turn this on later in System Settings → Privacy & Security.")
                     .font(.caption)
                     .foregroundStyle(.secondary)

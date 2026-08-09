@@ -52,9 +52,16 @@ struct RecordingView: View {
                     // saves a re-identify later.
                     ParticipantRosterMenu(meeting: meeting)
                     if let startedAt = session.startedAt {
-                        Text(startedAt, style: .timer)
-                            .font(.callout.monospacedDigit())
-                            .foregroundStyle(.secondary)
+                        // The ring and the word travel with the timer here, not just
+                        // the digits — a bare timer is exactly the drift
+                        // `RecordingIndicator` exists to stop between this header,
+                        // the sidebar, and the menu bar.
+                        TimelineView(.periodic(from: startedAt, by: 1)) { context in
+                            RecordingIndicator(
+                                isRecording: true,
+                                elapsed: .seconds(Int(context.date.timeIntervalSince(startedAt).rounded()))
+                            )
+                        }
                     }
                 }
                 .padding(.horizontal, 12)

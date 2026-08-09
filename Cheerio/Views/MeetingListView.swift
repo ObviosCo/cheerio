@@ -238,7 +238,10 @@ struct MeetingListView: View {
                     Image(systemName: "stop.circle.fill")
                 }
             }
-            .tint(.red)
+            // Copper, not red — red means failure, and this button appears
+            // because a recording is healthy and in progress, not because
+            // anything went wrong.
+            .tint(Theme.Colors.recording)
 
             // Reading an earlier meeting mid-call replaces the live view, so there has
             // to be a way back to it.

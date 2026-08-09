@@ -65,6 +65,7 @@ struct MeetingSpeakersSection: View {
 
     private func row(for summary: SpeakerSummary) -> some View {
         HStack(spacing: 8) {
+            SpeakerChip(speaker(for: summary))
             Text(summary.displayName)
                 .font(.callout.weight(.medium))
             if summary.isManual {
@@ -123,11 +124,29 @@ struct MeetingSpeakersSection: View {
         return names
     }
 
+    /// The chip view model for one "Who was here" row — see the per-segment sibling
+    /// in ``MeetingDetailView/speaker(for:)``, which this mirrors against
+    /// ``SpeakerSummary`` instead of a single ``TranscriptSegment``.
+    private func speaker(for summary: SpeakerSummary) -> Speaker {
+        let provenance = SpeakerProvenance(
+            isSpeakerLabelManual: summary.isManual,
+            isDiarizerGeneratedLabel: TranscriptSegment.isDiarizerGeneratedLabel(summary.label),
+            hasName: !summary.isGeneratedLabel
+        )
+        let slot = meeting.speakerSlotAssigner.assignments[summary.id] ?? .unresolved
+        return Speaker(id: summary.id, name: summary.displayName, slot: slot, provenance: provenance)
+    }
+
     private func relabel(_ summary: SpeakerSummary, to newLabel: String?) {
         meeting.relabelSpeaker(summary, to: newLabel)
+        let ownerNames = SpeakerLabeling.ownerNames(context: context)
+        // A rename changes this speaker's summary id, which is also its slot key —
+        // resolve before reconciling, so the row that renders right after this save
+        // already has a slot instead of a one-frame `.unresolved` grey.
+        meeting.resolveSpeakerSlots(ownerNames: ownerNames)
         // Renaming a speaker can change who owns an action item — keep the stored
         // items in agreement with what an export would now say.
-        meeting.reconcileActionItems(ownerNames: SpeakerLabeling.ownerNames(context: context))
+        meeting.reconcileActionItems(ownerNames: ownerNames)
         do {
             try context.save()
         } catch {
@@ -148,6 +167,11 @@ struct MeetingSpeakersSection: View {
         // it back, or a later autosave commits part of an operation the user was
         // told failed.
         let priorActionItems = meeting.actionItems
+        // Same reasoning extends to the slot assigner: resolving slots below can
+        // hand this newly-named speaker a fresh one, and that has to unwind with
+        // everything else on failure or a retry could find the name already
+        // holding a slot capacity never actually committed.
+        let priorSlotAssigner = meeting.speakerSlotAssigner
         var insertedSpeaker: EnrolledSpeaker?
         var writtenSamplePath: String?
 
@@ -171,7 +195,9 @@ struct MeetingSpeakersSection: View {
             // Now that this speaker has a name, put it on their lines too — and
             // re-check the action items, since the lines just changed owners.
             meeting.relabelSpeaker(summary, to: name)
-            meeting.reconcileActionItems(ownerNames: SpeakerLabeling.ownerNames(context: context))
+            let ownerNames = SpeakerLabeling.ownerNames(context: context)
+            meeting.resolveSpeakerSlots(ownerNames: ownerNames)
+            meeting.reconcileActionItems(ownerNames: ownerNames)
             try context.save()
         } catch {
             if let insertedSpeaker { context.delete(insertedSpeaker) }
@@ -180,6 +206,7 @@ struct MeetingSpeakersSection: View {
                 segment.isSpeakerLabelManual = wasManual
             }
             meeting.actionItems = priorActionItems
+            meeting.speakerSlotAssigner = priorSlotAssigner
             if let writtenSamplePath {
                 try? AudioStorage.removeFile(atRelativePath: writtenSamplePath)
             }
@@ -228,21 +255,20 @@ private struct EnrollFromMeetingSheet: View {
             if summary.duration < EnrolledSpeaker.recommendedDuration {
                 // Better to say this now than to have them wonder why the next
                 // meeting still splits this person in two.
-                Label(
-                    "That's under the \(Int(EnrolledSpeaker.recommendedDuration))s recommended, so it may not be enough to tell similar voices apart. A longer sample from a meeting where they talked more will work better.",
-                    systemImage: "exclamationmark.triangle"
+                StatusLabel(
+                    .attention,
+                    "That's under the \(Int(EnrolledSpeaker.recommendedDuration))s recommended, so it may not be enough to tell similar voices apart. A longer sample from a meeting where they talked more will work better."
                 )
-                .font(.caption)
-                .foregroundStyle(.orange)
                 .fixedSize(horizontal: false, vertical: true)
             }
 
             if isDuplicate {
-                Text(
+                // A symbol joins the text here, where there wasn't one before — colour
+                // was otherwise the only signal a plain orange `Text` could give.
+                StatusLabel(
+                    .attention,
                     "“\(trimmedName)” is already enrolled — this adds a second sample under the same name, which wastes one of the four speaker slots."
                 )
-                .font(.caption)
-                .foregroundStyle(.orange)
                 .fixedSize(horizontal: false, vertical: true)
             }
 
