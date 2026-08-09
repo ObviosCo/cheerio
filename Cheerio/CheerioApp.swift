@@ -37,6 +37,23 @@ struct CheerioApp: App {
             fatalError("Couldn't open the local store: \(error)")
         }
 
+        // Here, in `init()`, rather than in `ContentView`'s `.task` (where an
+        // earlier version of this lived): that `.task` only ever runs once the
+        // library renders, and `ContentView` renders the onboarding branch
+        // instead whenever `OnboardingState.hasCompleted` is false — but
+        // recording from the menu bar works before onboarding finishes, so a
+        // crash during a pre-onboarding recording would stay `isInProgress`
+        // until the person completed a walkthrough they might not open for
+        // days. `init()` runs exactly once, before any window (onboarding or
+        // library) exists and before `session` could possibly have started a
+        // recording of its own — `excluding: session.meeting` is provably nil
+        // here, kept only because the function's contract is the same either
+        // way. `container.mainContext` is safe to touch synchronously here:
+        // `CaptureSession` and `NotificationService` are both `@MainActor`, and
+        // `NotificationService.shared.start` below is already called the same
+        // way, with no `await`.
+        StorageMigration.closeAbandonedRecordings(context: container.mainContext, excluding: session.meeting)
+
         // Here rather than in a `.task`, because this has to happen before the launch
         // finishes: the notification delegate and its action categories must exist by
         // then, or a click that *caused* the launch is delivered to nobody. This
@@ -240,13 +257,13 @@ struct ContentView: View {
             // Legacy rows carry no uuid, and the bundled MCP helper can't mint one
             // for them because it never writes. This process can.
             StorageMigration.backfillMeetingIDs(context: context)
-            // A meeting still `endedAt == nil` from a previous run is one a crash
-            // or force-quit interrupted, not one genuinely recording right now —
-            // `session.meeting` is that live exception, excluded so reopening this
-            // window mid-call can't close out the very meeting it's showing. See
-            // `StorageMigration.closeAbandonedRecordings` for why this can't wait
-            // for `stop()` to run for a process that no longer exists.
-            StorageMigration.closeAbandonedRecordings(context: context, excluding: session.meeting)
+            // `StorageMigration.closeAbandonedRecordings` used to run here too, but
+            // this `.task` only fires once the library renders, which never happens
+            // pre-onboarding — and recording from the menu bar works pre-onboarding,
+            // so a crash there would stay `isInProgress` until someone opened a
+            // walkthrough they might not for days. Moved to `CheerioApp.init()`,
+            // which runs exactly once, before either window exists and before this
+            // session could have recorded anything of its own to wrongly exclude.
             // Catches whatever MeetingDeletion.delete's own best-effort removal
             // didn't manage to remove — see AudioOrphanSweep for why that gap is
             // otherwise permanent rather than something a later run cleans up on

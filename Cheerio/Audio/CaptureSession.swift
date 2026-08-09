@@ -374,23 +374,36 @@ final class CaptureSession {
     /// No `ModelContext` involved, and deliberately so: `startCapturing` only ever
     /// inserts the meeting once nothing between there and `state = .recording` can
     /// still throw, so reaching this rollback means it was never inserted at all —
-    /// there is nothing in any context to delete or to undo with a save. The one
-    /// real cleanup left is the audio directory: `MeetingAudioRecorder.make()` can
-    /// succeed and record a path on `meeting` before either capture source's own
-    /// `start()` throws afterward, and that one did touch disk.
+    /// there is nothing in any context to delete or to undo with a save.
+    ///
+    /// `consumerTasks` are cancelled and `meeting` is cleared *before* this
+    /// function's first `await`, not after: if `micCapture.start()` succeeded but
+    /// `systemTap.start()` then threw, the mic side has queued audio, and
+    /// `micEngine?.stop()` just below deliberately finalizes and emits whatever it
+    /// queued — the same path a real final line takes. Left running, that update
+    /// would reach `handle`, which sets `segment.meeting = meeting` and inserts
+    /// the segment — implicitly cascade-inserting `meeting` into the (autosaving)
+    /// context on the way, out from under a recording this function exists
+    /// specifically to undo. Clearing `meeting` first means `handle` finds nothing
+    /// to attach a segment to even if a stray update still arrives after the
+    /// tasks are cancelled but before they've actually stopped; `handle`'s own
+    /// `state` guard is the second, independent line against the same race.
     private func rollbackFailedStart() async {
+        let audioDirectory = meeting?.audioDirectory
+        consumerTasks.forEach { $0.cancel() }
+        consumerTasks = []
+        meeting = nil
+
         micCapture?.stop()
         systemTap?.stop()
         try? await micEngine?.stop()
         try? await systemEngine?.stop()
-        consumerTasks.forEach { $0.cancel() }
-        consumerTasks = []
         checkpointTask?.cancel()
         checkpointTask = nil
         await recorder?.finish()
 
-        if let relativePath = meeting?.audioDirectory {
-            try? AudioStorage.removeDirectory(atRelativePath: relativePath)
+        if let audioDirectory {
+            try? AudioStorage.removeDirectory(atRelativePath: audioDirectory)
         }
 
         micEngine = nil
@@ -398,7 +411,6 @@ final class CaptureSession {
         micCapture = nil
         systemTap = nil
         recorder = nil
-        meeting = nil
         calendarEventOccurrenceStart = nil
         startedAt = nil
         liveLines = []
@@ -408,6 +420,14 @@ final class CaptureSession {
     }
 
     private func handle(_ update: TranscriptionUpdate, context: ModelContext) {
+        // A final update can still arrive after capture has stopped — either the
+        // ordinary drain in `stop()` (`.finishing`, which must keep working: it's
+        // the tail of a real transcript) or the failed-start race
+        // `rollbackFailedStart()` guards against on its side (`.preparingModel`,
+        // by the time anything reaches here). Recording proper and draining its
+        // tail are the only states a segment is ever real progress on; anything
+        // else is exactly the update this guard exists to drop.
+        guard state == .recording || state == .finishing else { return }
         if update.isFinal {
             volatileLine = nil
             liveLines.append(update)
