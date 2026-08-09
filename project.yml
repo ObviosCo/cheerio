@@ -104,6 +104,14 @@ targets:
         # that file. See .github/workflows/release.yml's header for the key ceremony.
         INFOPLIST_FILE: Cheerio/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # The project-wide accent: without this, `NSColor.controlAccentColor` (and
+        # so every AppKit-bridged control SwiftUI doesn't fully own — `Toggle`,
+        # `TabView`'s selected-tab chrome, `.borderedProminent` buttons) falls back
+        # to the user's System Settings accent regardless of any `.tint(_:)` in
+        # code (see `CheerioApp.swift`, which still sets `.tint(Theme.Colors.accent)`
+        # on each scene's content for the controls that *do* read it from the
+        # SwiftUI environment, like `AnyShapeStyle(.tint)` in `OnboardingProgressDots`).
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: Accent/Default
         CODE_SIGN_ENTITLEMENTS: Cheerio/Cheerio.entitlements
         ENABLE_HARDENED_RUNTIME: true
         GENERATE_INFOPLIST_FILE: false

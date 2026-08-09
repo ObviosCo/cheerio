@@ -80,15 +80,25 @@ struct CheerioApp: App {
     }
 
     var body: some Scene {
-        // `Scene` has no `.tint(_:)` of its own (unlike `View`) — each scene's root
-        // content view gets it individually below, which is still one token written
-        // once per scene rather than scattered across `Onboarding/` and `Settings/`.
-        // This is also why it can't wash out `RecordingRing`, which deliberately
-        // renders from `.foreground`, never `.tint` (see that type's doc comment),
-        // or a `role: .destructive` button, whose red is the button style's own
-        // default and not sourced from the ambient tint at all — only a control that
-        // explicitly reads `.tint` (`.borderedProminent`, `AnyShapeStyle(.tint)`)
-        // picks this up.
+        // Two mechanisms, not one, because `.tint(_:)` in code turned out not to be
+        // enough on its own (confirmed against a real build: `.borderedProminent`
+        // buttons and `Toggle`s rendered system blue with only this modifier in
+        // place). AppKit-bridged controls — `Toggle`, `TabView`'s selected-tab
+        // chrome, `.borderedProminent` — read `NSColor.controlAccentColor`
+        // directly, which SwiftUI's environment `.tint` doesn't reach; that only
+        // comes from project.yml's `ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME`
+        // (→ `NSAccentColorName` in the built `Info.plist`), naming this same
+        // `Accent/Default` asset. `.tint(_:)` below is still needed for the
+        // purely-SwiftUI reads that consult the environment value directly —
+        // `AnyShapeStyle(.tint)` and `.foregroundStyle(.tint)` in
+        // `OnboardingProgressDots`/`OnboardingHighlightRow`/`OnboardingScaffold`.
+        // `Scene` has no `.tint(_:)` of its own (unlike `View`), so this lands on
+        // each scene's content view individually rather than the App body once.
+        //
+        // Neither mechanism touches `RecordingRing`, which deliberately renders
+        // from `.foreground`, never `.tint` (see that type's doc comment), or a
+        // `role: .destructive` button, whose red is the button style's own default,
+        // not sourced from the accent at all.
         Window("Cheerio", id: MenuBarView.mainWindowID) {
             ContentView()
                 .environment(captureSession)
