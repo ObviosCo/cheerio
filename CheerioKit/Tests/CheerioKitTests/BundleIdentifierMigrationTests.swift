@@ -502,6 +502,51 @@ import Testing
         // swept as part of the same reconcile pass that follows a restore.
         #expect(try setAsideSiblings(of: shared, newBundleIdentifier: newID).isEmpty)
     }
+
+    /// The suppressed review finding on the restore itself: landing a
+    /// stranded store at `new` is two moves — displacing whatever's currently
+    /// there, then moving the sibling in — and if the second one fails after
+    /// the first succeeded, this must not return with `new` simply absent and
+    /// the real store still sitting, untouched, in its sibling. That's the
+    /// exact stranding the restore exists to fix, just relocated one
+    /// directory over. The displaced directory is rolled back into `new`, so
+    /// a failed restore attempt leaves both `new` and the sibling exactly as
+    /// it found them.
+    @Test func failingToLandTheStrandedStoreRollsTheDisplacedDirectoryBack() throws {
+        let shared = try scratchDirectory()
+        defer { try? FileManager.default.removeItem(at: shared) }
+        let new = shared.appending(path: newID, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: new, withIntermediateDirectories: true)
+        try Data("crumb".utf8).write(to: new.appending(path: "widget.json"))
+        let sibling = shared.appending(
+            path: "\(newID).pre-migration-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(
+            at: sibling.appending(path: "Meetings/abc", directoryHint: .isDirectory),
+            withIntermediateDirectories: true
+        )
+        try Data("real-store".utf8).write(to: sibling.appending(path: "default.store"))
+
+        // `old` is never created — this test is entirely about the restore's
+        // own transactionality, not about how a store ended up in a sibling
+        // in the first place, so `.freshInstall` (the ordinary verdict for no
+        // `old`) is the outcome absent a successful restore, and it's the
+        // *state on disk* this test actually cares about.
+        let outcome = BundleIdentifierMigration.migrate(
+            sharedApplicationSupport: shared, oldBundleIdentifier: oldID, newBundleIdentifier: newID,
+            fileManager: FailsRestoringTheStrandedStoreFileManager()
+        )
+
+        #expect(outcome == .freshInstall)
+        // `new` is back exactly where this attempt found it: bare, its own
+        // crumb intact, no store.
+        #expect(try Data(contentsOf: new.appending(path: "widget.json")) == Data("crumb".utf8))
+        #expect(!FileManager.default.fileExists(atPath: new.appending(path: "default.store").path))
+        // The real store was never touched by the failed restore — still
+        // exactly where the safety net found it, for a later attempt to try
+        // again.
+        #expect(try Data(contentsOf: sibling.appending(path: "default.store")) == Data("real-store".utf8))
+        #expect(FileManager.default.fileExists(atPath: sibling.appending(path: "Meetings/abc").path))
+    }
 }
 
 /// Stands in for a second Cheerio process winning the exact same rename between
@@ -584,5 +629,24 @@ private final class InterleavesAnotherAttemptsCompleteMigrationFileManager: File
             try? super.moveItem(at: old, to: new)
         }
         return super.fileExists(atPath: path)
+    }
+}
+
+/// Lets `restoreStrandedStore`'s first move (displacing whatever currently
+/// occupies `new`) succeed for real, fails its second (landing the
+/// store-bearing sibling at `new`) without touching the filesystem, and lets
+/// the rollback that follows — moving the displaced directory back into
+/// `new` — succeed for real too, so a test can observe the fully-recovered
+/// state rather than just the absence of a crash.
+private final class FailsRestoringTheStrandedStoreFileManager: FileManager {
+    private var moveCount = 0
+
+    override func moveItem(at srcURL: URL, to dstURL: URL) throws {
+        moveCount += 1
+        guard moveCount == 2 else {
+            try super.moveItem(at: srcURL, to: dstURL)
+            return
+        }
+        throw CocoaError(.fileWriteUnknown)
     }
 }

@@ -320,19 +320,51 @@ public enum BundleIdentifierMigration {
     ///
     /// Best-effort rather than a hard requirement: if the lock file can't even
     /// be opened (a read-only Application Support, most plausibly, though
-    /// nothing in normal operation makes that true), this runs `body` unlocked
-    /// rather than refusing to migrate at all. The retry loop and the
-    /// stranded-store restore are what keep that degraded path safe too — this
-    /// function's contract is "serialize when possible," not "never run without
-    /// serializing."
+    /// nothing in normal operation makes that true) — or, per below, if
+    /// acquiring it fails for a reason that isn't just a signal interrupting
+    /// the wait — this runs `body` unlocked rather than refusing to migrate at
+    /// all. The retry loop and the stranded-store restore are what keep that
+    /// degraded path safe too — this function's contract is "serialize when
+    /// possible," not "never run without serializing." Both fallbacks are
+    /// logged explicitly: silently proceeding unlocked, having assumed
+    /// serialization succeeded, would be worse than the thing this function
+    /// exists to prevent.
+    ///
+    /// `flock`'s return value is checked, not assumed: a blocking call can
+    /// still return `-1` — most plausibly `EINTR`, a signal interrupting the
+    /// wait, which says nothing about whether the lock is actually available
+    /// and is retried in the loop below rather than treated as a failure. Any
+    /// *other* errno is a real inability to acquire the lock, and only then
+    /// does this fall back to running unlocked; the unlock is registered only
+    /// once the loop's exit condition confirms the lock was actually taken, so
+    /// a `flock(LOCK_UN)` never fires against a descriptor that was never
+    /// locked in the first place.
     private static func withMigrationLock<T>(
         sharedApplicationSupport: URL, newBundleIdentifier: String, _ body: () -> T
     ) -> T {
         let lockURL = sharedApplicationSupport.appending(path: "\(newBundleIdentifier).migration.lock")
         let descriptor = open(lockURL.path, O_CREAT | O_RDWR, 0o644)
-        guard descriptor >= 0 else { return body() }
+        guard descriptor >= 0 else {
+            log.error(
+                "Couldn't open the migration lock file at \(lockURL.path, privacy: .public) (errno \(errno, privacy: .public)); running this migration unserialized."
+            )
+            return body()
+        }
         defer { close(descriptor) }
-        flock(descriptor, LOCK_EX)  // Blocks until held.
+
+        var result: Int32
+        var acquireErrno: Int32 = 0
+        repeat {
+            result = flock(descriptor, LOCK_EX)
+            acquireErrno = errno
+        } while result == -1 && acquireErrno == EINTR
+
+        guard result == 0 else {
+            log.error(
+                "Couldn't acquire the migration lock (errno \(acquireErrno, privacy: .public)); running this migration unserialized."
+            )
+            return body()
+        }
         defer { flock(descriptor, LOCK_UN) }
         return body()
     }
@@ -360,6 +392,17 @@ public enum BundleIdentifierMigration {
     /// introduce a *new* race between two concurrent restores; it's independent
     /// of the lock only in the sense that it doesn't assume the interleaving it
     /// exists to catch was actually prevented.
+    ///
+    /// Transactional in the one way that matters here: landing the sibling at
+    /// `new` is two moves (displacing whatever's currently at `new`, then
+    /// moving the sibling in), and if the second one fails after the first
+    /// succeeded, this rolls the first back rather than returning with `new`
+    /// simply absent and the real store still sitting, untouched, in its
+    /// sibling — the exact stranding this function exists to fix, just
+    /// relocated one directory over. `sibling` itself is never touched until
+    /// the second move, so a failure there always leaves it exactly as this
+    /// function found it, for a retried call (or the next launch) to try
+    /// again.
     private static func restoreStrandedStore(
         outcome: Outcome, sharedApplicationSupport: URL, new: URL, newBundleIdentifier: String,
         fileManager: FileManager
@@ -377,33 +420,71 @@ public enum BundleIdentifierMigration {
             guard fileManager.fileExists(atPath: sibling.appending(path: AudioStorage.storeFileName).path) else {
                 continue
             }
-            do {
-                if fileManager.fileExists(atPath: new.path) {
-                    // Whatever currently occupies `new` has no store of its own
-                    // (the guard above already established that), so it's set
-                    // aside rather than overwritten blindly — the next
-                    // reconcile pass folds it back in if nothing collides.
-                    let displaced = sharedApplicationSupport.appending(
-                        path: "\(newBundleIdentifier).pre-migration-\(UUID().uuidString)",
-                        directoryHint: .isDirectory
+
+            // Whatever currently occupies `new` has no store of its own (the
+            // guard above already established that), so it's displaced rather
+            // than overwritten blindly — the next reconcile pass folds it back
+            // in if nothing collides. A failure here hasn't touched `sibling`
+            // or moved anything into `new`, so nothing needs rolling back:
+            // both are exactly as this function found them.
+            var displaced: URL?
+            if fileManager.fileExists(atPath: new.path) {
+                let destination = sharedApplicationSupport.appending(
+                    path: "\(newBundleIdentifier).pre-migration-\(UUID().uuidString)",
+                    directoryHint: .isDirectory
+                )
+                do {
+                    try fileManager.moveItem(at: new, to: destination)
+                    displaced = destination
+                } catch {
+                    log.error(
+                        "Found a stranded store at \(sibling.path, privacy: .public) but couldn't clear \(new.path, privacy: .public) to restore it: \(error)"
                     )
-                    try fileManager.moveItem(at: new, to: displaced)
+                    return outcome
                 }
+            }
+
+            do {
                 try fileManager.moveItem(at: sibling, to: new)
-                log.notice(
-                    "Restored the migrated container from \(sibling.path, privacy: .public), which had displaced it."
-                )
-                reconcileSetAsideSiblings(
-                    sharedApplicationSupport: sharedApplicationSupport, newBundleIdentifier: newBundleIdentifier,
-                    fileManager: fileManager
-                )
-                return .migrated
             } catch {
+                // The first move succeeded but this one didn't: `new` is
+                // provably clear but doesn't have the real store either. Roll
+                // `displaced` back into `new` so this attempt leaves nothing
+                // worse than it found — `sibling` was never touched by this
+                // branch, so it's untouched regardless of whether the rollback
+                // below succeeds.
+                if let displaced {
+                    do {
+                        try fileManager.moveItem(at: displaced, to: new)
+                    } catch {
+                        // Both halves failed. `sibling` is still intact and
+                        // untouched — that's what actually matters, since it's
+                        // what the next attempt's own copy of this same check
+                        // will look for and find, whether that's a retry of
+                        // this call or the next launch entirely — but `new`
+                        // may now be in neither its original nor its restored
+                        // state, so this is logged loudly rather than folded
+                        // into the quieter message below.
+                        log.error(
+                            "Couldn't restore the stranded store at \(sibling.path, privacy: .public), and couldn't roll back \(displaced.path, privacy: .public) to \(new.path, privacy: .public) either: \(error). The real store remains intact at \(sibling.path, privacy: .public); a later attempt's stranded-store check will find it there."
+                        )
+                        return outcome
+                    }
+                }
                 log.error(
                     "Found a stranded store at \(sibling.path, privacy: .public) but couldn't restore it: \(error)"
                 )
                 return outcome
             }
+
+            log.notice(
+                "Restored the migrated container from \(sibling.path, privacy: .public), which had displaced it."
+            )
+            reconcileSetAsideSiblings(
+                sharedApplicationSupport: sharedApplicationSupport, newBundleIdentifier: newBundleIdentifier,
+                fileManager: fileManager
+            )
+            return .migrated
         }
         return outcome
     }
