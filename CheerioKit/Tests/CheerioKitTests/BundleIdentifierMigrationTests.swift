@@ -456,6 +456,52 @@ import Testing
         #expect(try Data(contentsOf: new.appending(path: "widget.json")) == Data("crumb".utf8))
         #expect(!FileManager.default.fileExists(atPath: orphan.path))
     }
+
+    /// The active review finding on the previous round's retry fix: the retry
+    /// loop's fresh read can be fooled by *this* attempt's own actions, not just
+    /// another attempt's. If a second attempt's entire migration completes in
+    /// the exact gap between this attempt observing a bare `new` and this
+    /// attempt's own move to set it aside, this attempt ends up moving the
+    /// *other attempt's freshly-migrated real container* into its own sibling —
+    /// its `old` is gone by then (the other attempt took it), so its own rename
+    /// throws, and on retry it sees `old` gone and `new` storeless (this
+    /// attempt itself just emptied it, by mistake) with no shape the retry loop
+    /// recognizes, reporting `.failed` while the real store sits one directory
+    /// away. Only the stranded-store safety net, not the retry loop, closes
+    /// this — this test simulates the interleaving purely at the `FileManager`
+    /// layer, standing in for the per-process lock having somehow been
+    /// bypassed, to prove the safety net recovers on its own regardless.
+    @Test func strandedStoreIsRestoredEvenWhenAnotherAttemptsFullMigrationInterleaves() throws {
+        let shared = try scratchDirectory()
+        defer { try? FileManager.default.removeItem(at: shared) }
+        let old = shared.appending(path: oldID, directoryHint: .isDirectory)
+        let new = shared.appending(path: newID, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(
+            at: old.appending(path: "Meetings/abc", directoryHint: .isDirectory),
+            withIntermediateDirectories: true
+        )
+        try Data("real-store".utf8).write(to: old.appending(path: "default.store"))
+        // Bare and store-less: what this attempt observes, right before the
+        // interleaved "other attempt" replaces it with the real container.
+        try FileManager.default.createDirectory(at: new, withIntermediateDirectories: true)
+        let otherAttemptsSibling = shared.appending(
+            path: "\(newID).pre-migration-other-attempt", directoryHint: .isDirectory)
+
+        let outcome = BundleIdentifierMigration.migrate(
+            sharedApplicationSupport: shared, oldBundleIdentifier: oldID, newBundleIdentifier: newID,
+            fileManager: InterleavesAnotherAttemptsCompleteMigrationFileManager(
+                old: old, new: new, otherAttemptsSibling: otherAttemptsSibling
+            )
+        )
+
+        #expect(outcome == .migrated)
+        #expect(try Data(contentsOf: new.appending(path: "default.store")) == Data("real-store".utf8))
+        #expect(FileManager.default.fileExists(atPath: new.appending(path: "Meetings/abc").path))
+        // Nothing left stranded: this attempt's own (misdirected) sibling was
+        // the one restored, and the other attempt's now-empty leftover was
+        // swept as part of the same reconcile pass that follows a restore.
+        #expect(try setAsideSiblings(of: shared, newBundleIdentifier: newID).isEmpty)
+    }
 }
 
 /// Stands in for a second Cheerio process winning the exact same rename between
@@ -504,5 +550,39 @@ private final class LosesTheRenameRaceAfterSettingAsideFileManager: FileManager 
         }
         try super.moveItem(at: srcURL, to: dstURL)
         try super.moveItem(at: srcURL, to: dstURL)
+    }
+}
+
+/// Simulates a second attempt's *entire* migration completing in the gap
+/// between this attempt checking that `new` is bare and this attempt's own
+/// move to set it aside — exactly the interleaving the per-process lock
+/// exists to make impossible, reproduced here to prove the stranded-store
+/// safety net alone still recovers from it. Triggers exactly once, on the
+/// first `fileExists` check against `new`'s own path — the precise call site
+/// where `attemptMigration` decides whether to set `new` aside — since that's
+/// the only moment this attempt reads `new`'s existence before acting on it.
+private final class InterleavesAnotherAttemptsCompleteMigrationFileManager: FileManager {
+    private let old: URL
+    private let new: URL
+    private let otherAttemptsSibling: URL
+    private var hasInterleaved = false
+
+    init(old: URL, new: URL, otherAttemptsSibling: URL) {
+        self.old = old
+        self.new = new
+        self.otherAttemptsSibling = otherAttemptsSibling
+        super.init()
+    }
+
+    override func fileExists(atPath path: String) -> Bool {
+        if !hasInterleaved, path == new.path {
+            hasInterleaved = true
+            // The "other attempt," running its own set-aside-then-rename to
+            // completion synchronously right here, standing in for the gap a
+            // real second process could occupy without the lock.
+            try? super.moveItem(at: new, to: otherAttemptsSibling)
+            try? super.moveItem(at: old, to: new)
+        }
+        return super.fileExists(atPath: path)
     }
 }

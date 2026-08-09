@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import OSLog
 
@@ -25,16 +26,21 @@ import OSLog
 /// library by definition, so it's moved aside first rather than merged into item
 /// by item — see ``migrate(sharedApplicationSupport:oldBundleIdentifier:newBundleIdentifier:fileManager:)``
 /// for why a destination-level merge can't make the same all-or-nothing guarantee
-/// this rename can, and for how two Cheerio processes racing the exact same
-/// migration are handled generically rather than as one-off interleavings.
+/// this rename can. Two Cheerio processes racing this exact migration are
+/// serialized by an inter-process file lock rather than handled as one-off
+/// interleavings — see ``withMigrationLock(sharedApplicationSupport:newBundleIdentifier:_:)``
+/// — with a retry loop and a stranded-store safety net kept as belt-and-braces
+/// underneath it.
 public enum BundleIdentifierMigration {
     private static let log = Logger(subsystem: AudioStorage.appBundleIdentifier, category: "BundleIdentifierMigration")
 
     /// How many times ``migrate(sharedApplicationSupport:oldBundleIdentifier:newBundleIdentifier:fileManager:)``
     /// re-reads the world and retries after a move throws, before concluding the
     /// failure is real rather than another launch racing the same migration.
-    /// Small on purpose: a genuine race resolves within one or two attempts (the
-    /// other launch finishes what it started), so this exists to absorb that, not
+    /// Small on purpose: with the inter-process lock below, this exists only to
+    /// absorb the tail of a race that started before the lock was acquired or the
+    /// rare case the lock itself couldn't be taken (see
+    /// ``withMigrationLock(sharedApplicationSupport:newBundleIdentifier:_:)``), not
     /// to paper over a real, repeatable I/O failure — which throws identically on
     /// every attempt and so still reports `.failed` once the budget runs out.
     private static let maxMigrationAttempts = 3
@@ -53,8 +59,9 @@ public enum BundleIdentifierMigration {
         /// location out of the way first, if there was one. `.migrated` always
         /// means the *entire* old container is now at the new location: nothing
         /// from `old` was left behind, skipped, or partially merged, regardless of
-        /// whether this call performed the rename itself or lost the race to
-        /// another launch that did.
+        /// whether this call performed the rename itself, lost the race to another
+        /// launch that did, or had to recover the real container from a sibling it
+        /// had been displaced into.
         case migrated
         /// Both containers hold a SwiftData store already. Neither is touched: the
         /// new one holds data written since the identifier changed (a second
@@ -63,9 +70,12 @@ public enum BundleIdentifierMigration {
         /// container, as it always does.
         case bothExist
         /// Every retry was exhausted without the world ever settling into a
-        /// recognized shape — a genuine, repeatable I/O error (permissions, most
+        /// recognized shape, and no set-aside sibling was found holding the real
+        /// store either — a genuine, repeatable I/O error (permissions, most
         /// plausibly) throwing the same way on every attempt, since a transient
-        /// race with another launch resolves within a couple of retries instead.
+        /// race with another launch resolves within a couple of retries instead,
+        /// and a displaced store would have been recovered before this is ever
+        /// returned (see ``migrate(sharedApplicationSupport:oldBundleIdentifier:newBundleIdentifier:fileManager:)``).
         /// `old` has not been touched in every path that reaches this: nothing is
         /// ever taken out of it until the rename that makes `new` current, which is
         /// one atomic step, so a failure setting a pre-existing store-less `new`
@@ -112,30 +122,33 @@ public enum BundleIdentifierMigration {
     /// existed. `.migrated` then keeps meaning what it always meant: the entire
     /// former `old` is now at `new`.
     ///
-    /// Two Cheerio processes can launch at once, so every one of those two moves
-    /// can race an identical attempt by another launch. Rather than special-case
-    /// each interleaving that produces (set-aside racing set-aside, set-aside
-    /// racing the rename, this launch's rename racing another's), a single move
-    /// throwing anywhere in ``attemptMigration(sharedApplicationSupport:old:new:newStore:oldBundleIdentifier:newBundleIdentifier:fileManager:)``
-    /// just asks for a retry: the next attempt re-reads `old` and `newStore` from
-    /// scratch, with no memory of what the previous attempt assumed, and resolves
-    /// to `.migrated` on its own if that fresh read shows another launch already
-    /// finished. `.failed` only comes from every attempt in
-    /// ``maxMigrationAttempts`` seeing the same stuck state and the same throw —
-    /// which is what a real, repeatable failure looks like, as opposed to a race
-    /// that clears within a couple of reads.
+    /// The whole thing runs inside ``withMigrationLock(sharedApplicationSupport:newBundleIdentifier:_:)``,
+    /// which is the primary defense against two Cheerio processes racing this
+    /// exact migration: a concurrent launch simply blocks for the few
+    /// milliseconds this takes, so the set-aside/rename dance above never
+    /// actually interleaves with another attempt at it in production. What's
+    /// below this point is belt-and-braces underneath that, not the primary
+    /// mechanism, kept because the lock is a courtesy (see that function) rather
+    /// than a hard requirement, and because proving the fallback machinery works
+    /// on its own is cheaper than trusting it never has to:
     ///
-    /// Reconciling whatever a set-aside step produced is likewise keyed on
-    /// observable state — "does `new` hold a store right now" — rather than on
-    /// which attempt, or which launch, created a given sibling: see
-    /// ``reconcileSetAsideSiblings(sharedApplicationSupport:newBundleIdentifier:fileManager:)``.
-    /// That's what makes the lost-the-race branch above still clean up the very
-    /// sibling *this* call created before losing, and what lets a much later,
-    /// otherwise-unrelated launch sweep a sibling orphaned by a launch that set
-    /// `new` aside and then genuinely failed the rename — nothing else would ever
-    /// revisit that sibling, since the next successful attempt finds `new` simply
-    /// absent and takes the direct-rename path with no reason to go looking for a
-    /// UUID-suffixed directory nothing points it at.
+    /// - A move throwing inside ``attemptMigration(sharedApplicationSupport:old:new:newStore:oldBundleIdentifier:newBundleIdentifier:fileManager:)``
+    ///   just asks for a retry rather than deciding on the spot — the next
+    ///   attempt re-reads `old` and `newStore` from scratch and resolves to
+    ///   `.migrated` on its own if that shows another attempt already finished.
+    /// - ``reconcileSetAsideSiblings(sharedApplicationSupport:newBundleIdentifier:fileManager:)``
+    ///   folds a set-aside sibling's contents back into `new` once `new` holds a
+    ///   store, keyed on that observable state rather than on which attempt or
+    ///   launch created a given sibling.
+    /// - ``restoreStrandedStore(outcome:sharedApplicationSupport:new:newBundleIdentifier:fileManager:)``
+    ///   is the last line: if `new` ends up without a store but a sibling holds
+    ///   one — the shape produced when an attempt observes a bare `new`, but
+    ///   another attempt's *entire* migration completes before the first one
+    ///   gets around to actually moving what it saw, so it ends up moving the
+    ///   second attempt's freshly-migrated real container into its own sibling
+    ///   by mistake — that sibling is restored to `new` before `migrate` returns
+    ///   any outcome, turning what the retry loop alone would report as
+    ///   `.failed` into `.migrated` instead.
     @discardableResult
     public static func migrate(
         sharedApplicationSupport: URL,
@@ -147,6 +160,27 @@ public enum BundleIdentifierMigration {
         let new = sharedApplicationSupport.appending(path: newBundleIdentifier, directoryHint: .isDirectory)
         let newStore = new.appending(path: AudioStorage.storeFileName)
 
+        return withMigrationLock(sharedApplicationSupport: sharedApplicationSupport, newBundleIdentifier: newBundleIdentifier) {
+            let outcome = resolveMigration(
+                sharedApplicationSupport: sharedApplicationSupport, old: old, new: new, newStore: newStore,
+                oldBundleIdentifier: oldBundleIdentifier, newBundleIdentifier: newBundleIdentifier,
+                fileManager: fileManager
+            )
+            return restoreStrandedStore(
+                outcome: outcome, sharedApplicationSupport: sharedApplicationSupport, new: new,
+                newBundleIdentifier: newBundleIdentifier, fileManager: fileManager
+            )
+        }
+    }
+
+    /// The decision `migrate` makes while holding the lock: fresh-install and
+    /// both-exist are one-time checks against the state `migrate` started with,
+    /// and everything past them retries against whatever the world looks like on
+    /// each attempt.
+    private static func resolveMigration(
+        sharedApplicationSupport: URL, old: URL, new: URL, newStore: URL,
+        oldBundleIdentifier: String, newBundleIdentifier: String, fileManager: FileManager
+    ) -> Outcome {
         guard fileManager.fileExists(atPath: old.path) else {
             // A machine that migrated long ago, whose old directory is long gone,
             // can still have an orphaned set-aside sibling from a *failed* attempt
@@ -185,11 +219,12 @@ public enum BundleIdentifierMigration {
     /// One attempt at the migration, reading `old` and `newStore`'s current state
     /// fresh rather than trusting anything decided earlier in the same call —
     /// nothing carries over between attempts except the count. Returns `nil` to
-    /// ask ``migrate(sharedApplicationSupport:oldBundleIdentifier:newBundleIdentifier:fileManager:)``
+    /// ask ``resolveMigration(sharedApplicationSupport:old:new:newStore:oldBundleIdentifier:newBundleIdentifier:fileManager:)``
     /// for another attempt: a thrown move here doesn't yet distinguish a genuine,
-    /// repeatable failure from another launch having reached the same fork first,
-    /// and re-reading state at the top of the *next* attempt is what tells them
-    /// apart, not anything available at the point of the throw itself.
+    /// repeatable failure from another attempt having reached the same fork
+    /// first, and re-reading state at the top of the *next* attempt is what
+    /// tells them apart, not anything available at the point of the throw
+    /// itself.
     private static func attemptMigration(
         sharedApplicationSupport: URL, old: URL, new: URL, newStore: URL,
         oldBundleIdentifier: String, newBundleIdentifier: String, fileManager: FileManager
@@ -197,15 +232,17 @@ public enum BundleIdentifierMigration {
         guard fileManager.fileExists(atPath: old.path) else {
             guard fileManager.fileExists(atPath: newStore.path) else {
                 // `old` disappeared without `new` ever holding a store — not a
-                // shape any launch racing this same migration produces (every
-                // branch below only removes `old` in the same step that populates
-                // `new`), and retrying can't bring `old` back. Reporting `.migrated`
-                // here would mean opening a container that isn't actually a
-                // library.
+                // shape any attempt racing this same migration produces on its
+                // own, and retrying can't bring `old` back. This is exactly the
+                // shape a mis-set-aside also produces (this attempt itself moved
+                // a just-migrated `new` into one of its own siblings by
+                // mistake), which is why `.failed` here isn't necessarily final —
+                // ``restoreStrandedStore(outcome:sharedApplicationSupport:new:newBundleIdentifier:fileManager:)``
+                // gets a chance to look for exactly that before `migrate` returns.
                 return .failed
             }
             log.notice(
-                "Lost the migration race to another launch; \(newBundleIdentifier, privacy: .public) is already the current container."
+                "Lost the migration race to another attempt; \(newBundleIdentifier, privacy: .public) is already the current container."
             )
             reconcileSetAsideSiblings(
                 sharedApplicationSupport: sharedApplicationSupport, newBundleIdentifier: newBundleIdentifier,
@@ -235,7 +272,7 @@ public enum BundleIdentifierMigration {
             try fileManager.moveItem(at: old, to: new)
         } catch {
             // A throw here means exactly one of two things: a genuine, repeatable
-            // failure (permissions, most plausibly), or another launch reaching
+            // failure (permissions, most plausibly), or another attempt reaching
             // this same fork first — moving `new` aside itself, or finishing the
             // whole rename — and leaving this attempt racing against a world that
             // no longer matches what it just read. The two are indistinguishable
@@ -254,24 +291,142 @@ public enum BundleIdentifierMigration {
         return .migrated
     }
 
+    /// Runs `body` while holding an exclusive inter-process lock on a file next
+    /// to `old`/`new` themselves, so two Cheerio processes racing this exact
+    /// migration serialize instead of interleaving. This is the primary defense
+    /// — the retry loop and the reconcile/restore machinery elsewhere in this
+    /// type exist to absorb what's left over *around* the lock (a race that
+    /// started before it was acquired, or the lock itself not being available),
+    /// not to substitute for it: without this, two launches racing the set-aside
+    /// step, one launch's set-aside racing another's rename, or one launch
+    /// displacing a container another just finished migrating are all real,
+    /// separately-reachable interleavings, each needing its own reasoning to
+    /// rule out. With it, a concurrent launch simply blocks for the few
+    /// milliseconds the whole migration takes, and none of those interleavings
+    /// can occur *by construction* — there is nothing left running concurrently
+    /// for them to interleave with.
+    ///
+    /// `flock(2)`, not `NSFileCoordinator`: this only needs to keep cooperating
+    /// copies of the very same app from interleaving on the very same
+    /// directory, which is exactly what an advisory inter-process file lock is
+    /// for, and simpler than standing up a coordinator for it. The lock is
+    /// released the instant this process's file descriptor for it closes — on
+    /// the `defer` below in the ordinary case, but also, at the kernel level, on
+    /// the process exiting for *any* reason, crash included. That means there is
+    /// no stale-lock state to detect or clean up: a holder that dies mid-
+    /// migration releases the lock as a side effect of dying, and the next
+    /// launch acquires it fresh rather than finding a lock file it has to
+    /// reason about the age or ownership of.
+    ///
+    /// Best-effort rather than a hard requirement: if the lock file can't even
+    /// be opened (a read-only Application Support, most plausibly, though
+    /// nothing in normal operation makes that true), this runs `body` unlocked
+    /// rather than refusing to migrate at all. The retry loop and the
+    /// stranded-store restore are what keep that degraded path safe too — this
+    /// function's contract is "serialize when possible," not "never run without
+    /// serializing."
+    private static func withMigrationLock<T>(
+        sharedApplicationSupport: URL, newBundleIdentifier: String, _ body: () -> T
+    ) -> T {
+        let lockURL = sharedApplicationSupport.appending(path: "\(newBundleIdentifier).migration.lock")
+        let descriptor = open(lockURL.path, O_CREAT | O_RDWR, 0o644)
+        guard descriptor >= 0 else { return body() }
+        defer { close(descriptor) }
+        flock(descriptor, LOCK_EX)  // Blocks until held.
+        defer { flock(descriptor, LOCK_UN) }
+        return body()
+    }
+
+    /// The last line of defense: if `new` doesn't hold a store but a
+    /// `<newBundleIdentifier>.pre-migration-*` sibling does, that sibling *is*
+    /// the real container, displaced by whatever interleaving produced this —
+    /// nothing but this migration's own set-aside step ever creates a directory
+    /// holding ``AudioStorage/storeFileName`` under that naming convention, which
+    /// is what makes finding one there an identity check, not a guess. It's
+    /// restored to `new` before `migrate` returns, regardless of which `outcome`
+    /// the rest of the decision computed, and regardless of whether the lock
+    /// above actually prevented every interleaving it's meant to: this doesn't
+    /// depend on *why* the store ended up in a sibling, only on the fact that it
+    /// did. Concretely, this is what recovers the shape one attempt observing a
+    /// bare `new` while a second attempt's entire migration completes before the
+    /// first gets around to moving what it saw produces: the first attempt ends
+    /// up moving the second attempt's freshly-migrated real container into its
+    /// own sibling by mistake, its own rename of the now-gone `old` throws, and
+    /// the retry loop's fresh read sees `old` gone and `new` storeless — a shape
+    /// nothing else recognizes — and reports `.failed` while the real store sits
+    /// exactly one directory away.
+    ///
+    /// Runs inside the same lock `migrate` already holds, so this doesn't
+    /// introduce a *new* race between two concurrent restores; it's independent
+    /// of the lock only in the sense that it doesn't assume the interleaving it
+    /// exists to catch was actually prevented.
+    private static func restoreStrandedStore(
+        outcome: Outcome, sharedApplicationSupport: URL, new: URL, newBundleIdentifier: String,
+        fileManager: FileManager
+    ) -> Outcome {
+        guard !fileManager.fileExists(atPath: new.appending(path: AudioStorage.storeFileName).path) else {
+            return outcome
+        }
+        guard let siblings = try? fileManager.contentsOfDirectory(atPath: sharedApplicationSupport.path) else {
+            return outcome
+        }
+
+        let prefix = "\(newBundleIdentifier).pre-migration-"
+        for name in siblings where name.hasPrefix(prefix) {
+            let sibling = sharedApplicationSupport.appending(path: name, directoryHint: .isDirectory)
+            guard fileManager.fileExists(atPath: sibling.appending(path: AudioStorage.storeFileName).path) else {
+                continue
+            }
+            do {
+                if fileManager.fileExists(atPath: new.path) {
+                    // Whatever currently occupies `new` has no store of its own
+                    // (the guard above already established that), so it's set
+                    // aside rather than overwritten blindly — the next
+                    // reconcile pass folds it back in if nothing collides.
+                    let displaced = sharedApplicationSupport.appending(
+                        path: "\(newBundleIdentifier).pre-migration-\(UUID().uuidString)",
+                        directoryHint: .isDirectory
+                    )
+                    try fileManager.moveItem(at: new, to: displaced)
+                }
+                try fileManager.moveItem(at: sibling, to: new)
+                log.notice(
+                    "Restored the migrated container from \(sibling.path, privacy: .public), which had displaced it."
+                )
+                reconcileSetAsideSiblings(
+                    sharedApplicationSupport: sharedApplicationSupport, newBundleIdentifier: newBundleIdentifier,
+                    fileManager: fileManager
+                )
+                return .migrated
+            } catch {
+                log.error(
+                    "Found a stranded store at \(sibling.path, privacy: .public) but couldn't restore it: \(error)"
+                )
+                return outcome
+            }
+        }
+        return outcome
+    }
+
     /// Sweeps every `<newBundleIdentifier>.pre-migration-*` sibling of `new` and
     /// folds whatever in each one doesn't collide back into `new`, once `new`
     /// actually holds a store.
     ///
     /// Keyed on that observable state — not on whether *this* call is the one
     /// that created a given sibling — so it reconciles regardless of which
-    /// attempt, or which launch, is responsible: this call's own set-aside
-    /// directory when it wins the rename outright, this call's own directory when
-    /// it instead loses the race after already setting one aside, and a sibling
-    /// orphaned by an entirely earlier, failed launch that this call never
-    /// touched at all. Called from every path in `migrate` and
-    /// `attemptMigration` that ends with `new` holding a store: the success path,
-    /// the lost-the-race branch, and the fresh-install guard (which also covers
-    /// "already migrated, however long ago").
+    /// attempt is responsible: this call's own set-aside directory when it wins
+    /// the rename outright, this call's own directory when it instead loses the
+    /// race after already setting one aside, and a sibling orphaned by an
+    /// entirely earlier, failed attempt that this call never touched at all.
+    /// Called from every path in `resolveMigration`, `attemptMigration`, and
+    /// `restoreStrandedStore` that ends with `new` holding a store: the success
+    /// path, the lost-the-race branch, the fresh-install guard (which also
+    /// covers "already migrated, however long ago"), and after a stranded-store
+    /// restore.
     ///
     /// Best-effort throughout: nothing here throws, because by the time this
     /// runs the migration itself already succeeded (or had already succeeded on
-    /// some earlier launch) and reporting `.failed` for a leftover crumb that
+    /// some earlier attempt) and reporting `.failed` for a leftover crumb that
     /// didn't make it back would be wrong. Whatever doesn't merge — a genuine
     /// name collision, most plausibly, since anything in a set-aside sibling was
     /// at most helper-created before its rename ran — stays in that sibling,
