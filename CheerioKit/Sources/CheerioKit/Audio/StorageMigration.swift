@@ -105,4 +105,55 @@ public enum StorageMigration {
             return 0
         }
     }
+
+    /// Ends any meeting a previous process left recording — a crash or force-quit
+    /// mid-call, since a normal ``CaptureSession/stop(context:)`` always sets
+    /// ``Meeting/endedAt`` itself. Without this, that row's ``Meeting/endedAt``
+    /// stays nil forever: `AudioRetentionService` only ever purges audio for a
+    /// meeting with `endedAt != nil`, and the MCP helper's `isInProgress`
+    /// (`endedAt == nil`) would report a call still going hours or days after
+    /// the app that was recording it is gone.
+    ///
+    /// `excluding` is whatever meeting the caller is actually recording right now,
+    /// if any. This runs once, from `CheerioApp.init()`, before either window
+    /// exists and before any new recording can start — a placement chosen so a
+    /// crash during a pre-onboarding menu-bar recording is still recovered. The
+    /// `excluding` argument stays even so: launch ordering is an implementation
+    /// detail of the caller, and any future repeated caller (or a launch that
+    /// somehow races a recording) must never close the meeting someone is still
+    /// talking into.
+    ///
+    /// The `endedAt` assigned is the last transcribed moment (`startedAt` plus the
+    /// latest segment's `endTime`), not "now": the app may not relaunch until long
+    /// after the crash, and reporting that gap as part of the meeting would claim
+    /// minutes nothing was actually recorded for. A meeting with no segments at all
+    /// — the crash landed before anything was transcribed — ends at `startedAt`
+    /// itself, a zero-length recording rather than an unbounded one.
+    ///
+    /// Returns how many rows were closed, so a caller can log it. Idempotent: once
+    /// a row has an `endedAt`, it no longer matches and a second run leaves it
+    /// alone.
+    @discardableResult
+    public static func closeAbandonedRecordings(context: ModelContext, excluding: Meeting?) -> Int {
+        do {
+            let descriptor = FetchDescriptor<Meeting>(predicate: #Predicate { $0.endedAt == nil })
+            let abandoned =
+                try context.fetch(descriptor)
+                .filter { $0.persistentModelID != excluding?.persistentModelID }
+            guard !abandoned.isEmpty else { return 0 }
+            for meeting in abandoned {
+                let lastKnownOffset = meeting.segments.map(\.endTime).max() ?? 0
+                meeting.endedAt = meeting.startedAt.addingTimeInterval(lastKnownOffset)
+            }
+            try context.save()
+            log.notice("Closed \(abandoned.count, privacy: .public) meeting(s) left recording by a previous run")
+            return abandoned.count
+        } catch {
+            // Not fatal: the meeting still reads as "in progress" until the next
+            // successful launch tries again, which is the same degraded-not-broken
+            // shape as a failed `backfillMeetingIDs` above.
+            log.error("Couldn't close abandoned recordings: \(error)")
+            return 0
+        }
+    }
 }

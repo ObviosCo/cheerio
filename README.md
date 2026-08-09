@@ -100,7 +100,7 @@ Five tools, all read-only:
 
 | Tool | What it does |
 | --- | --- |
-| `list_meetings` | Recent meetings, newest first. Filter by kind and date, paged. A recording in progress is included and marked. |
+| `list_meetings` | Recent meetings, newest first. Filter by kind and date, paged. A recording is visible here from the moment it starts, marked `isInProgress`; finalized lines land within a couple of seconds of being spoken, though the line currently being spoken isn't there until transcription finalizes it. |
 | `search_meetings` | Free text across titles, notes, speaker names, and every transcript line — the same match the app's own search uses. |
 | `get_meeting` | One meeting in full: metadata, your rough notes, the enhanced notes, action items, transcript. |
 | `get_transcript` | Just the speaker-labelled lines, each flagged with whether it was you talking. |

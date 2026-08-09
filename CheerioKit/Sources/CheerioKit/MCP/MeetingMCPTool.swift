@@ -25,9 +25,12 @@ public enum MeetingMCPTool: String, CaseIterable, Sendable {
         case .listMeetings:
             """
             List recorded meetings and directive sessions, most recent first. Returns metadata only — \
-            call get_meeting or get_transcript for the contents. A recording still in progress is \
-            included with isInProgress true; its transcript reflects the store's most recent save, \
-            which may trail the live meeting or be empty until it finishes.
+            call get_meeting or get_transcript for the contents. A recording is visible here from the \
+            moment it starts, with isInProgress true, and its transcript is never withheld until the \
+            meeting finishes: each finalized line lands in the store within a couple of seconds of being \
+            spoken. The one line still being spoken isn't in the store at all yet — it only appears once \
+            transcription finalizes it — so the very end of an in-progress transcript can lag by more \
+            than that couple of seconds.
             """
         case .getMeeting:
             """

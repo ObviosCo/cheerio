@@ -127,6 +127,29 @@ final class CaptureSession {
     private var systemTap: SystemAudioTap?
     private var recorder: MeetingAudioRecorder?
     private var consumerTasks: [Task<Void, Never>] = []
+    /// Flushes finalized transcript segments to disk on ``checkpointInterval``'s
+    /// cadence — see ``startCheckpointing(context:)``. Cancelled in ``stop(context:)``,
+    /// which takes over saving explicitly from that point on, and defensively in
+    /// ``rollbackFailedStart()``, which in practice never finds it running.
+    private var checkpointTask: Task<Void, Never>?
+    /// How often ``handle(_:context:)``'s inserts are checkpointed while recording.
+    ///
+    /// Off the realtime audio path entirely — ``handle`` already runs on this
+    /// (main) actor, not the audio callback, and this loop is a second, independent
+    /// task that only ever touches the `ModelContext`. Bounds staleness for
+    /// *finalized* segments only: ``handle`` inserts a `TranscriptSegment` when an
+    /// update's `isFinal` is true, and this loop only ever saves what's already in
+    /// the context — ``volatileLine``, the line currently being spoken, is never
+    /// inserted at all, so a reader doesn't see it on this cadence or any other; it
+    /// appears only once transcription finalizes it. For what this does bound, the
+    /// interval is a trade between two readers: a second process (the MCP helper)
+    /// watching an in-progress meeting sees each finalized line within this long of
+    /// it finalizing, and a shorter interval spends more disk I/O contending with
+    /// the same context transcription is inserting into. Two seconds is short
+    /// enough that "in progress" reads as live, long enough that it coalesces the
+    /// common case of both channels finalizing a line within the same second or two
+    /// of each other into one save instead of two.
+    private static let checkpointInterval: Duration = .seconds(2)
     /// When the current recording began, for the elapsed-time readout.
     private(set) var startedAt: Date?
 
@@ -148,10 +171,10 @@ final class CaptureSession {
                 context: context)
         } catch {
             // Half-started is the worst state to leave: engines running, the recorder
-            // holding open files, possibly a live microphone, an empty meeting in the
-            // library, and the UI stuck on "Preparing model…" with no way back. Unwind
-            // all of it before handing the error up.
-            await rollbackFailedStart(context: context)
+            // holding open files, possibly a live microphone, and the UI stuck on
+            // "Preparing model…" with no way back. Unwind all of it before handing the
+            // error up.
+            await rollbackFailedStart()
             throw error
         }
     }
@@ -180,7 +203,12 @@ final class CaptureSession {
         if let me = SpeakerLabeling.allEnrolled(context: context).first(where: \.isMe) {
             meeting.participantNames = [me.name]
         }
-        context.insert(meeting)
+        // Not inserted yet — see the insert right before `state = .recording`
+        // below for why. `self.meeting` is a plain Swift reference to an object
+        // this `context` doesn't know about yet, which is exactly the point:
+        // setting it can't touch disk. The rest of this setup only ever mutates
+        // this local `meeting` or reads it back through `self.meeting`, on this
+        // same actor, so nothing here needs it context-attached.
         self.meeting = meeting
         self.calendarEventOccurrenceStart = calendarEventOccurrenceStart
         self.startedAt = .now
@@ -238,6 +266,50 @@ final class CaptureSession {
         try micCapture.start(mode: .current)
         try systemTap.start()
 
+        // Inserted only now, not when `meeting` was created above: everything
+        // since then can still throw (either engine's `start()`, either capture
+        // source's `start()`), and `start()`'s catch block unwinds all of it
+        // through `rollbackFailedStart` on any of those.
+        //
+        // This has to be the *insert* that's deferred, not just the `save()` below
+        // — `context` is the environment's `ModelContext` (every call site reaches
+        // `start(context:)` through `@Environment(\.modelContext)` or
+        // `ModelContainer.mainContext`, neither of which this app ever opts out of
+        // SwiftData's default `autosaveEnabled = true` for; contrast
+        // `MeetingQueryService.makeContext()` in CheerioKit, which sets
+        // `autosaveEnabled = false` explicitly because *that* context must never
+        // write on its own). Inserting early and only deferring the explicit save
+        // still leaves the meeting sitting in this autosaving context's pending
+        // changes across every `await` between here and there — any of which can
+        // let the run loop service something that trips autosave before this
+        // function ever calls `save()` itself. Deferring the insert closes that
+        // gap outright: there's nothing in `context`'s pending changes for
+        // autosave to act on until this line runs, and nothing suspends between
+        // this line and the explicit `save()` two lines down, so no interleaved
+        // event gets a chance to write an incomplete recording to disk before this
+        // function decides to.
+        //
+        // `stableID` is read here rather than left to backfill lazily, so the row
+        // that lands on disk already carries the same identifier
+        // `fireTranscriptReadyCallback` will hand out later — a reader that saw
+        // this meeting mid-call and one that sees it after `stop()` need to agree
+        // it's the same meeting.
+        context.insert(meeting)
+        _ = meeting.stableID
+        do {
+            try context.save()
+        } catch {
+            // Best-effort, like every checkpoint below: a failed save here doesn't
+            // stop the recording, it only means a reader won't see this meeting
+            // until the next one succeeds — at worst `stop()`'s own save.
+            log.error("Couldn't persist meeting at recording start: \(error)")
+        }
+        // Started only now too: a checkpoint firing any earlier has nothing
+        // inserted yet to add to, and — if it fired between the insert and the
+        // save just above — would save a meeting with no `stableID` at all,
+        // defeating the save's entire point.
+        startCheckpointing(context: context)
+
         state = .recording
         log.info("Recording started: \(title, privacy: .public)")
         // Withdraws any pending "record it?" offer immediately, rather than leaving
@@ -246,6 +318,35 @@ final class CaptureSession {
         // to its fire time, can lose that race. See
         // `NotificationService.recordingDidStart()` for the rest of the reasoning.
         NotificationService.shared.recordingDidStart()
+    }
+
+    /// Starts the periodic save that makes ``handle(_:context:)``'s inserts visible
+    /// to a second process, on ``checkpointInterval``'s cadence for as long as this
+    /// task runs — cancelled by ``stop(context:)``, which saves explicitly from
+    /// that point on. ``rollbackFailedStart()`` also cancels it defensively, but
+    /// can never actually find it running: this is the last thing `startCapturing`
+    /// calls before nothing further can throw, so a rollback never happens once
+    /// this has.
+    private func startCheckpointing(context: ModelContext) {
+        checkpointTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.checkpointInterval)
+                guard !Task.isCancelled else { return }
+                self?.checkpoint(context: context)
+            }
+        }
+    }
+
+    /// One checkpoint save. `hasChanges` skips the common case of a quiet couple of
+    /// seconds where nothing new finalized, so this doesn't touch disk on a fixed
+    /// timer regardless of whether there's anything to write.
+    private func checkpoint(context: ModelContext) {
+        guard context.hasChanges else { return }
+        do {
+            try context.save()
+        } catch {
+            log.error("Checkpoint save failed: \(error)")
+        }
     }
 
     /// Waits for the transcript consumers to finish handing over their last updates.
@@ -269,23 +370,40 @@ final class CaptureSession {
 
     /// Returns to `.idle` from a `start` that threw partway through, leaving nothing
     /// running and no empty meeting behind.
-    private func rollbackFailedStart(context: ModelContext) async {
+    ///
+    /// No `ModelContext` involved, and deliberately so: `startCapturing` only ever
+    /// inserts the meeting once nothing between there and `state = .recording` can
+    /// still throw, so reaching this rollback means it was never inserted at all —
+    /// there is nothing in any context to delete or to undo with a save.
+    ///
+    /// `consumerTasks` are cancelled and `meeting` is cleared *before* this
+    /// function's first `await`, not after: if `micCapture.start()` succeeded but
+    /// `systemTap.start()` then threw, the mic side has queued audio, and
+    /// `micEngine?.stop()` just below deliberately finalizes and emits whatever it
+    /// queued — the same path a real final line takes. Left running, that update
+    /// would reach `handle`, which sets `segment.meeting = meeting` and inserts
+    /// the segment — implicitly cascade-inserting `meeting` into the (autosaving)
+    /// context on the way, out from under a recording this function exists
+    /// specifically to undo. Clearing `meeting` first means `handle` finds nothing
+    /// to attach a segment to even if a stray update still arrives after the
+    /// tasks are cancelled but before they've actually stopped; `handle`'s own
+    /// `state` guard is the second, independent line against the same race.
+    private func rollbackFailedStart() async {
+        let audioDirectory = meeting?.audioDirectory
+        consumerTasks.forEach { $0.cancel() }
+        consumerTasks = []
+        meeting = nil
+
         micCapture?.stop()
         systemTap?.stop()
         try? await micEngine?.stop()
         try? await systemEngine?.stop()
-        consumerTasks.forEach { $0.cancel() }
-        consumerTasks = []
+        checkpointTask?.cancel()
+        checkpointTask = nil
         await recorder?.finish()
 
-        if let meeting {
-            // Nothing was captured, so this would be an empty row in the library and an
-            // empty directory on disk.
-            if let relativePath = meeting.audioDirectory {
-                try? AudioStorage.removeDirectory(atRelativePath: relativePath)
-            }
-            context.delete(meeting)
-            try? context.save()
+        if let audioDirectory {
+            try? AudioStorage.removeDirectory(atRelativePath: audioDirectory)
         }
 
         micEngine = nil
@@ -293,7 +411,6 @@ final class CaptureSession {
         micCapture = nil
         systemTap = nil
         recorder = nil
-        meeting = nil
         calendarEventOccurrenceStart = nil
         startedAt = nil
         liveLines = []
@@ -303,6 +420,14 @@ final class CaptureSession {
     }
 
     private func handle(_ update: TranscriptionUpdate, context: ModelContext) {
+        // A final update can still arrive after capture has stopped — either the
+        // ordinary drain in `stop()` (`.finishing`, which must keep working: it's
+        // the tail of a real transcript) or the failed-start race
+        // `rollbackFailedStart()` guards against on its side (`.preparingModel`,
+        // by the time anything reaches here). Recording proper and draining its
+        // tail are the only states a segment is ever real progress on; anything
+        // else is exactly the update this guard exists to drop.
+        guard state == .recording || state == .finishing else { return }
         if update.isFinal {
             volatileLine = nil
             liveLines.append(update)
@@ -330,6 +455,12 @@ final class CaptureSession {
         systemTap?.stop()
         try? await micEngine?.stop()
         try? await systemEngine?.stop()
+        // From here on this function saves explicitly at each step below — the
+        // periodic checkpoint has nothing left to do and would only race those
+        // saves, most of which need to run after work (diarization, enhancement)
+        // that a save on a two-second timer can't wait for.
+        checkpointTask?.cancel()
+        checkpointTask = nil
         await recorder?.finish()
         // Drain, don't cancel. Each engine's `stop()` finishes its results stream, so
         // these consumers end on their own once they've handed over every update —

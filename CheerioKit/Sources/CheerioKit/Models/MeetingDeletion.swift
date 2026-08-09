@@ -18,10 +18,11 @@ public enum MeetingDeletion {
     ///
     /// Why isolated: the app's shared context is also where
     /// `CaptureSession.handle` inserts newly transcribed segments while a
-    /// recording is in progress, pending there until `stop()` saves them — and
-    /// deleting an *older* meeting mid-recording is allowed
-    /// (`CaptureSession.canDelete(_:)` only forbids deleting the meeting actively
-    /// recording). A failed save on a shared context has to roll back somehow,
+    /// recording is in progress, checkpointed there on a periodic save rather
+    /// than left pending until `stop()` — and deleting an *older* meeting
+    /// mid-recording is allowed (`CaptureSession.canDelete(_:)` only forbids
+    /// deleting the meeting actively recording). A failed save on a shared
+    /// context has to roll back somehow,
     /// and `ModelContext.rollback()` discards every pending change registered on
     /// that context, not just this deletion's — so running this against the
     /// shared context could cost a live recording its not-yet-saved transcript
