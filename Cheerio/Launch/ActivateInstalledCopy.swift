@@ -66,13 +66,20 @@ enum ActivateInstalledCopy {
             installedVersion.compare(firstVersionWithCheckForUpdatesHandler, options: .numeric)
                 != .orderedAscending
         else {
-            // Too old either way — a launch failure here changes nothing
-            // about which instruction the user needs, so the result is
-            // discarded.
-            _ = try? await NSWorkspace.shared.openApplication(
-                at: installedBundleURL, configuration: NSWorkspace.OpenConfiguration()
-            )
-            return .installedCopyTooOldForHandoff
+            // Too old for the handler either way, but *launching* it can
+            // still fail on its own — a bundle that's unreadable enough to
+            // report no version at all is a reasonable thing to also fail to
+            // open. Reporting `.installedCopyTooOldForHandoff` regardless
+            // would tell the user to go use a menu item on a copy that never
+            // actually launched.
+            do {
+                _ = try await NSWorkspace.shared.openApplication(
+                    at: installedBundleURL, configuration: NSWorkspace.OpenConfiguration()
+                )
+                return .installedCopyTooOldForHandoff
+            } catch {
+                return .handoffFailed(error.localizedDescription)
+            }
         }
 
         let configuration = NSWorkspace.OpenConfiguration()

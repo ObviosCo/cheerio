@@ -11,30 +11,39 @@ enum MoveToApplications {
     /// Copies — never moves in place, since the source is typically a
     /// read-only DMG mount or an App Translocation bind mount, neither of
     /// which can be written to — `currentBundleURL` to `/Applications`, under
-    /// its own name. Falls back to `~/Applications` if that fails: a standard
-    /// (non-admin) account can't write to `/Applications` at all, and this
-    /// package already treats `~/Applications` as an equally stable install
-    /// location (`InstalledCopyScan.searchDirectories()`) rather than asking
-    /// for admin authorization, which would need a password prompt for
-    /// something the user didn't otherwise have to authenticate for.
+    /// its own name. Falls back to `~/Applications` only for a failure a
+    /// directory change can actually fix, like the permissions error a
+    /// standard (non-admin) account hits against the system-wide directory:
+    /// this package already treats `~/Applications` as an equally stable
+    /// install location (`InstalledCopyScan.searchDirectories()`), and it
+    /// costs nothing to try rather than asking for admin authorization, which
+    /// would need a password prompt for something the user didn't otherwise
+    /// have to authenticate for.
+    ///
+    /// `destinationAlreadyExists` is deliberately excluded from that retry: it
+    /// means `/Applications` already has a copy — installed, or a same-named
+    /// decoy — and falling back to `~/Applications` wouldn't fix that, it
+    /// would just create a *second* copy, exactly the duplicate this whole
+    /// flow (issue #56) exists to prevent. `InstalledCopyScan` missing that
+    /// copy despite it being right there is the actual bug in that case, not
+    /// something a different destination could paper over.
     static func perform(currentBundleURL: URL) -> Result<URL, Error> {
         switch copy(currentBundleURL, to: URL(fileURLWithPath: "/Applications")) {
         case .success(let destination):
             return .success(destination)
         case .failure(let systemApplicationsError):
-            let userApplications = FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent("Applications")
-            try? FileManager.default.createDirectory(at: userApplications, withIntermediateDirectories: true)
-            switch copy(currentBundleURL, to: userApplications) {
-            case .success(let destination):
-                return .success(destination)
-            case .failure:
-                // The /Applications failure is almost always the informative
-                // one (a permissions error); if the per-user fallback failed
-                // too it's usually the same underlying problem restated (a
-                // full disk, say), so that's the error worth surfacing.
-                return .failure(systemApplicationsError)
+            guard case MoveToApplicationsError.destinationAlreadyExists = systemApplicationsError else {
+                let userApplications = FileManager.default.homeDirectoryForCurrentUser
+                    .appendingPathComponent("Applications")
+                try? FileManager.default.createDirectory(
+                    at: userApplications, withIntermediateDirectories: true
+                )
+                // Whatever this produces — success or its own, more
+                // actionable failure — is exactly what the caller should see;
+                // the /Applications error already got its say above.
+                return copy(currentBundleURL, to: userApplications)
             }
+            return .failure(systemApplicationsError)
         }
     }
 

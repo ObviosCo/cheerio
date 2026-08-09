@@ -97,8 +97,12 @@ Five tools, all read-only:
 
 Nothing can write, delete, start a recording, or run a command.
 
-**Adding it.** Cheerio's **Settings → Agents** shows the path to the helper inside your copy of
-the app and a copy button for each client's config. From a terminal it's:
+**Adding it.** Cheerio's **Settings → Agents** shows the path to the helper *inside your actual
+copy* of the app and a copy button for each client's config — it reads its own bundle location
+rather than assuming one, so it's correct whether Cheerio is at `/Applications` (the default) or
+`~/Applications` (where a standard, non-admin account's copy ends up if it was ever offered the
+move — see [Download](#download)). The commands below are for the default
+location; if yours differs, copy from Settings → Agents instead of these.
 
 ```sh
 claude mcp add cheerio -- /Applications/Cheerio.app/Contents/Helpers/cheerio-mcp
@@ -180,8 +184,10 @@ right-click ceremony. Requires macOS 26 or later on Apple Silicon.
 
 If you do launch it straight from the DMG or a translocated path, Cheerio notices and offers to
 move itself to `/Applications` on the spot — or, if a copy is already installed there, points you
-at that one instead of letting two copies collide. A dev build run from a build directory is
-unaffected; the check only fires for a launch location Sparkle couldn't have updated anyway.
+at that one instead of letting two copies collide. On a standard (non-admin) account that can't
+write to `/Applications`, it falls back to `~/Applications` instead, which Cheerio treats as
+equally stable. A dev build run from a build directory is unaffected; the check only fires for a
+launch location Sparkle couldn't have updated anyway.
 
 The `.zip` on the same release is the identical app; it's what the updater downloads, and
 Sparkle prefers that format. Either one works if you install it to `/Applications`.
