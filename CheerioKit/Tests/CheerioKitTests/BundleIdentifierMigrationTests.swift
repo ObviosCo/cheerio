@@ -71,6 +71,60 @@ import Testing
         )
     }
 
+    /// The production incident (#126): an MCP client resolved the helper's store
+    /// path — creating nothing but a bare parent directory along the way, in the
+    /// version of the helper running that morning — before the rebuilt app had ever
+    /// launched to migrate anything. The old guard read that empty directory as
+    /// "already migrated" and walked away, stranding the whole library under the
+    /// old identifier. The fix: a new directory with no store in it still gets the
+    /// old container's contents moved in.
+    @Test func bareNewDirectoryMigratesTheOldContentsIn() throws {
+        let shared = try scratchDirectory()
+        defer { try? FileManager.default.removeItem(at: shared) }
+        let old = shared.appending(path: oldID, directoryHint: .isDirectory)
+        let new = shared.appending(path: newID, directoryHint: .isDirectory)
+        let oldMeetingDirectory = old.appending(path: "Meetings/abc", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: oldMeetingDirectory, withIntermediateDirectories: true)
+        try Data("store".utf8).write(to: old.appending(path: "default.store"))
+        // Bare: exists, empty, no store — exactly what a path resolution that only
+        // ever reads (never writes) can still leave behind as a side effect of
+        // resolving `.applicationSupportDirectory` itself.
+        try FileManager.default.createDirectory(at: new, withIntermediateDirectories: true)
+
+        let outcome = BundleIdentifierMigration.migrate(
+            sharedApplicationSupport: shared, oldBundleIdentifier: oldID, newBundleIdentifier: newID
+        )
+
+        #expect(outcome == .migrated)
+        #expect(!FileManager.default.fileExists(atPath: old.path))
+        #expect(FileManager.default.fileExists(atPath: new.appending(path: "default.store").path))
+        #expect(FileManager.default.fileExists(atPath: new.appending(path: "Meetings/abc").path))
+    }
+
+    /// A new directory that exists for a reason with nothing to do with migration —
+    /// here standing in for a stray file dropped by something else entirely — must
+    /// keep that file exactly as it was: the merge only ever moves *old*'s items,
+    /// and skips anything whose name already exists at the destination.
+    @Test func newDirectoryWithUnrelatedFileButNoStoreMigratesWithoutClobberingIt() throws {
+        let shared = try scratchDirectory()
+        defer { try? FileManager.default.removeItem(at: shared) }
+        let old = shared.appending(path: oldID, directoryHint: .isDirectory)
+        let new = shared.appending(path: newID, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: old, withIntermediateDirectories: true)
+        try Data("store".utf8).write(to: old.appending(path: "default.store"))
+        try FileManager.default.createDirectory(at: new, withIntermediateDirectories: true)
+        try Data("unrelated".utf8).write(to: new.appending(path: "widget.json"))
+
+        let outcome = BundleIdentifierMigration.migrate(
+            sharedApplicationSupport: shared, oldBundleIdentifier: oldID, newBundleIdentifier: newID
+        )
+
+        #expect(outcome == .migrated)
+        #expect(!FileManager.default.fileExists(atPath: old.path))
+        #expect(FileManager.default.fileExists(atPath: new.appending(path: "default.store").path))
+        #expect(try Data(contentsOf: new.appending(path: "widget.json")) == Data("unrelated".utf8))
+    }
+
     @Test func bothExistingNeverClobbersEither() throws {
         let shared = try scratchDirectory()
         defer { try? FileManager.default.removeItem(at: shared) }

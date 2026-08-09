@@ -114,12 +114,19 @@ public enum AudioStorage {
 
     /// The shared, user-level Application Support directory — NOT where we write.
     /// Only used to migrate data written there before this was fixed.
+    ///
+    /// `create: false`: every caller (`BundleIdentifierMigration`,
+    /// `StorageMigration`) uses this to build a path to check or move, never to
+    /// write directly against, so there is nothing here for this resolution step
+    /// itself to bring into being — see ``containerURL(bundleIdentifier:)``'s doc
+    /// comment for why a path-resolution function creating something as a side
+    /// effect is exactly the shape of bug issue #126 was.
     static func sharedApplicationSupport() throws -> URL {
         try FileManager.default.url(
             for: .applicationSupportDirectory,
             in: .userDomainMask,
             appropriateFor: nil,
-            create: true
+            create: false
         )
     }
 
