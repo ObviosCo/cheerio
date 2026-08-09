@@ -163,8 +163,39 @@ struct UpdateSettingsView: View {
 struct GeneralSettingsView: View {
     @Environment(\.openWindow) private var openWindow
 
+    /// Both default on. `@AppStorage`'s default and `NotificationSettings`' fallback
+    /// have to agree — see the comment on `NotificationSettings.isEnabled` for why
+    /// neither side can use a plain `bool(forKey:)`.
+    @AppStorage(NotificationSettings.suggestRecordingKey) private var suggestsRecording = true
+    @AppStorage(NotificationSettings.notesReadyKey) private var announcesNotesReady = true
+
+    /// Whether macOS is currently refusing to deliver anything, so the toggles can
+    /// say why they appear to do nothing.
+    @State private var systemDenied = false
+
     var body: some View {
         Form {
+            Section {
+                Toggle("Suggest recording when a calendar meeting starts", isOn: $suggestsRecording)
+                Toggle("Notify when notes are ready", isOn: $announcesNotesReady)
+                Text(
+                    "Cheerio asks macOS for permission to notify you the first time it has something to say — not at launch. Meeting suggestions need calendar access; without it there's nothing to suggest."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                if systemDenied {
+                    // Stated once, where somebody has come looking, and nowhere else:
+                    // no badge, no banner, nothing that follows the user around. The
+                    // toggles stay live because they record what you want, which is
+                    // still worth recording while the system says no.
+                    Text("macOS is currently blocking notifications from Cheerio. Turn them on in System Settings › Notifications.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Notifications")
+            }
+
             Section {
                 Button("Show the Welcome Walkthrough Again") {
                     openWindow(id: OnboardingView.windowID)
@@ -178,6 +209,11 @@ struct GeneralSettingsView: View {
         }
         .formStyle(.grouped)
         .frame(width: 420)
+        .task {
+            // A read, never a request: opening Settings must not be a way to trigger
+            // the permission prompt out of context.
+            systemDenied = await NotificationService.shared.isDeniedBySystem()
+        }
     }
 }
 

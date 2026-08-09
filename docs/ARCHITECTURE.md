@@ -159,6 +159,8 @@ Swift 6 strict concurrency. Audio IOProcs/taps hand buffers off through `AsyncSt
 
 `com.apple.security.device.audio-input`, `com.apple.security.personal-information.calendars`. Usage strings: mic, audio capture, calendar. No network entitlement.
 
+**Notifications are the one permission the walkthrough doesn't ask for**, and that's deliberate (issue #51). `UNUserNotificationCenter` needs no entitlement and no usage string, and its prompt is requested *lazily* — at the first moment `Cheerio/Notifications/NotificationService.swift` would actually post something, which is within half an hour of a real calendar meeting or right after a recording finishes processing. Putting it in the first-run sequence would ask about a feature nothing has demonstrated yet, on top of three dialogs that each gate something visible. A denial is final and silent: nothing retries, nothing badges Settings, and both notifications simply never appear. The one place it's mentioned is Settings › General, where somebody has come looking.
+
 One consequence of the sandbox being off: the missing network entitlement no longer *enforces* anything — entitlements only constrain a sandboxed process. So local-only rests on review, not on the system.
 
 What that means concretely, now that Sparkle is in the app:
