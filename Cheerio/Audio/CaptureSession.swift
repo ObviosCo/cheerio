@@ -9,7 +9,11 @@ import SwiftData
 @MainActor
 @Observable
 final class CaptureSession {
-    enum State {
+    /// `Equatable` so `MeetingAudioPlayerView` can react to a transition with
+    /// `.onChange(of:)` — it has to know when a recording *starts*, not just poll
+    /// whether one is in progress, since playback that was already running has
+    /// to be actively paused, not merely left un-resumable.
+    enum State: Equatable {
         case idle
         case preparingModel
         case recording
