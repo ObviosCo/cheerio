@@ -43,7 +43,12 @@ public actor SummarizationEngine {
 
     /// Approximate character budget per chunk. The on-device model's context
     /// window is ~4k tokens, so long transcripts are summarized map-reduce style.
-    private let chunkCharacterBudget = 8_000
+    ///
+    /// Not `private`, and `nonisolated` since it's an immutable constant:
+    /// `SummarizationEngineChunkingTests` sizes its fixtures against this value via
+    /// `@testable import` rather than duplicating the number, without needing an
+    /// actor hop just to read it.
+    nonisolated let chunkCharacterBudget = 8_000
 
     private let model: SystemLanguageModel
 
@@ -95,9 +100,9 @@ public actor SummarizationEngine {
         ownerNames: Set<String>
     ) async throws -> EnhancedNotes {
         var drafts: [NotesDraft] = []
-        // Blank chunks are skipped rather than sent: the chunker can emit one when a
-        // single line exceeds the budget (issue #13), and a structured extraction over
-        // nothing invites invented action items. #13's overflow itself is untouched.
+        // Blank chunks are skipped rather than sent: a run of empty transcript lines
+        // can fill a chunk with nothing but newlines, and a structured extraction over
+        // nothing invites invented action items.
         for chunk in chunked(transcript) where !chunk.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             drafts.append(try await extract(from: chunk, roughNotes: roughNotes, ownerNames: ownerNames))
         }
@@ -195,18 +200,53 @@ public actor SummarizationEngine {
         }
     }
 
-    private func chunked(_ text: String) -> [String] {
+    /// Not `private`: the map-reduce split is exercised directly from
+    /// `SummarizationEngineChunkingTests` via `@testable import`, since the public
+    /// entry point requires an on-device model that isn't available in CI.
+    ///
+    /// Every piece pushed into `current` — a whole short line, a fragment of a line
+    /// wider than the budget, or the line-separating newline — goes through `append`,
+    /// which is what keeps every emitted chunk within budget: a piece only ever joins
+    /// `current` when it fits, or starts a fresh chunk when it doesn't.
+    func chunked(_ text: String) -> [String] {
         var chunks: [String] = []
         var current = ""
-        for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
-            if current.count + line.count > chunkCharacterBudget {
+
+        func append(_ piece: String) {
+            if !current.isEmpty && current.count + piece.count > chunkCharacterBudget {
                 chunks.append(current)
                 current = ""
             }
-            current += line + "\n"
+            current += piece
+        }
+
+        for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            for piece in splitOversizedLine(String(line)) {
+                append(piece)
+            }
+            append("\n")
         }
         if !current.isEmpty { chunks.append(current) }
         return chunks
+    }
+
+    /// Splits a single line wider than the whole budget — previously passed through
+    /// whole regardless of `chunkCharacterBudget` (issue #13) — into pieces that each
+    /// fit on their own. Breaks prefer the last space at or before the limit so words
+    /// survive intact; a stretch with no space in it (one token spanning the entire
+    /// budget) is hard-cut instead, since there's no better boundary to offer it.
+    private func splitOversizedLine(_ line: String) -> [String] {
+        guard line.count > chunkCharacterBudget else { return [line] }
+        var pieces: [String] = []
+        var remainder = Substring(line)
+        while remainder.count > chunkCharacterBudget {
+            let limit = remainder.index(remainder.startIndex, offsetBy: chunkCharacterBudget)
+            let breakPoint = remainder[..<limit].lastIndex(of: " ").map(remainder.index(after:)) ?? limit
+            pieces.append(String(remainder[..<breakPoint]))
+            remainder = remainder[breakPoint...]
+        }
+        if !remainder.isEmpty { pieces.append(String(remainder)) }
+        return pieces
     }
 }
 
