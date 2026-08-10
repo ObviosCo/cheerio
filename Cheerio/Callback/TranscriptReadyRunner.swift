@@ -53,32 +53,35 @@ enum TranscriptReadyRunner {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin").path,
     ]
 
-    /// Fires the callback for `export` if the current settings say to. Called from
-    /// `CaptureSession` at the one point a meeting counts as "ready" — see the
-    /// comment there for why that point and not earlier. Returns immediately: the
-    /// subprocess runs on its own detached task, and nothing in the capture
+    /// Fires the callback for `export` if the settings — and the holding state's
+    /// per-meeting decision, when the meeting went through one — say to. Called
+    /// from `CaptureSession` at the one point a meeting counts as "ready" — see
+    /// the comment there for why that point and not earlier. Returns immediately:
+    /// the subprocess runs on its own detached task, and nothing in the capture
     /// pipeline waits on it.
     @MainActor
-    static func fireIfNeeded(export: MeetingExport) {
-        guard TranscriptCallbackSettings.shouldFire(for: export.kind),
+    static func fireIfNeeded(export: MeetingExport, plan: ProcessingPlan?) {
+        guard TranscriptCallbackSettings.shouldFire(for: export.kind, plan: plan),
             let command = TranscriptCallbackSettings.command
         else { return }
-        fire(command: command, export: export)
+        fire(command: command, export: export, additionalPrompt: plan?.trimmedCallbackPrompt)
     }
 
     /// Runs unconditionally, ignoring the scope setting. Backs Settings' "Run now
     /// on last meeting" button, whose entire point is to test a command regardless
-    /// of what scope it's currently set to.
+    /// of what scope it's currently set to. No additional prompt: the button
+    /// rehearses the command against a meeting that already finished, and any
+    /// prompt its hold once carried was consumed by the real run.
     @MainActor
     static func fireForTest(command: String, export: MeetingExport) {
-        fire(command: command, export: export)
+        fire(command: command, export: export, additionalPrompt: nil)
     }
 
     /// `@MainActor` so the status claim below can happen synchronously; both callers
     /// are already on the main actor (`CaptureSession` is `@MainActor`, and Settings
     /// calls this from a button action).
     @MainActor
-    private static func fire(command: String, export: MeetingExport) {
+    private static func fire(command: String, export: MeetingExport, additionalPrompt: String?) {
         // Identifies this invocation to the shared status object. Runs are detached
         // and can overlap, so a result has to say which run it came from — see
         // `TranscriptCallbackStatus.currentRunID` for the last-started-wins rule
@@ -95,7 +98,7 @@ enum TranscriptReadyRunner {
         TranscriptCallbackStatus.shared.markRunning(runID: runID, title: export.title)
         Task.detached(priority: .utility) {
             do {
-                let payload = try CallbackPayload.prepare(export: export)
+                let payload = try CallbackPayload.prepare(export: export, additionalPrompt: additionalPrompt)
                 switch await run(command: command, payload: payload) {
                 case .success:
                     await MainActor.run {

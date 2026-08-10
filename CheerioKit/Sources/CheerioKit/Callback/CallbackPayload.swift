@@ -55,9 +55,21 @@ public enum CallbackPayload {
     /// Each call writes a file nobody else will touch — see ``folderName`` for why
     /// the name carries a per-invocation UUID and not just the meeting's.
     ///
+    /// - Parameter additionalPrompt: the per-meeting prompt typed in the holding
+    ///   state (``ProcessingPlan/callbackPrompt``), delivered as
+    ///   `CHEERIO_ADDITIONAL_PROMPT` — in the environment like every other
+    ///   meeting-specific value, never on the command line, so nothing a person
+    ///   types there can reach the shell's parser. It stays out of the export JSON
+    ///   on purpose: `MeetingExport` is the pinned snapshot of the *meeting*, and
+    ///   this is input to one *invocation* — the MCP server reading the same
+    ///   meeting later shouldn't see a prompt aimed at a command it isn't.
     /// - Parameter directory: Override for tests, so they don't write into the
     ///   shared Application Support directory a real app run uses.
-    public static func prepare(export: MeetingExport, in directory: URL? = nil) throws -> Prepared {
+    public static func prepare(
+        export: MeetingExport,
+        additionalPrompt: String? = nil,
+        in directory: URL? = nil
+    ) throws -> Prepared {
         let directory = try directory ?? defaultDirectory()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
@@ -66,12 +78,17 @@ public enum CallbackPayload {
         let data = try MeetingExport.makeJSONEncoder().encode(export)
         try data.write(to: fileURL, options: .atomic)
 
-        let environment: [String: String] = [
+        var environment: [String: String] = [
             "CHEERIO_MEETING_ID": export.uuid.uuidString,
             "CHEERIO_MEETING_KIND": export.kind.rawValue,
             "CHEERIO_TITLE": export.title,
             "CHEERIO_EXPORT_PATH": fileURL.path,
         ]
+        // Absent, not empty, when there is no prompt — so a command can test
+        // whether one was given at all.
+        if let additionalPrompt {
+            environment["CHEERIO_ADDITIONAL_PROMPT"] = additionalPrompt
+        }
         return Prepared(environment: environment, fileURL: fileURL, jsonData: data)
     }
 }

@@ -173,8 +173,27 @@ struct GeneralSettingsView: View {
     /// say why they appear to do nothing.
     @State private var systemDenied = false
 
+    @AppStorage(ProcessingHoldDuration.defaultsKey) private var holdSeconds = ProcessingHoldDuration.default.rawValue
+
+    private var holdDuration: ProcessingHoldDuration {
+        ProcessingHoldDuration(rawValue: holdSeconds) ?? .default
+    }
+
     var body: some View {
         Form {
+            Section {
+                Picker("Review before processing", selection: $holdSeconds) {
+                    ForEach(ProcessingHoldDuration.allCases) { option in
+                        Text(option.label).tag(option.rawValue)
+                    }
+                }
+                Text(holdExplanation)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("After a recording stops")
+            }
+
             Section {
                 Toggle("Suggest recording when a calendar meeting starts", isOn: $suggestsRecording)
                 Toggle("Notify when notes are ready", isOn: $announcesNotesReady)
@@ -213,6 +232,15 @@ struct GeneralSettingsView: View {
             // A read, never a request: opening Settings must not be a way to trigger
             // the permission prompt out of context.
             systemDenied = await NotificationService.shared.isDeniedBySystem()
+        }
+    }
+
+    private var holdExplanation: String {
+        switch holdDuration {
+        case .off:
+            "Notes and the callback run the moment a recording stops, with no pause."
+        default:
+            "A stopped meeting waits \(holdDuration.label.lowercased()) — or until you confirm — before notes and the callback run, so you can still add rough notes, set the meeting kind, and adjust the callback. Editing anything restarts the wait. Directives always process immediately."
         }
     }
 }

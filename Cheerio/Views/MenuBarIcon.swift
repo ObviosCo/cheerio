@@ -103,6 +103,20 @@ enum MenuBarIcon {
             ctx.addPath(path)
             ctx.fillPath(using: .evenOdd)
 
+        case .holding:
+            // Ring plus a *hollow* center dot — the recording state's solid dot
+            // with its middle waiting to be filled in: captured, not yet
+            // processed. Distinct at a glance from `.recording` (solid) and
+            // `.finishing` (ellipsis), which matters because this is the one
+            // state that's waiting on the user rather than on the machine.
+            let path = ringPath()
+            let dotRadius = innerRadius * 0.55
+            let dotStroke = max(1.0, stroke * 0.45)
+            path.addEllipse(in: dot(radius: dotRadius))
+            path.addEllipse(in: dot(radius: dotRadius - dotStroke))
+            ctx.addPath(path)
+            ctx.fillPath(using: .evenOdd)
+
         case .finishing:
             // Ring plus a small ellipsis, echoing the `ellipsis.circle` SF
             // Symbol this replaces so the "still working" meaning carries
@@ -128,6 +142,7 @@ extension CaptureSession.State {
         case .idle: "Cheerio: not recording"
         case .preparingModel: "Cheerio: preparing to record"
         case .recording: "Cheerio: recording"
+        case .holding: "Cheerio: waiting to process"
         case .finishing: "Cheerio: finishing up"
         }
     }

@@ -17,6 +17,15 @@ final class CaptureSession {
         case idle
         case preparingModel
         case recording
+        /// Capture has fully stopped and the transcript is saved, but processing
+        /// (diarization, enhancement, the callback) hasn't been claimed yet — the
+        /// post-meeting holding state, issue #136. The user can still edit rough
+        /// notes, the meeting kind, and the callback controls; ``confirmProcessing(context:)``
+        /// or the grace deadline (``holdDeadline``) moves on to `.finishing`.
+        /// Never entered when `ProcessingHoldDuration` is `.off` or the recording
+        /// is a directive — those go straight from `.recording` to `.finishing`,
+        /// exactly as every recording did before this state existed.
+        case holding
         case finishing
     }
 
@@ -156,6 +165,17 @@ final class CaptureSession {
     private static let checkpointInterval: Duration = .seconds(2)
     /// When the current recording began, for the elapsed-time readout.
     private(set) var startedAt: Date?
+
+    /// When the holding state auto-processes, for the countdown readouts. Moves
+    /// later on every ``recordHoldActivity()``; nil outside `.holding`.
+    private(set) var holdDeadline: Date?
+    /// The grace-period arithmetic behind ``holdDeadline`` — `CheerioKit` owns the
+    /// math (tested there), this session only owns the clock that acts on it.
+    private var holdWindow: ProcessingHoldWindow?
+    /// Sleeps until ``holdDeadline`` and claims processing if nothing else has —
+    /// see ``beginHolding(gracePeriod:context:)`` for why it re-checks on waking
+    /// instead of trusting one sleep.
+    private var holdTask: Task<Void, Never>?
 
     func start(
         title: String,
@@ -450,7 +470,10 @@ final class CaptureSession {
         }
     }
 
-    /// Stops capture, finalizes transcription, and kicks off enhancement.
+    /// Stops capture and finalizes transcription, then either processes the
+    /// meeting immediately (holding off, or a directive — the pre-#136 behavior,
+    /// unchanged) or parks it in `.holding` for the user to add rough notes and
+    /// set the processing controls first.
     func stop(context: ModelContext) async {
         guard state == .recording else { return }
         state = .finishing
@@ -459,10 +482,10 @@ final class CaptureSession {
         systemTap?.stop()
         try? await micEngine?.stop()
         try? await systemEngine?.stop()
-        // From here on this function saves explicitly at each step below — the
-        // periodic checkpoint has nothing left to do and would only race those
-        // saves, most of which need to run after work (diarization, enhancement)
-        // that a save on a two-second timer can't wait for.
+        // From here on, saves are explicit at each step — the periodic checkpoint
+        // has nothing left to do and would only race those saves, most of which
+        // need to run after work (diarization, enhancement) that a save on a
+        // two-second timer can't wait for.
         checkpointTask?.cancel()
         checkpointTask = nil
         await recorder?.finish()
@@ -472,90 +495,255 @@ final class CaptureSession {
         // Cancelling dropped them, losing the tail of the transcript that the
         // summarizer then never saw.
         await drainConsumers()
+        // Capture is over for good whichever branch below runs — releasing the
+        // engines and taps here, rather than at `.idle`, is what keeps the holding
+        // state from sitting on a dead audio stack for minutes.
+        micEngine = nil
+        systemEngine = nil
+        micCapture = nil
+        systemTap = nil
+        recorder = nil
 
-        if let meeting {
-            meeting.endedAt = .now
-            meeting.roughNotes = roughNotes
+        guard let meeting else {
+            concludeSession(context: context)
+            return
+        }
+        meeting.endedAt = .now
+        meeting.roughNotes = roughNotes
 
-            // Diarize before summarizing, so the transcript the model reads carries
-            // speaker labels — and before the retention purge, which would delete
-            // the audio this reads.
+        let holdDuration = ProcessingHoldDuration.current
+        if let gracePeriod = holdDuration.gracePeriod, holdDuration.applies(to: meeting.kind) {
+            // The plan and the finished transcript are persisted *before* the
+            // holding state is entered, because the plan on disk is the whole
+            // recovery contract: a quit or crash from here on leaves a row that
+            // `resumeInterruptedProcessing` recognizes and processes next launch.
+            // Best-effort like every other save on this path — a failure only
+            // means recovery leans on the context's autosave catching up first.
+            meeting.pendingProcessingPlan = ProcessingPlan.makeDefault(for: meeting.kind)
             do {
-                try await SpeakerLabeling.label(meeting: meeting, context: context)
+                try context.save()
             } catch {
-                // Best-effort: the transcript keeps its channel labels.
-                log.error("Speaker attribution failed: \(error)")
+                log.error("Couldn't persist the processing hold: \(error)")
             }
-
-            do {
-                let engine = SummarizationEngine()
-                // After diarization, so the labels the owner names are matched against
-                // are the ones the transcript actually carries.
-                let notes = try await engine.generateEnhancedNotes(
-                    transcript: meeting.transcriptText,
-                    roughNotes: roughNotes,
-                    ownerNames: SpeakerLabeling.ownerNames(context: context)
-                )
-                meeting.enhancedNotes = notes.markdown
-                meeting.actionItems = notes.actionItems
-            } catch {
-                log.error("Enhancement failed: \(error)")
-                // Transcript-only fallback: meeting remains useful without notes.
-            }
-
-            // Same readiness point as the callback below, one step earlier: after
-            // diarization and enhancement (so the excerpt this reads carries
-            // speaker labels), before the save and the callback (so both carry
-            // whatever title comes out of this, not the timestamp it started
-            // with). Gated on `shouldAutoTitle` so a calendar title or an
-            // in-meeting rename (RecordingView) is never a candidate.
-            if meeting.shouldAutoTitle {
-                await autoTitle(meeting: meeting, context: context)
-            }
-            // Re-synced here, not just once above: the callback below builds its
-            // `MeetingExport` from `meeting` as saved by the line right after this
-            // one, and diarization and enhancement — both awaits — sit between the
-            // first copy and this point. Skipping this one would let the callback
-            // ship a `roughNotes` that's stale relative to the `enhancedNotes` next
-            // to it in the same payload, which read the live property directly a
-            // few lines up.
-            //
-            // This is the *last* copy that's needed, not just the second: from here
-            // to `meeting = nil` below, nothing in this function suspends —
-            // `fireTranscriptReadyCallback`, `notifyNotesReady`, and
-            // `AudioRetentionService.purge` are all synchronous, and `CaptureSession`
-            // is `@MainActor` — so nothing else can run a keystroke's binding setter
-            // in between. A copy repeated at the end would be dead code today. If a
-            // future `await` lands anywhere in that stretch, *that's* what needs a
-            // copy after it, not a blind one at the bottom.
-            meeting.roughNotes = roughNotes
-            try? context.save()
-
-            // The transcript is "ready" — issue #26's callback contract — right
-            // here, and nowhere else: capture has stopped, diarization has run
-            // (`catch` above notwithstanding — a failed pass still leaves the
-            // channel-only labels, which is what a callback fired any earlier
-            // would have shipped anyway), and enhancement has run or conclusively
-            // failed. Firing before this point would hand the callback worse
-            // speaker attribution than the app itself ends up showing, and labels
-            // are exactly what the owner-attributed action items depend on.
-            fireTranscriptReadyCallback(for: meeting, context: context)
-
-            // Same definition of "ready" as the callback above, and deliberately
-            // *after* it: this only enqueues a banner, and nothing about a
-            // notification may delay, gate, or fail the callback that external
-            // tooling waits on. It returns immediately — see `notifyNotesReady`,
-            // which does the posting on its own task — and suppresses itself when the
-            // app is already on screen, since by the time this returns the window has
-            // selected the finished meeting anyway.
-            //
-            // `stableID` is safe to read here: the callback above persisted it, and
-            // on the path where that save failed the id still exists in memory, so
-            // the notification is at worst pointing at a meeting whose id a crash
-            // before the next autosave would change.
-            NotificationService.shared.notifyNotesReady(title: meeting.title, meetingID: meeting.stableID)
+            beginHolding(gracePeriod: gracePeriod, context: context)
+            return
         }
 
+        await process(meeting: meeting, plan: nil, context: context)
+        concludeSession(context: context)
+    }
+
+    /// Enters `.holding` and starts the clock that ends it. The task sleeps to the
+    /// deadline and then *re-checks* rather than firing blind: ``recordHoldActivity()``
+    /// pushes ``holdDeadline`` while this sleeps, so waking at the original
+    /// deadline and finding a later one is the normal case for someone actively
+    /// typing — looping until the deadline it wakes at is still the real one is
+    /// what makes an extension actually extend.
+    private func beginHolding(gracePeriod: TimeInterval, context: ModelContext) {
+        let window = ProcessingHoldWindow(startedAt: .now, gracePeriod: gracePeriod)
+        holdWindow = window
+        holdDeadline = window.deadline
+        state = .holding
+        holdTask = Task { [weak self] in
+            while true {
+                guard let self, !Task.isCancelled, self.state == .holding,
+                    let deadline = self.holdDeadline
+                else { return }
+                let remaining = deadline.timeIntervalSinceNow
+                if remaining <= 0 {
+                    await self.completeHold(context: context)
+                    return
+                }
+                try? await Task.sleep(for: .seconds(remaining))
+            }
+        }
+    }
+
+    /// The user's explicit "process now" from the holding state. Also the only
+    /// public way out of `.holding` — the other exit is the grace deadline, which
+    /// takes the same path through ``completeHold(context:)``.
+    func confirmProcessing(context: ModelContext) async {
+        await completeHold(context: context)
+    }
+
+    /// An edit landed in the holding UI — rough notes, kind, callback controls —
+    /// so the grace window restarts (it measures idle time, not total time; see
+    /// ``ProcessingHoldWindow/recordActivity(at:)``) and the notes are re-synced
+    /// onto the meeting, where the context's autosave persists them. That sync is
+    /// what keeps a quit mid-hold from losing anything typed *during* the hold:
+    /// recovery reads `meeting.roughNotes` off the row, never this session's live
+    /// property, which dies with the process.
+    func recordHoldActivity() {
+        guard state == .holding else { return }
+        holdWindow?.recordActivity(at: .now)
+        holdDeadline = holdWindow?.deadline
+        meeting?.roughNotes = roughNotes
+    }
+
+    /// The holding state's callback toggle, routed through the session (rather
+    /// than the view binding the meeting's plan directly) so every edit also
+    /// counts as activity for the grace window. False when nothing is held, which
+    /// no visible control ever reads — the holding UI only exists in `.holding`.
+    var holdRunsCallback: Bool {
+        get { meeting?.pendingProcessingPlan?.runCallback ?? false }
+        set {
+            guard state == .holding else { return }
+            meeting?.pendingProcessingPlan?.runCallback = newValue
+            recordHoldActivity()
+        }
+    }
+
+    /// See ``holdRunsCallback`` — same routing, for the per-meeting prompt.
+    var holdCallbackPrompt: String {
+        get { meeting?.pendingProcessingPlan?.callbackPrompt ?? "" }
+        set {
+            guard state == .holding else { return }
+            meeting?.pendingProcessingPlan?.callbackPrompt = newValue
+            recordHoldActivity()
+        }
+    }
+
+    /// See ``holdRunsCallback`` — same routing, for the meeting kind. This window
+    /// is exactly when changing kind is cheap: no notes exist yet to go stale
+    /// (the regeneration concern ``Meeting/toggleKind()`` documents), and every
+    /// downstream consumer of kind — the summarizer's future prompt seam, the
+    /// callback scope, the export — reads it after this.
+    var holdKind: MeetingKind {
+        get { meeting?.kind ?? .meeting }
+        set {
+            guard state == .holding else { return }
+            meeting?.kind = newValue
+            recordHoldActivity()
+        }
+    }
+
+    /// Claims processing for the held meeting — from the user's confirm or the
+    /// grace deadline, whichever gets here first; the `state` guard makes the
+    /// loser a no-op, and `state = .finishing` lands before the first suspension
+    /// so the race can't interleave.
+    private func completeHold(context: ModelContext) async {
+        guard state == .holding, let meeting else { return }
+        holdTask?.cancel()
+        holdTask = nil
+        holdWindow = nil
+        holdDeadline = nil
+        state = .finishing
+
+        // Claiming = reading the plan and clearing it off the row, saved before
+        // the pipeline's first await. That ordering makes launch recovery
+        // at-most-once: a crash *during* processing finds no plan and leaves the
+        // meeting transcript-only, the same outcome a crash mid-`.finishing` has
+        // always had — never a second, surprise processing pass on relaunch.
+        let plan = meeting.pendingProcessingPlan
+        meeting.pendingProcessingPlan = nil
+        meeting.roughNotes = roughNotes
+        try? context.save()
+
+        await process(meeting: meeting, plan: plan, context: context)
+        concludeSession(context: context)
+    }
+
+    /// Diarization → enhancement → auto-title → save → callback → notification:
+    /// the one processing pipeline, shared by the zero-touch stop path, the
+    /// holding state's exit, and launch recovery of a hold a previous run left
+    /// behind. `plan` is the holding state's decisions when there was one; nil is
+    /// the zero-touch path, which defers to the global callback settings exactly
+    /// as before.
+    private func process(meeting: Meeting, plan: ProcessingPlan?, context: ModelContext) async {
+        // Diarize before summarizing, so the transcript the model reads carries
+        // speaker labels — and before the retention purge, which would delete
+        // the audio this reads.
+        do {
+            try await SpeakerLabeling.label(meeting: meeting, context: context)
+        } catch {
+            // Best-effort: the transcript keeps its channel labels.
+            log.error("Speaker attribution failed: \(error)")
+        }
+
+        do {
+            let engine = SummarizationEngine()
+            // After diarization, so the labels the owner names are matched against
+            // are the ones the transcript actually carries.
+            let notes = try await engine.generateEnhancedNotes(
+                transcript: meeting.transcriptText,
+                roughNotes: currentRoughNotes(for: meeting),
+                ownerNames: SpeakerLabeling.ownerNames(context: context)
+            )
+            meeting.enhancedNotes = notes.markdown
+            meeting.actionItems = notes.actionItems
+        } catch {
+            log.error("Enhancement failed: \(error)")
+            // Transcript-only fallback: meeting remains useful without notes.
+        }
+
+        // Same readiness point as the callback below, one step earlier: after
+        // diarization and enhancement (so the excerpt this reads carries
+        // speaker labels), before the save and the callback (so both carry
+        // whatever title comes out of this, not the timestamp it started
+        // with). Gated on `shouldAutoTitle` so a calendar title or an
+        // in-meeting rename (RecordingView) is never a candidate.
+        if meeting.shouldAutoTitle {
+            await autoTitle(meeting: meeting, context: context)
+        }
+        // Re-synced here, not just at the top of the stop path: the callback below
+        // builds its `MeetingExport` from `meeting` as saved by the line right
+        // after this one, and diarization and enhancement — both awaits — sit
+        // between the earlier copy and this point, during which the notes editor
+        // (live through `.finishing`) can still run a keystroke's binding setter.
+        //
+        // This is the *last* copy that's needed, not just the latest: from here
+        // to the caller's `meeting = nil`, nothing suspends —
+        // `fireTranscriptReadyCallback`, `notifyNotesReady`, and
+        // `AudioRetentionService.purge` are all synchronous, and `CaptureSession`
+        // is `@MainActor` — so nothing else can run a keystroke's binding setter
+        // in between. A copy repeated at the end would be dead code today. If a
+        // future `await` lands anywhere in that stretch, *that's* what needs a
+        // copy after it, not a blind one at the bottom.
+        if meeting == self.meeting {
+            meeting.roughNotes = roughNotes
+        }
+        try? context.save()
+
+        // The transcript is "ready" — issue #26's callback contract — right
+        // here, and nowhere else: capture has stopped, diarization has run
+        // (`catch` above notwithstanding — a failed pass still leaves the
+        // channel-only labels, which is what a callback fired any earlier
+        // would have shipped anyway), and enhancement has run or conclusively
+        // failed. Firing before this point would hand the callback worse
+        // speaker attribution than the app itself ends up showing, and labels
+        // are exactly what the owner-attributed action items depend on. The
+        // holding state moved this point later still, deliberately — see issue
+        // #136 — but never earlier.
+        fireTranscriptReadyCallback(for: meeting, plan: plan, context: context)
+
+        // Same definition of "ready" as the callback above, and deliberately
+        // *after* it: this only enqueues a banner, and nothing about a
+        // notification may delay, gate, or fail the callback that external
+        // tooling waits on. It returns immediately — see `notifyNotesReady`,
+        // which does the posting on its own task — and suppresses itself when the
+        // app is already on screen, since by the time this returns the window has
+        // selected the finished meeting anyway.
+        //
+        // `stableID` is safe to read here: the callback above persisted it, and
+        // on the path where that save failed the id still exists in memory, so
+        // the notification is at worst pointing at a meeting whose id a crash
+        // before the next autosave would change.
+        NotificationService.shared.notifyNotesReady(title: meeting.title, meetingID: meeting.stableID)
+    }
+
+    /// The rough notes ``process(meeting:plan:context:)`` should feed the
+    /// summarizer: the session's live property for the meeting this session is
+    /// actively finishing (the editor stays bound to it through `.finishing`, so
+    /// it's fresher than the row), and the persisted row for a recovered meeting,
+    /// whose editing surface died with the run that held it.
+    private func currentRoughNotes(for meeting: Meeting) -> String {
+        meeting == self.meeting ? roughNotes : meeting.roughNotes
+    }
+
+    /// The tail every processing exit shares: the retention sweep, then handing
+    /// the session back to `.idle` with ``lastFinishedMeeting`` pointing at what
+    /// just finished.
+    private func concludeSession(context: ModelContext) {
         // Applies "Don't keep audio" immediately, and sweeps anything that aged out
         // while the app stayed open.
         do {
@@ -564,11 +752,6 @@ final class CaptureSession {
             log.error("Audio retention purge failed: \(error)")
         }
 
-        micEngine = nil
-        systemEngine = nil
-        micCapture = nil
-        systemTap = nil
-        recorder = nil
         lastFinishedMeeting = meeting
         lastFinishedMeetingOccurrenceStart = calendarEventOccurrenceStart
         meeting = nil
@@ -576,10 +759,52 @@ final class CaptureSession {
         state = .idle
     }
 
-    /// See the call site in ``stop(context:)`` for exactly which point in the
-    /// pipeline this is — this function only builds the export and hands it to
-    /// the runner, it doesn't decide when "ready" is.
-    private func fireTranscriptReadyCallback(for meeting: Meeting, context: ModelContext) {
+    /// Processes any meeting a previous run left in the holding state — a quit or
+    /// crash mid-hold. Called once, from `CheerioApp.init()`'s launch task, after
+    /// `StorageMigration.closeAbandonedRecordings` has run.
+    ///
+    /// The choice this encodes: recovery *processes*, it never re-opens the
+    /// holding window. The plan persisted at hold entry (plus whatever notes and
+    /// kind edits autosave carried to disk) is treated as the user's final word —
+    /// including their callback decision, which is honored as saved. Re-offering
+    /// the hold on launch would mean a meeting whose owner never relaunches stays
+    /// un-summarized indefinitely, which is exactly the "stuck meeting" this
+    /// state machine promises can't happen; processing with the saved inputs
+    /// loses nothing except the chance to keep editing, which the quit already
+    /// spent.
+    ///
+    /// Doesn't touch session state: this runs meetings that aren't ``meeting``,
+    /// concurrently with whatever the session might start doing, and marks each
+    /// one with ``beginProcessing(_:)`` so delete affordances stay honest.
+    func resumeInterruptedProcessing(context: ModelContext) async {
+        let pending: [Meeting]
+        do {
+            pending = try Meeting.awaitingProcessing(in: context)
+        } catch {
+            log.error("Couldn't look for interrupted processing: \(error)")
+            return
+        }
+        for meeting in pending {
+            // Can't be this session's live meeting at launch; kept as a guard
+            // because processing the meeting someone is talking into would be
+            // unrecoverable, and launch ordering is the caller's detail.
+            guard meeting != self.meeting else { continue }
+            beginProcessing(meeting)
+            defer { endProcessing(meeting) }
+            // Same claim discipline as `completeHold`: clear and save before the
+            // first await, so this recovery is itself at-most-once.
+            let plan = meeting.pendingProcessingPlan
+            meeting.pendingProcessingPlan = nil
+            try? context.save()
+            log.notice("Processing a meeting a previous run left holding")
+            await process(meeting: meeting, plan: plan, context: context)
+        }
+    }
+
+    /// See the call site in ``process(meeting:plan:context:)`` for exactly which
+    /// point in the pipeline this is — this function only builds the export and
+    /// hands it to the runner, it doesn't decide when "ready" is.
+    private func fireTranscriptReadyCallback(for meeting: Meeting, plan: ProcessingPlan?, context: ModelContext) {
         // Touch `stableID` and save *before* building the export, not as part of it.
         // `Meeting.export` reads `stableID`, which backfills `uuid` on a meeting
         // recorded before that field existed — and the save above already happened,
@@ -602,7 +827,7 @@ final class CaptureSession {
         }
 
         let ownerNames = SpeakerLabeling.ownerNames(context: context)
-        TranscriptReadyRunner.fireIfNeeded(export: meeting.export(ownerNames: ownerNames))
+        TranscriptReadyRunner.fireIfNeeded(export: meeting.export(ownerNames: ownerNames), plan: plan)
     }
 
     /// Generates and applies a title for a meeting that's still on its placeholder

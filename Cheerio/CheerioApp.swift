@@ -105,6 +105,23 @@ struct CheerioApp: App {
         NotificationService.shared.start(session: session, container: container)
 
         MCPManifestRefresh.runAtLaunch()
+
+        // After `closeAbandonedRecordings` above, which owns the crashed-mid-
+        // recording rows; this owns the quit-or-crashed-mid-*holding* ones —
+        // meetings whose capture finished but whose processing was still waiting
+        // on the post-meeting holding state when the process died. They're
+        // processed now, with the inputs persisted at hold entry, rather than
+        // re-offered for review — see `resumeInterruptedProcessing` for why. A
+        // task rather than an inline await because `init()` must not block launch
+        // on a summarization pass; the pipeline runs against meetings this fresh
+        // session doesn't hold, so it can't collide with a recording the user
+        // starts in the meantime.
+        //
+        // The context is bound outside the closure because a `Task` in a struct's
+        // `init` must not capture the still-mutating `self` that reading
+        // `container` directly would.
+        let launchContext = container.mainContext
+        Task { await session.resumeInterruptedProcessing(context: launchContext) }
     }
 
     var body: some Scene {
@@ -407,7 +424,7 @@ struct ContentView: View {
                 }
                 MeetingDetailView(meeting: selectedMeeting) { self.selectedMeeting = nil }
             }
-        } else if session.state == .recording || session.state == .finishing {
+        } else if [.recording, .holding, .finishing].contains(session.state) {
             RecordingView()
         } else {
             EmptyStateDashboardView(selection: $selectedMeeting, enrollmentPromptDismissed: $enrollmentPromptDismissed)
