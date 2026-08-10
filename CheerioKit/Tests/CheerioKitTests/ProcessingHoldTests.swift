@@ -218,6 +218,32 @@ import Testing
         #expect(held.audioDirectory == nil)
     }
 
+    @Test func retentionHonorsTheCallersMidPipelineExclusion() throws {
+        // Once processing claims a meeting, its row carries nothing that says the
+        // audio is still being read — the pending plan is gone by design, so a
+        // purge landing during the pipeline's awaits would delete the CAFs out
+        // from under diarization. The caller's exclusion set is the only thing
+        // standing in the way, which is exactly what this pins.
+        let context = try makeContext()
+
+        let midPipeline = Meeting(title: "Mid-pipeline")
+        midPipeline.endedAt = .now
+        midPipeline.audioDirectory = "Meetings/\(UUID().uuidString)"
+        context.insert(midPipeline)
+        try context.save()
+
+        let removed = try AudioRetentionService.purge(
+            retention: .none, context: context,
+            excludingMeetingIDs: [midPipeline.persistentModelID])
+        #expect(removed == 0)
+        #expect(midPipeline.audioDirectory != nil)
+
+        // The pipeline's own concluding purge passes an empty set for meetings it
+        // has finished with — at which point the same meeting is fair game.
+        #expect(try AudioRetentionService.purge(retention: .none, context: context) == 1)
+        #expect(midPipeline.audioDirectory == nil)
+    }
+
     @Test func planRoundTripsThroughTheStore() throws {
         let context = try makeContext()
         let held = Meeting(title: "Held")

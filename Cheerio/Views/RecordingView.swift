@@ -104,11 +104,21 @@ struct RecordingView: View {
                 }
             }
         }
-        // Every keystroke in the scratchpad below counts as holding activity —
-        // it restarts the grace window and re-syncs the notes onto the persisted
-        // meeting. A no-op outside `.holding` (the session guards), so this
-        // doesn't need its own state check.
+        // Every edit surface this view keeps live through `.holding` counts as
+        // holding activity — the scratchpad, the title field, and the participant
+        // roster all restart the grace window, or auto-processing could cut off a
+        // rename mid-word and ship the callback a partial title. All no-ops
+        // outside `.holding` (the session guards), so none need their own state
+        // check. The kind picker and callback controls don't need observers here:
+        // they already route through the session's `hold*` accessors, which record
+        // activity themselves.
         .onChange(of: session.roughNotes) {
+            session.recordHoldActivity()
+        }
+        .onChange(of: session.meeting?.title) {
+            session.recordHoldActivity()
+        }
+        .onChange(of: session.meeting?.participantNames) {
             session.recordHoldActivity()
         }
         .onAppear {

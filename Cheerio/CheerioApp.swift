@@ -375,8 +375,14 @@ struct ContentView: View {
             // picks up whatever the user already decided, there or in System
             // Settings, so `CalendarService`'s cached flag survives a relaunch.
             await CalendarService.shared.refreshAccessStatus()
-            // Audio that aged out while the app was closed.
-            _ = try? AudioRetentionService.purge(retention: .current, context: context)
+            // Audio that aged out while the app was closed. Excludes anything the
+            // launch recovery task (`CheerioApp.init()`) has mid-pipeline right
+            // now — those meetings' rows no longer show they're in use once the
+            // recovery marker is claimed, and diarization is reading exactly
+            // these files. Recovery runs its own purge when it finishes.
+            _ = try? AudioRetentionService.purge(
+                retention: .current, context: context,
+                excludingMeetingIDs: session.meetingIDsBeingProcessed)
         }
     }
 

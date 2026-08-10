@@ -67,11 +67,19 @@ final class CaptureSession {
     /// nil.
     private(set) var lastFinishedMeetingOccurrenceStart: Date?
 
-    /// Meetings with a background mutation in flight outside this session's own
-    /// pipeline — today, just `MeetingDetailView`'s manual "Re-identify speakers"
-    /// button. The pass this session runs itself at the end of a recording needs no
-    /// entry here: ``meeting`` stays set through `.finishing`, so ``canDelete(_:)``
-    /// already covers it.
+    /// Meetings with a mutation in flight — the processing pipeline itself (which
+    /// marks the meeting for the duration of ``process(meeting:plan:context:)``),
+    /// launch recovery's claim-to-pipeline stretch, and `MeetingDetailView`'s
+    /// manual "Re-identify speakers" button.
+    ///
+    /// Reference counts, not a set, because two of those can legitimately overlap
+    /// on one meeting — launch recovery runs while `state` is `.idle`, exactly
+    /// when the detail view's re-identify button is live — and set semantics
+    /// would let whichever pass finishes first unmark the meeting while the other
+    /// is still mutating it, re-enabling deletion, retention, and update checks
+    /// early. (The UI also refuses to *start* the overlapping pass — see
+    /// ``isProcessing(_:)`` — but the count is what keeps the marks honest even
+    /// if a new caller forgets that check.)
     ///
     /// Keyed by `persistentModelID`, not the `Meeting` itself, on purpose — this is
     /// the one piece of shared state every delete affordance consults, and holding
@@ -81,8 +89,8 @@ final class CaptureSession {
     /// This is the app's one shared `@Observable`, which is why a cross-cutting
     /// concern like "is anything mutating this meeting right now" lives here rather
     /// than on a purpose-built type — the alternative costs a new object threaded
-    /// into every scene in `CheerioApp` for one small set.
-    private var processingMeetingIDs: Set<PersistentIdentifier> = []
+    /// into every scene in `CheerioApp` for one small dictionary.
+    private var processingMeetingIDs: [PersistentIdentifier: Int] = [:]
 
     /// Marks `meeting` as having a background mutation in flight. Call before the
     /// first suspension point of whatever's about to `await` its way through
@@ -90,11 +98,29 @@ final class CaptureSession {
     /// `defer` — on the success path and the failure path alike, or a thrown error
     /// leaves the meeting permanently undeletable.
     func beginProcessing(_ meeting: Meeting) {
-        processingMeetingIDs.insert(meeting.persistentModelID)
+        processingMeetingIDs[meeting.persistentModelID, default: 0] += 1
     }
 
     func endProcessing(_ meeting: Meeting) {
-        processingMeetingIDs.remove(meeting.persistentModelID)
+        let id = meeting.persistentModelID
+        guard let count = processingMeetingIDs[id] else { return }
+        processingMeetingIDs[id] = count > 1 ? count - 1 : nil
+    }
+
+    /// Whether some pass currently has `meeting` mid-mutation. The detail view's
+    /// re-identify action checks this before starting (and disables its button on
+    /// it), so two diarization passes never rewrite the same meeting's labels
+    /// concurrently — launch recovery of a held meeting runs at `.idle`, exactly
+    /// when that button is otherwise live.
+    func isProcessing(_ meeting: Meeting) -> Bool {
+        processingMeetingIDs[meeting.persistentModelID] != nil
+    }
+
+    /// The marked meetings, for `AudioRetentionService.purge`'s exclusion: a purge
+    /// can run mid-pipeline (Settings' "Delete audio now", the launch sweep), and
+    /// diarization is still reading exactly the CAF files it would remove.
+    var meetingIDsBeingProcessed: Set<PersistentIdentifier> {
+        Set(processingMeetingIDs.keys)
     }
 
     /// Whether any meeting is mid-pipeline outside the live capture flow — launch
@@ -116,7 +142,7 @@ final class CaptureSession {
     /// A disabled button rather than cancel-and-await, for a first pass — see the
     /// call sites in `MeetingListView` and `MeetingDetailView`.
     func canDelete(_ meeting: Meeting) -> Bool {
-        meeting != self.meeting && !processingMeetingIDs.contains(meeting.persistentModelID)
+        meeting != self.meeting && processingMeetingIDs[meeting.persistentModelID] == nil
     }
 
     /// Call after successfully deleting a meeting, so this session stops holding
@@ -585,12 +611,19 @@ final class CaptureSession {
                 else { return }
                 let remaining = deadline.timeIntervalSinceNow
                 if remaining <= 0 {
-                    await self.completeHold(context: context)
-                    // A successful claim left `.holding` and cancelled this task,
-                    // so the guard above ends the loop. A *failed* claim stayed
-                    // held and pushed the deadline out a full window (see
-                    // `completeHold`), so looping here sleeps toward the retry
-                    // rather than spinning against a failing save.
+                    // `cancellingCountdown: false`, because *this task is* the
+                    // countdown: `completeHold` runs the whole pipeline before
+                    // returning here, and cancelling the current task first would
+                    // hand diarization and the language model a pre-cancelled
+                    // context — cancellation-aware work would abort *after* the
+                    // plan was already durably cleared, leaving every auto-timed
+                    // meeting transcript-only. A successful claim leaves
+                    // `.holding`, so the guard above ends the loop instead.
+                    await self.completeHold(context: context, cancellingCountdown: false)
+                    // A *failed* claim stayed held and pushed the deadline out a
+                    // full window (see `completeHold`), so looping here sleeps
+                    // toward the retry rather than spinning against a failing
+                    // save.
                     continue
                 }
                 try? await Task.sleep(for: .seconds(remaining))
@@ -600,9 +633,9 @@ final class CaptureSession {
 
     /// The user's explicit "process now" from the holding state. Also the only
     /// public way out of `.holding` — the other exit is the grace deadline, which
-    /// takes the same path through ``completeHold(context:)``.
+    /// takes the same path through ``completeHold(context:cancellingCountdown:)``.
     func confirmProcessing(context: ModelContext) async {
-        await completeHold(context: context)
+        await completeHold(context: context, cancellingCountdown: true)
     }
 
     /// An edit landed in the holding UI — rough notes, kind, callback controls —
@@ -662,7 +695,16 @@ final class CaptureSession {
     /// grace deadline, whichever gets here first; the `state` guard makes the
     /// loser a no-op, and nothing before `state = .finishing` suspends (the claim
     /// save is synchronous), so the race can't interleave.
-    private func completeHold(context: ModelContext) async {
+    ///
+    /// `cancellingCountdown` says whether ``holdTask`` is somebody *else* who
+    /// needs waking (the confirm path — its sleep should end now, not at the old
+    /// deadline) or the very task running this function (the expiry path), which
+    /// must not be cancelled: the pipeline below runs inside it, and a
+    /// self-cancel would pre-cancel diarization and the language model after the
+    /// plan was already durably cleared. Either way the countdown loop exits on
+    /// its own state guard once `.holding` is left; the flag only controls
+    /// whether a signal is sent.
+    private func completeHold(context: ModelContext, cancellingCountdown: Bool) async {
         guard state == .holding, let meeting else { return }
 
         // Claiming = reading the plan and clearing it off the row, *durably*,
@@ -691,7 +733,9 @@ final class CaptureSession {
             return
         }
 
-        holdTask?.cancel()
+        if cancellingCountdown {
+            holdTask?.cancel()
+        }
         holdTask = nil
         holdWindow = nil
         holdDeadline = nil
@@ -710,6 +754,17 @@ final class CaptureSession {
     /// the zero-touch path, which defers to the global callback settings exactly
     /// as before.
     private func process(meeting: Meeting, plan: ProcessingPlan?, context: ModelContext) async {
+        // Marked for the whole pipeline, on every path: once the plan is cleared
+        // (or was never set — the zero-touch path), nothing on the *row* says
+        // this meeting's audio is still needed, and a retention purge is free to
+        // run during any await below — Settings' "Delete audio now", the launch
+        // sweep racing recovery. This mark is what
+        // `AudioRetentionService.purge`'s exclusion reads to keep the CAFs alive
+        // until diarization has actually consumed them. Reference-counted, so
+        // recovery's own outer mark nesting over this one is fine.
+        beginProcessing(meeting)
+        defer { endProcessing(meeting) }
+
         // Diarize before summarizing, so the transcript the model reads carries
         // speaker labels — and before the retention purge, which would delete
         // the audio this reads.
@@ -805,9 +860,13 @@ final class CaptureSession {
     /// just finished.
     private func concludeSession(context: ModelContext) {
         // Applies "Don't keep audio" immediately, and sweeps anything that aged out
-        // while the app stayed open.
+        // while the app stayed open. The meeting that just finished is *not*
+        // excluded — its pipeline is done, so this is exactly the purge that
+        // should reach it — only meetings some other pass (launch recovery) still
+        // has mid-flight are.
         do {
-            try AudioRetentionService.purge(retention: .current, context: context)
+            try AudioRetentionService.purge(
+                retention: .current, context: context, excludingMeetingIDs: meetingIDsBeingProcessed)
         } catch {
             log.error("Audio retention purge failed: \(error)")
         }
@@ -869,6 +928,20 @@ final class CaptureSession {
             }
             log.notice("Processing a meeting a previous run left holding")
             await process(meeting: meeting, plan: plan, context: context)
+        }
+        guard !pending.isEmpty else { return }
+        // The sweep these meetings were shielded from while held (the pending
+        // plan) and while mid-pipeline (the processing mark): with both gone,
+        // "Don't keep audio" finally applies to them — deliberately *without*
+        // touching the recovery marker, which is exactly what must stay cleared
+        // so a crash here can't reprocess. Any meeting still marked (a second
+        // recovery pass can't exist, but the exclusion is cheap and uniform)
+        // stays skipped.
+        do {
+            try AudioRetentionService.purge(
+                retention: .current, context: context, excludingMeetingIDs: meetingIDsBeingProcessed)
+        } catch {
+            log.error("Audio retention purge after recovery failed: \(error)")
         }
     }
 

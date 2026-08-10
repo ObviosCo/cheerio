@@ -247,6 +247,10 @@ struct GeneralSettingsView: View {
 
 struct PrivacySettingsView: View {
     @Environment(\.modelContext) private var context
+    /// For the purge calls' exclusion set only — a purge from here can land while
+    /// a held meeting's pipeline (post-meeting processing, launch recovery) is
+    /// mid-diarization on the very files it would delete.
+    @Environment(CaptureSession.self) private var session
     @AppStorage(AudioRetention.defaultsKey) private var retentionDays = AudioRetention.default.rawValue
 
     private var retention: AudioRetention {
@@ -270,8 +274,13 @@ struct PrivacySettingsView: View {
 
             Section {
                 Button("Delete audio now") {
-                    // .none purges everything that has finished recording.
-                    _ = try? AudioRetentionService.purge(retention: .none, context: context)
+                    // .none purges everything that has finished recording — except
+                    // audio a hold or an in-flight pipeline still needs, which the
+                    // purge's own plan check and this exclusion set carve out; the
+                    // pipeline's concluding purge picks those up.
+                    _ = try? AudioRetentionService.purge(
+                        retention: .none, context: context,
+                        excludingMeetingIDs: session.meetingIDsBeingProcessed)
                 }
                 Text("Transcripts and notes are always kept. Nothing ever leaves this Mac.")
                     .font(.caption)
@@ -282,7 +291,9 @@ struct PrivacySettingsView: View {
         .frame(width: 420)
         .onChange(of: retentionDays) {
             // Shrinking the window should take effect right away, not next launch.
-            _ = try? AudioRetentionService.purge(retention: retention, context: context)
+            _ = try? AudioRetentionService.purge(
+                retention: retention, context: context,
+                excludingMeetingIDs: session.meetingIDsBeingProcessed)
         }
     }
 
