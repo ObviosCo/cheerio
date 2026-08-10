@@ -266,9 +266,13 @@ struct RecordingView: View {
                     .foregroundStyle(.tertiary)
             }
             HStack(alignment: .top, spacing: 8) {
+                // Both channels stay plain secondary text: speaker colour fills the
+                // chip and the speakers-panel timeline, never transcript text (the
+                // token map's rule) — and pre-diarization "Me" is channelDefault
+                // provenance anyway, which carries no identity colour even on a chip.
                 Text(line.channel == .me ? "Me" : "Them")
                     .font(.caption.bold())
-                    .foregroundStyle(line.channel == .me ? .blue : .secondary)
+                    .foregroundStyle(.secondary)
                     .frame(width: 44, alignment: .trailing)
                 Text(line.text)
                     .textSelection(.enabled)
