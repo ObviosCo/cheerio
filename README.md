@@ -161,6 +161,40 @@ command = "/Applications/Cheerio.app/Contents/Helpers/cheerio-mcp"
 
 Cheerio never edits those files for you — you paste the snippet in yourself.
 
+**Letting an agent find it on its own.** An agent already running on your Mac shouldn't need
+you in the loop to learn Cheerio exists. Every time Cheerio launches, it writes a small
+discovery manifest at a fixed per-user path:
+
+```
+~/Library/Application Support/Cheerio/mcp-server.json
+```
+
+```json
+{
+  "command" : "/Applications/Cheerio.app/Contents/Helpers/cheerio-mcp",
+  "description" : "Read-only access to Cheerio meeting transcripts, notes, and action items over MCP (stdio).",
+  "name" : "cheerio",
+  "transport" : {
+    "type" : "stdio"
+  },
+  "updatedAt" : "2026-08-09T17:00:00Z",
+  "version" : "1.4.0"
+}
+```
+
+To connect, launch `command` — an absolute path, no arguments — and speak MCP over its
+stdin/stdout, exactly what the snippets above configure by hand. `version` is Cheerio's own
+version and may be absent on development builds. Two rules for readers:
+
+- The manifest is rewritten on every launch, so it tracks wherever the app actually is —
+  including after a move from `~/Applications` to `/Applications`.
+- If nothing executable exists at `command`, the whole manifest is stale — Cheerio was moved
+  or uninstalled and hasn't run since. Ignore it rather than trusting any other field.
+
+This is one-directional advertising: the manifest is the only file Cheerio writes for
+discovery, in a location of its own, and the rule above stands — Cheerio still never edits
+another app's config. Whether an agent acts on the manifest is that agent's call.
+
 **A note on `disposition`.** Action items say who committed. `actionable` means *you* did, and
 an agent may carry it out; `followUp` means someone else committed, or nobody, so it's yours to
 track and never theirs to do on your behalf. That comes from who was speaking, so it's a
