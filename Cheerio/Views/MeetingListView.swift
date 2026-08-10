@@ -221,6 +221,11 @@ struct MeetingListView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(.rect)
         .tag(meeting)
+        // The row's own selection fill, replacing the system's accent pill —
+        // `chText` pins catalog colours, which the emphasized system selection
+        // can't re-colour, so the pairing has to be owned on this side. See
+        // `chListRowSelection` for the whole argument.
+        .chListRowSelection(isSelected: selection == meeting)
         .contextMenu {
             Button("Rename") {
                 renameText = meeting.title

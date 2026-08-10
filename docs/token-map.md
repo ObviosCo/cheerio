@@ -72,6 +72,21 @@ raw `Copper700` is 3.98:1 on the light page and fails AA.
 | `--ch-accent` | `Accent/Default` | `#8C5D32` | `#E2B487` | 5.4 / 9.4 |
 | `--ch-accent-hover` | `Accent/Hover` | `#794C20` | `#F1C9A1` | 7.0 / 11.5 |
 | `--ch-accent-quiet` | `Accent/Quiet` | `#F7EEE7` | `#2A1C10` | fill only |
+| — (app only) | `Accent/Selection` | `#F4DFC9` | `#46311B` | fill only |
+| — (app only) | `Accent/SelectionInactive` | `#E3E5E7` | `#25292F` | fill only |
+
+`Accent/Default` is copper darkened to clear AA **as text**, which makes it the
+wrong thing to fill a selected row with — `Text/Secondary` on it is 1.06:1.
+`Accent/Selection` is the selection fill instead, tuned the other way: it sits
+*under* the row's normal text tokens (never `Text/OnAccent`) and holds AA in
+both appearances — against `Text/Primary` / `Text/Secondary`: 13.4 / 4.6 light,
+10.6 / 5.3 dark. `Accent/SelectionInactive` is the same row when the window
+isn't key — neutral, like AppKit's unemphasized selection (values shared with
+`Border/Subtle`, duplicated so borders can move without dragging selections
+along): 13.7 / 4.7 light, 12.6 / 6.3 dark. Both are app-only — the site has no
+selected rows — so neither has a CSS custom property. Re-verify the four pairs
+if any of these six values change. Reached through `chListRowSelection`, never
+raw.
 
 ## Semantic states
 
