@@ -145,7 +145,7 @@ stdio only: no socket is opened, nothing listens, and an agent reaches Cheerio o
 
 SwiftData, single local store. `Meeting` (title, times, event ID, rough notes, enhanced notes, per-meeting participant roster) 1-many `TranscriptSegment` (speaker channel, text, time range, resolved speaker label, and whether that label was set by hand). `EnrolledSpeaker` holds a known voice: name, reference-audio path, duration, and an `isMe` flag.
 
-Audio lives in Application Support, referenced by path, one CAF per channel per meeting. `AudioRetention` purges it on a schedule — immediately, 24 hours, 7 days, 30 days, or never — defaulting to 7 days. Transcripts and notes are never touched by retention; only the raw audio.
+Audio lives in Application Support, referenced by path, one CAF per channel per meeting. `AudioRetention` purges it on a schedule — immediately, 24 hours, 3 days, 7 days, 30 days, or never — defaulting to 3 days. Transcripts and notes are never touched by retention; only the raw audio.
 
 Note which location the app reads depends on the sandbox flag: a sandboxed build resolves Application Support to `~/Library/Containers/co.obvios.cheerio.mac/Data/`, an unsandboxed one to `~/Library`. Since the sandbox is off (below), it's the latter.
 

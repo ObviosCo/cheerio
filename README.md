@@ -102,8 +102,8 @@ its context menu or detail view).
   recording), and another one tells you when a finished meeting's notes are ready. Both
   switches live in the Notifications section of Settings → General.
 - **Audio retention you control.** Raw audio is written to disk per channel so a transcription
-  failure isn't fatal, then purged on your schedule — discard immediately, 24 hours, 7 days,
-  30 days, or keep forever. The default is 7 days.
+  failure isn't fatal, then purged on your schedule — discard immediately, 24 hours, 3 days,
+  7 days, 30 days, or keep forever. The default is 3 days.
 - **Play a meeting back.** While the audio is still on disk, the meeting detail view offers a
   merged play/pause and scrubber over both channels — the affordance is simply absent, not
   disabled, once retention has purged it.

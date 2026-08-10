@@ -264,7 +264,7 @@ struct PrivacySettingsView: View {
             "Audio is deleted as soon as a meeting finishes transcribing."
         case .forever:
             "Audio is kept until you delete it yourself."
-        case .day, .week, .month:
+        case .day, .threeDays, .week, .month:
             "Audio is deleted \(retention.label) after a meeting ends."
         }
     }
