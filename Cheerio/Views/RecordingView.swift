@@ -146,10 +146,10 @@ struct RecordingView: View {
                     // `.timer` counts down on its own — no TimelineView needed —
                     // and the deadline moving on each edit is picked up because
                     // `holdDeadline` is observed state.
-                    (Text("Recording finished. Notes and callback run in ")
-                        + Text(deadline, style: .timer).fontWeight(.semibold)
-                        + Text(" — editing anything here keeps it waiting."))
-                        .font(.callout)
+                    Text(
+                        "Recording finished. Notes and callback run in \(Text(deadline, style: .timer).fontWeight(.semibold)) — editing anything here keeps it waiting."
+                    )
+                    .font(.callout)
                 }
                 Spacer()
                 Button("Process Now") {

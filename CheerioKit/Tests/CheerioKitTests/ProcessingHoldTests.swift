@@ -182,6 +182,42 @@ import Testing
         #expect(try Meeting.awaitingProcessing(in: context).isEmpty)
     }
 
+    @Test func retentionNeverPurgesAudioAHoldStillNeeds() throws {
+        // "Don't keep audio" purges everything with `endedAt` set the moment it
+        // runs — and a held meeting has `endedAt` set minutes before diarization
+        // reads its CAFs. The plan on the row is what keeps retention's hands
+        // off until processing has consumed the audio.
+        let context = try makeContext()
+
+        let held = Meeting(title: "Held")
+        held.endedAt = .now
+        held.audioDirectory = "Meetings/\(UUID().uuidString)"
+        held.pendingProcessingPlan = ProcessingPlan(runCallback: true)
+        context.insert(held)
+
+        let processed = Meeting(title: "Processed")
+        processed.endedAt = .now
+        // A path that doesn't exist on disk: `AudioStorage.removeDirectory`
+        // succeeds quietly for one already gone, so this exercises the full
+        // purge path without touching the real Application Support container.
+        processed.audioDirectory = "Meetings/\(UUID().uuidString)"
+        context.insert(processed)
+        try context.save()
+
+        let removed = try AudioRetentionService.purge(retention: .none, context: context)
+
+        #expect(removed == 1)
+        #expect(held.audioDirectory != nil)
+        #expect(processed.audioDirectory == nil)
+
+        // Once processing claims the plan, the next sweep treats it like any
+        // other finished meeting.
+        held.pendingProcessingPlan = nil
+        try context.save()
+        #expect(try AudioRetentionService.purge(retention: .none, context: context) == 1)
+        #expect(held.audioDirectory == nil)
+    }
+
     @Test func planRoundTripsThroughTheStore() throws {
         let context = try makeContext()
         let held = Meeting(title: "Held")

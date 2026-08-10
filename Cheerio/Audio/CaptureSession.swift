@@ -97,6 +97,17 @@ final class CaptureSession {
         processingMeetingIDs.remove(meeting.persistentModelID)
     }
 
+    /// Whether any meeting is mid-pipeline outside the live capture flow — launch
+    /// recovery of a held meeting, or a manual re-identify pass. `UpdatePolicy`
+    /// reads this alongside ``state``: recovery runs diarization and enhancement
+    /// while `state` is still `.idle`, and an update check admitted on the
+    /// strength of `.idle` alone would overlap that processing — exactly what the
+    /// keep-updates-out-of-the-way gate exists to prevent for the ordinary
+    /// `.finishing` path.
+    var isProcessingInBackground: Bool {
+        !processingMeetingIDs.isEmpty
+    }
+
     /// Whether every delete affordance should treat `meeting` as safe to remove
     /// right now: not the meeting actively recording (``meeting`` stays set through
     /// `.finishing`, so this covers that phase too), and nothing else has it
@@ -140,10 +151,14 @@ final class CaptureSession {
     private var systemTap: SystemAudioTap?
     private var recorder: MeetingAudioRecorder?
     private var consumerTasks: [Task<Void, Never>] = []
-    /// Flushes finalized transcript segments to disk on ``checkpointInterval``'s
-    /// cadence — see ``startCheckpointing(context:)``. Cancelled in ``stop(context:)``,
-    /// which takes over saving explicitly from that point on, and defensively in
-    /// ``rollbackFailedStart()``, which in practice never finds it running.
+    /// Flushes pending changes to disk on ``checkpointInterval``'s cadence — see
+    /// ``startCheckpointing(context:)``. Armed twice per meeting that holds:
+    /// while recording (bounding staleness for finalized transcript segments,
+    /// cancelled in ``stop(context:)``, which takes over saving explicitly) and
+    /// again while `.holding` (bounding it for hold edits, cancelled by
+    /// ``completeHold(context:)`` once the claim save supersedes it). Also
+    /// cancelled defensively in ``rollbackFailedStart()``, which in practice
+    /// never finds it running.
     private var checkpointTask: Task<Void, Never>?
     /// How often ``handle(_:context:)``'s inserts are checkpointed while recording.
     ///
@@ -344,13 +359,16 @@ final class CaptureSession {
         NotificationService.shared.recordingDidStart()
     }
 
-    /// Starts the periodic save that makes ``handle(_:context:)``'s inserts visible
-    /// to a second process, on ``checkpointInterval``'s cadence for as long as this
-    /// task runs — cancelled by ``stop(context:)``, which saves explicitly from
-    /// that point on. ``rollbackFailedStart()`` also cancels it defensively, but
-    /// can never actually find it running: this is the last thing `startCapturing`
-    /// calls before nothing further can throw, so a rollback never happens once
-    /// this has.
+    /// Starts the periodic save that bounds how stale the on-disk row can be:
+    /// while recording, it makes ``handle(_:context:)``'s inserts visible to a
+    /// second process (cancelled by ``stop(context:)``, which saves explicitly
+    /// from that point on); while `.holding`, re-armed by
+    /// ``beginHolding(gracePeriod:context:)``, it does the same for
+    /// ``recordHoldActivity()``'s edits, which crash recovery reads off the row.
+    /// ``rollbackFailedStart()`` also cancels it defensively, but can never
+    /// actually find it running: in the recording case this is the last thing
+    /// `startCapturing` calls before nothing further can throw, so a rollback
+    /// never happens once this has.
     private func startCheckpointing(context: ModelContext) {
         checkpointTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -517,16 +535,25 @@ final class CaptureSession {
             // holding state is entered, because the plan on disk is the whole
             // recovery contract: a quit or crash from here on leaves a row that
             // `resumeInterruptedProcessing` recognizes and processes next launch.
-            // Best-effort like every other save on this path — a failure only
-            // means recovery leans on the context's autosave catching up first.
             meeting.pendingProcessingPlan = ProcessingPlan.makeDefault(for: meeting.kind)
             do {
                 try context.save()
+                beginHolding(gracePeriod: gracePeriod, context: context)
+                return
             } catch {
-                log.error("Couldn't persist the processing hold: \(error)")
+                // Not best-effort like other saves on this path: the hold's
+                // crash-safety rests entirely on that marker being on disk before
+                // `.holding` is entered — held with nothing persisted, a quit
+                // would strand the meeting unprocessed forever. So no marker, no
+                // hold: fall through to processing immediately, which needs no
+                // marker to be safe. Losing the review window costs a
+                // convenience; risking the meeting would cost the meeting. The
+                // plan is cleared first so a *later* autosave can't land the
+                // marker mid-processing and set up next launch to process — and
+                // fire the callback for — this meeting a second time.
+                meeting.pendingProcessingPlan = nil
+                log.error("Couldn't persist the processing hold; processing immediately instead: \(error)")
             }
-            beginHolding(gracePeriod: gracePeriod, context: context)
-            return
         }
 
         await process(meeting: meeting, plan: nil, context: context)
@@ -544,6 +571,13 @@ final class CaptureSession {
         holdWindow = window
         holdDeadline = window.deadline
         state = .holding
+        // The same periodic save that bounds staleness for transcript segments
+        // while recording bounds it for hold edits here: `recordHoldActivity()`
+        // only mutates the autosaving context, and autosave's timing carries no
+        // guarantee — a crash mid-hold recovers from the row, so notes and plan
+        // edits must reach it on a cadence, not at autosave's leisure. Cancelled
+        // by `completeHold` once the claim save (which supersedes it) lands.
+        startCheckpointing(context: context)
         holdTask = Task { [weak self] in
             while true {
                 guard let self, !Task.isCancelled, self.state == .holding,
@@ -552,7 +586,12 @@ final class CaptureSession {
                 let remaining = deadline.timeIntervalSinceNow
                 if remaining <= 0 {
                     await self.completeHold(context: context)
-                    return
+                    // A successful claim left `.holding` and cancelled this task,
+                    // so the guard above ends the loop. A *failed* claim stayed
+                    // held and pushed the deadline out a full window (see
+                    // `completeHold`), so looping here sleeps toward the retry
+                    // rather than spinning against a failing save.
+                    continue
                 }
                 try? await Task.sleep(for: .seconds(remaining))
             }
@@ -569,10 +608,12 @@ final class CaptureSession {
     /// An edit landed in the holding UI — rough notes, kind, callback controls —
     /// so the grace window restarts (it measures idle time, not total time; see
     /// ``ProcessingHoldWindow/recordActivity(at:)``) and the notes are re-synced
-    /// onto the meeting, where the context's autosave persists them. That sync is
-    /// what keeps a quit mid-hold from losing anything typed *during* the hold:
-    /// recovery reads `meeting.roughNotes` off the row, never this session's live
-    /// property, which dies with the process.
+    /// onto the meeting. That sync is what keeps a quit mid-hold from losing
+    /// anything typed *during* the hold: recovery reads `meeting.roughNotes` off
+    /// the row, never this session's live property, which dies with the process.
+    /// Getting the sync to *disk* is the checkpoint loop's job — re-armed for the
+    /// hold by ``beginHolding(gracePeriod:context:)``, because autosave's timing
+    /// carries no guarantee and a crash recovers only what actually landed.
     func recordHoldActivity() {
         guard state == .holding else { return }
         holdWindow?.recordActivity(at: .now)
@@ -619,25 +660,44 @@ final class CaptureSession {
 
     /// Claims processing for the held meeting — from the user's confirm or the
     /// grace deadline, whichever gets here first; the `state` guard makes the
-    /// loser a no-op, and `state = .finishing` lands before the first suspension
-    /// so the race can't interleave.
+    /// loser a no-op, and nothing before `state = .finishing` suspends (the claim
+    /// save is synchronous), so the race can't interleave.
     private func completeHold(context: ModelContext) async {
         guard state == .holding, let meeting else { return }
+
+        // Claiming = reading the plan and clearing it off the row, *durably*,
+        // before any work runs. That ordering makes processing at-most-once: a
+        // crash mid-processing finds no plan on disk and leaves the meeting
+        // transcript-only — the same outcome a crash mid-`.finishing` has always
+        // had — never a second processing pass, and never a callback fired twice,
+        // on relaunch.
+        let plan = meeting.pendingProcessingPlan
+        meeting.pendingProcessingPlan = nil
+        meeting.roughNotes = roughNotes
+        do {
+            try context.save()
+        } catch {
+            // The claim didn't land, so processing doesn't start. A meeting that
+            // stays visibly held — the deadline retries a window from now, and
+            // "Process Now" stays clickable — beats one that processes now and
+            // may process (and fire its callback) again after a crash; and if
+            // the save never recovers, a quit still leaves the persisted plan
+            // for the next launch, so the meeting can't be stranded. Restore the
+            // plan so the row, the UI, and a later checkpoint save all agree.
+            meeting.pendingProcessingPlan = plan
+            holdWindow?.recordActivity(at: .now)
+            holdDeadline = holdWindow?.deadline
+            log.error("Couldn't claim the held meeting for processing; staying held: \(error)")
+            return
+        }
+
         holdTask?.cancel()
         holdTask = nil
         holdWindow = nil
         holdDeadline = nil
+        checkpointTask?.cancel()
+        checkpointTask = nil
         state = .finishing
-
-        // Claiming = reading the plan and clearing it off the row, saved before
-        // the pipeline's first await. That ordering makes launch recovery
-        // at-most-once: a crash *during* processing finds no plan and leaves the
-        // meeting transcript-only, the same outcome a crash mid-`.finishing` has
-        // always had — never a second, surprise processing pass on relaunch.
-        let plan = meeting.pendingProcessingPlan
-        meeting.pendingProcessingPlan = nil
-        meeting.roughNotes = roughNotes
-        try? context.save()
 
         await process(meeting: meeting, plan: plan, context: context)
         concludeSession(context: context)
@@ -791,11 +851,22 @@ final class CaptureSession {
             guard meeting != self.meeting else { continue }
             beginProcessing(meeting)
             defer { endProcessing(meeting) }
-            // Same claim discipline as `completeHold`: clear and save before the
-            // first await, so this recovery is itself at-most-once.
+            // Same claim discipline as `completeHold`, for the same reason: the
+            // cleared plan must be durable before any work runs, or a crash
+            // mid-recovery would leave the plan on the row and the launch after
+            // this one would process — and fire the callback for — the same
+            // meeting again. If the claim can't be saved, the row is left intact
+            // for a future launch instead: deferred processing beats double
+            // processing.
             let plan = meeting.pendingProcessingPlan
             meeting.pendingProcessingPlan = nil
-            try? context.save()
+            do {
+                try context.save()
+            } catch {
+                meeting.pendingProcessingPlan = plan
+                log.error("Couldn't claim a held meeting for recovery; leaving it for the next launch: \(error)")
+                continue
+            }
             log.notice("Processing a meeting a previous run left holding")
             await process(meeting: meeting, plan: plan, context: context)
         }

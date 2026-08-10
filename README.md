@@ -64,11 +64,18 @@ its context menu or detail view).
   duration and a share of the meeting, per speaker) and a colour-coded timeline of who spoke
   when, not the correction controls themselves.
 - **Rough notes are first-class.** A scratchpad sits next to the live transcript during the
-  meeting. What you bothered to type is the strongest signal about what mattered. Still editable
-  from the meeting's detail view afterward, for the follow-up thought that occurs to you once the
-  call ends — editing there doesn't re-run the enhancement pass below, which is stated outright
-  rather than left to be discovered. Write in Markdown and it renders once the meeting's over —
-  headings, lists, bold, links — with an Edit toggle to get back to plain text.
+  meeting. What you bothered to type is the strongest signal about what mattered. When a
+  recording stops it isn't processed on the spot: the meeting waits in a short review window
+  (two minutes of idle time by default — every edit restarts it; configurable in Settings ›
+  General, and directives skip it) where notes you didn't get to type live still make it into
+  the enhancement pass, and where you can set the meeting kind and decide whether the
+  transcript-ready callback runs for this meeting, with an optional per-meeting prompt for it.
+  Confirm to process immediately, or walk away and it processes itself. Notes stay editable
+  from the meeting's detail view afterward too, for the follow-up thought that occurs to you
+  once the call ends — but editing *there* doesn't re-run the enhancement pass below, which is
+  stated outright rather than left to be discovered. Write in Markdown and it renders once the
+  meeting's over — headings, lists, bold, links — with an Edit toggle to get back to plain
+  text.
 - **Enhance locally.** Afterwards the on-device Foundation Model merges your rough notes with
   the transcript into a summary, key points, decisions, and action items — attributed to
   whoever committed to them where the transcript supports it, and never promoted past the
