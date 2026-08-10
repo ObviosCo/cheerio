@@ -98,6 +98,29 @@ import Testing
         #expect(composition.tracks(withMediaType: .audio).count == 2)
     }
 
+    @Test func seekTimePassesAnInRangeSegmentStartThrough() {
+        #expect(MeetingAudioPlayback.seekTime(forSegmentStart: 41.5, duration: 300) == 41.5)
+    }
+
+    /// A segment can finalize with a start time past the end of the audio —
+    /// the shorter channel ran out, or the recorder was cut off before the
+    /// transcriber was — and the answer is the end, not a raw overshoot.
+    @Test func seekTimeClampsASegmentPastTheAudioToTheEnd() {
+        #expect(MeetingAudioPlayback.seekTime(forSegmentStart: 305, duration: 300) == 300)
+    }
+
+    @Test func seekTimeNeverGoesNegative() {
+        #expect(MeetingAudioPlayback.seekTime(forSegmentStart: -3, duration: 300) == 0)
+    }
+
+    /// A player mid-load reports zero or NaN duration; a tap landing in that
+    /// window seeks to the start rather than propagating a non-finite time.
+    @Test func seekTimeTreatsAnUnloadedDurationAsTheStart() {
+        #expect(MeetingAudioPlayback.seekTime(forSegmentStart: 41.5, duration: 0) == 0)
+        #expect(MeetingAudioPlayback.seekTime(forSegmentStart: 41.5, duration: .nan) == 0)
+        #expect(MeetingAudioPlayback.seekTime(forSegmentStart: .nan, duration: 300) == 0)
+    }
+
     @Test func compositionOverOneChannelStillPlays() async throws {
         let directory = try makeMeetingDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

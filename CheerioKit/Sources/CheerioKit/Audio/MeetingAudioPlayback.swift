@@ -45,6 +45,25 @@ public enum MeetingAudioPlayback {
         !channelFileURLs(for: meeting, resolve: resolve).isEmpty
     }
 
+    /// Where a tap on a transcript segment should put the playhead.
+    ///
+    /// `TranscriptSegment.startTime` is already seconds-from-meeting-start, and
+    /// ``makeComposition(from:)`` lays every channel down at time zero, so the
+    /// segment's clock and the composition's clock are the same axis — no
+    /// channel offset to translate. What still needs handling is the edges:
+    /// transcription can finalize a segment timestamped past the shorter (or
+    /// only) channel's end, and a player mid-load reports a zero or non-finite
+    /// duration, so the target is clamped into `[0, duration]` rather than
+    /// handed to `AVPlayer.seek` raw — a seek past the end would fire the
+    /// played-to-end path and reset the playhead instead of landing anywhere.
+    public static func seekTime(
+        forSegmentStart startTime: TimeInterval,
+        duration: TimeInterval
+    ) -> TimeInterval {
+        guard startTime.isFinite, duration.isFinite, duration > 0 else { return 0 }
+        return min(max(0, startTime), duration)
+    }
+
     /// Merges every channel that recorded into one asset, so the meeting plays
     /// back as a single listening experience rather than a per-channel picker.
     ///

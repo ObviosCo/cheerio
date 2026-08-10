@@ -4,13 +4,16 @@ import Foundation
 
 /// Plays back one meeting's retained audio as a single merged track.
 ///
-/// One instance per meeting, owned by the view that shows it — see
-/// `MeetingAudioPlayerView`, which keys that view's identity on the meeting so
-/// switching meetings tears this down rather than reusing it against a different
-/// asset. This class never touches `Meeting` or `ModelContext` itself: it's
-/// handed the URLs `MeetingAudioPlayback.channelFileURLs(for:)` already found on
-/// disk, so it can't be asked to play a meeting whose audio was never checked to
-/// exist.
+/// One instance per meeting, owned by `MeetingDetailView` rather than the player
+/// controls that render it — the transcript's tap-to-seek (#123) needs to reach
+/// the same player the scrubber drives, and the detail view is the nearest
+/// ancestor both of them share. That view is *reused* across a sidebar selection
+/// change, not recreated, so its meeting-keyed `.task` replaces this instance
+/// wholesale (teardown, fresh model, fresh `load`) instead of keying identity
+/// through `.id` the way the controls' `@State` version once did. This class
+/// never touches `Meeting` or `ModelContext` itself: it's handed the URLs
+/// `MeetingAudioPlayback.channelFileURLs(for:)` already found on disk, so it
+/// can't be asked to play a meeting whose audio was never checked to exist.
 @MainActor
 @Observable
 final class MeetingAudioPlayerModel {
@@ -36,16 +39,23 @@ final class MeetingAudioPlayerModel {
     var isReady: Bool { player != nil }
 
     /// Builds the merged composition and prepares an `AVPlayer` over it. Safe to
-    /// call once per instance — `MeetingAudioPlayerView` creates a fresh model
-    /// per meeting rather than reloading this one.
+    /// call once per instance — `MeetingDetailView` creates a fresh model per
+    /// meeting rather than reloading this one.
     func load(urls: [URL]) async {
         do {
             let composition = try await MeetingAudioPlayback.makeComposition(from: urls)
-            duration = try await composition.load(.duration).seconds
+            let seconds = try await composition.load(.duration).seconds
+            // The owning `.task(id:)` cancels when the sidebar selects another
+            // meeting, and by then this instance has already been replaced —
+            // finishing the load would stand up a player, and a periodic time
+            // observer retaining it, that nothing will ever tear down.
+            guard !Task.isCancelled else { return }
+            duration = seconds
             let player = AVPlayer(playerItem: AVPlayerItem(asset: composition))
             self.player = player
             observe(player)
         } catch {
+            guard !Task.isCancelled else { return }
             loadError = error.localizedDescription
         }
     }
@@ -98,6 +108,19 @@ final class MeetingAudioPlayerModel {
     func seek(to time: TimeInterval) {
         player?.seek(to: CMTime(seconds: time, preferredTimescale: 600))
         currentTime = time
+    }
+
+    /// The transcript's tap-to-seek (#123): put the playhead at a segment's
+    /// start and make sure something is audible — a tap that lands while
+    /// playback is stopped starts it there rather than silently moving a
+    /// paused playhead. Clamping lives in `MeetingAudioPlayback.seekTime` so
+    /// the edge cases (a segment finalized past the audio's end, a duration
+    /// the asset hasn't reported yet) are covered by CheerioKit's tests, not
+    /// re-derived here.
+    func playFrom(_ segmentStart: TimeInterval) {
+        guard player != nil else { return }
+        seek(to: MeetingAudioPlayback.seekTime(forSegmentStart: segmentStart, duration: duration))
+        play()
     }
 
     func teardown() {
