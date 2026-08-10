@@ -433,11 +433,16 @@ struct MeetingDetailView: View {
                                         // VoiceOver's route to tap-to-seek: it
                                         // can't hover, and the button below is
                                         // invisible (and unfocusable) until
-                                        // something does. Conditional the same
-                                        // way the button is, so purged audio
-                                        // offers no action either.
+                                        // something does. Purged audio offers no
+                                        // action, like the button; and because a
+                                        // custom action can't be *disabled*, only
+                                        // absent, the recording gate the button
+                                        // expresses as `.disabled` has to remove
+                                        // this action entirely — otherwise
+                                        // VoiceOver could restart playback
+                                        // mid-capture (never both at once, #14/#5).
                                         .accessibilityActions {
-                                            if playerModel.isReady {
+                                            if playerModel.isReady && session.state == .idle {
                                                 Button(seekActionName(for: segment)) {
                                                     playerModel.playFrom(segment.startTime)
                                                 }
