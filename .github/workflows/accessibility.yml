@@ -1,0 +1,135 @@
+# Audits the app's screens for accessibility regressions — contrast first — on a PR
+# that changes them (issue #142). A finding is a red check, treated like failing lint.
+#
+# ## Relationship to the screenshot workflows
+#
+# This is the pass/fail sibling of `screenshots.yml`: same seeded demo store, same
+# `ScreenshotMode` launch arguments, same screens — a different test bundle
+# (`CheerioAccessibilityTests`) asserting instead of photographing. It's a separate
+# workflow, not a job or a step over there, for two reasons:
+#
+# - Failure semantics. Screenshot capture is capture-and-continue; an audit is
+#   pass/fail, and a failing audit must not stop screenshots from being captured or
+#   published. `screenshots-publish.yml` triggers on "Screen previews" completing —
+#   a red job inside that workflow would colour its conclusion, so the audit doesn't
+#   live inside it.
+# - The check's name. "Accessibility audit" going red on its own says what broke;
+#   a shared workflow would report one muddled verdict for two different questions.
+#
+# ## The trust boundary — read this before adding a permission here
+#
+# Same rule as `screenshots.yml`, same reason: this is a `pull_request` workflow, so
+# everything it runs — `bootstrap.sh`, the seeder, the test bundle, this file — is
+# unreviewed code from the pull request. It holds `contents: read` and nothing else,
+# and it publishes nothing; its only output is the check's verdict. If a step here
+# ever needs to write anything, it belongs behind a `workflow_run` split like
+# `screenshots-publish.yml`.
+name: Accessibility audit
+
+on:
+  pull_request:
+    paths:
+      - "Cheerio/Views/**"
+      - "Cheerio/Design/**"
+      - "Cheerio/*.swift"
+      - "CheerioAccessibilityTests/**"
+      - "Scripts/screenshots/seed-store.sh"
+      - "Scripts/screenshots/SeedDemoStore/**"
+      - ".github/workflows/accessibility.yml"
+  workflow_dispatch:
+
+# Read-only, deliberately — see the trust boundary above.
+permissions:
+  contents: read
+
+concurrency:
+  group: accessibility-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: Audit screens
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      # The same paths and TEST_RUNNER_ forwarding contract as screenshots.yml —
+      # both harnesses read the same seeded homes.
+      SCREENSHOT_HOME: /tmp/cheerio-screenshots-home
+      SCREENSHOT_HOME_NO_ENROLLMENT: /tmp/cheerio-screenshots-home-no-enrollment
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Cache diarization model
+        uses: actions/cache@v6
+        with:
+          path: Cheerio/Resources/Models
+          key: model-${{ hashFiles('Scripts/fetch-models.sh') }}
+
+      - name: Cache SwiftPM (xcodebuild)
+        uses: actions/cache@v6
+        with:
+          path: SourcePackages
+          key: spm-app-${{ runner.os }}-${{ hashFiles('CheerioKit/Package.swift', 'project.yml') }}
+          restore-keys: |
+            spm-app-${{ runner.os }}-
+
+      # The seeder is its own SwiftPM package depending on CheerioKit by path, so it
+      # resolves and builds FluidAudio all over again if this misses.
+      - name: Cache SwiftPM (demo store seeder)
+        uses: actions/cache@v6
+        with:
+          path: Scripts/screenshots/SeedDemoStore/.build
+          key: spm-seed-${{ runner.os }}-${{ hashFiles('CheerioKit/Package.swift', 'Scripts/screenshots/SeedDemoStore/Package.swift') }}
+          restore-keys: |
+            spm-seed-${{ runner.os }}-
+
+      - name: Bootstrap (fetch model, generate project)
+        run: ./Scripts/bootstrap.sh
+
+      # Compiles the app and the test bundle and launches neither, which is what
+      # keeps the slow half of this job out of the part that has to hold a GUI.
+      - name: Build for testing
+        run: |
+          set -o pipefail
+          xcodebuild build-for-testing \
+            -project Cheerio.xcodeproj \
+            -scheme CheerioAccessibility \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath build/accessibility \
+            -clonedSourcePackagesDirPath SourcePackages \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcbeautify --renderer github-actions
+
+      - name: Seed the demo store
+        run: ./Scripts/screenshots/seed-store.sh --home "$SCREENSHOT_HOME"
+
+      - name: Seed the no-enrollment demo store
+        run: ./Scripts/screenshots/seed-store.sh --home "$SCREENSHOT_HOME_NO_ENROLLMENT" --skip-enrollment
+
+      # No `continue-on-error`, unlike the capture pass — this exit code *is* the
+      # check. Every finding is reported as a test failure naming the element, so
+      # one run surfaces all of them, not just the first.
+      - name: Audit
+        env:
+          TEST_RUNNER_CHEERIO_SCREENSHOT_HOME: ${{ env.SCREENSHOT_HOME }}
+          TEST_RUNNER_CHEERIO_SCREENSHOT_HOME_NO_ENROLLMENT: ${{ env.SCREENSHOT_HOME_NO_ENROLLMENT }}
+        run: |
+          set -o pipefail
+          xcodebuild test-without-building \
+            -project Cheerio.xcodeproj \
+            -scheme CheerioAccessibility \
+            -destination 'platform=macOS' \
+            -derivedDataPath build/accessibility \
+            -clonedSourcePackagesDirPath SourcePackages \
+            -resultBundlePath "$RUNNER_TEMP/accessibility.xcresult" \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcbeautify --renderer github-actions

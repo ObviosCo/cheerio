@@ -29,6 +29,7 @@ Speaker differentiation *is* verified for in-person meetings: on 2026-07-31, wit
 - `Cheerio/` — macOS app target: `MicrophoneCapture` (AVAudioEngine), `SystemAudioTap` (CATap → aggregate device → IOProc), `CaptureSession` (@Observable orchestrator), `AppUpdater` (Sparkle), SwiftUI views incl. Settings.
 - `CheerioMCP/` — `cheerio-mcp`, a stdio MCP server copied into `Cheerio.app/Contents/Helpers/`. Deliberately thin: `main.swift` plus file-descriptor work, with every answer coming from `CheerioKit/MCP/`. The protocol is hand-written rather than the official Swift SDK, which would have linked `import Network` and `URLSession` into the bundle — see ARCHITECTURE.md before reconsidering that. **It opens the store read-only and must never write**; `Meeting.stableID` backfills `uuid` on access, so the read path goes through `readOnlyExport` instead.
 - `CheerioScreenshotTests/` — a UI-testing bundle (scheme `CheerioScreenshots`) that photographs the app's screens against a seeded demo store. Run by `.github/workflows/screenshots.yml` on PRs touching `Cheerio/Views/**`, `Cheerio/*.swift` or `site/**`, which captures and uploads an artifact and publishes nothing; `.github/workflows/screenshots-publish.yml` (`workflow_run`) is what puts the captures on the orphan `screenshots` branch and into one sticky PR comment. **That split is a trust boundary — see the permissions constraint below before merging them back.** Deliberately outside the `Cheerio` scheme, so an ordinary test run never starts driving a GUI. `Scripts/screenshots/README.md` has both capture paths and what each is for. Site imagery (`site/img`) is regenerated once per release by the release checklist, never per-PR — per-PR visual evidence is the CI capture preview.
+- `CheerioAccessibilityTests/` — the pass/fail sibling of the screenshot bundle (scheme `CheerioAccessibility`, issue #142): `performAccessibilityAudit` over the same seeded stores and `ScreenshotMode` launch arguments, light and dark, contrast first. Run by `.github/workflows/accessibility.yml` on the capture (`contents: read`) side of the trust boundary; a finding is a red check, like failing lint. Deliberately a separate target and workflow so a red audit can never stop screenshots from being captured or published. Exemptions need a written justification and a tracking issue, same bar as declining a review comment.
 - No `.xcodeproj` committed — generated via XcodeGen from `project.yml`. **Re-run `xcodegen generate` after adding files**, or the build won't see them.
 
 ## Build
@@ -47,8 +48,8 @@ self-containment, so change both together:
 
 ```sh
 ./Scripts/bootstrap.sh    # only needed if Cheerio/Resources/Models or the .xcodeproj is missing
-swift format --in-place --recursive Cheerio CheerioMCP CheerioScreenshotTests CheerioKit/Sources CheerioKit/Tests   # drop CheerioMCP if absent
-swift format lint --recursive --strict Cheerio CheerioMCP CheerioScreenshotTests CheerioKit/Sources CheerioKit/Tests   # drop CheerioMCP if absent
+swift format --in-place --recursive Cheerio CheerioMCP CheerioScreenshotTests CheerioAccessibilityTests CheerioKit/Sources CheerioKit/Tests   # drop CheerioMCP if absent
+swift format lint --recursive --strict Cheerio CheerioMCP CheerioScreenshotTests CheerioAccessibilityTests CheerioKit/Sources CheerioKit/Tests   # drop CheerioMCP if absent
 swift test --package-path CheerioKit
 xcodegen generate         # mandatory after adding/removing files
 xcodebuild build -project Cheerio.xcodeproj -scheme Cheerio -configuration Debug -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -quiet
@@ -98,7 +99,7 @@ update them alongside Build whenever the commands change.
 - Two transcription engines (mic/system) for the Me/Them split — that's deliberate; don't merge streams. Diarization sits *on top* of them, per-channel, to tell people apart within one channel.
 - Swift 6, strict concurrency complete. SwiftData for storage. MIT licensed.
 - Formatting is enforced in CI: `swift format lint --strict` with the repo's `.swift-format`
-  config. Run `swift format --in-place --recursive Cheerio CheerioMCP CheerioScreenshotTests CheerioKit/Sources CheerioKit/Tests`
+  config. Run `swift format --in-place --recursive Cheerio CheerioMCP CheerioScreenshotTests CheerioAccessibilityTests CheerioKit/Sources CheerioKit/Tests`
   before pushing. Release builds come from `.github/workflows/release.yml` on `v*` tags —
   Developer ID-signed and notarized, then EdDSA-signed for Sparkle and published as an
   `appcast.xml` asset on the GitHub Release itself — the app's `SUFeedURL` is

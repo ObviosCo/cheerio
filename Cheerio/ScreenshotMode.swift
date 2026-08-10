@@ -77,6 +77,32 @@ enum ScreenshotMode {
         UserDefaults.standard.bool(forKey: "screenshotVoiceEnrollmentConfirmed")
     }
 
+    /// Which appearance the whole app renders in — "light" or "dark" — overriding
+    /// the system setting for this launch only. Absent follows the system, which is
+    /// what a real launch does.
+    ///
+    /// Exists for the accessibility audits (`CheerioAccessibilityTests`), which have
+    /// to check contrast under both appearances no matter what the machine running
+    /// them is set to — a dark-on-dark mistake like #141 is invisible to an audit
+    /// that only ever sees light mode. `NSApplication.appearance` rather than a
+    /// per-window override, because the audits also cover Settings and the
+    /// walkthrough, which are separate windows.
+    static var appearance: NSAppearance? {
+        switch UserDefaults.standard.string(forKey: "screenshotAppearance") {
+        case "light": NSAppearance(named: .aqua)
+        case "dark": NSAppearance(named: .darkAqua)
+        default: nil
+        }
+    }
+
+    /// Applies ``appearance``. Called from `CheerioApp.init()` rather than
+    /// ``applyAtLaunch(openWindow:)``, which only runs once the *library* renders —
+    /// a first-run launch (the walkthrough audits) never gets there.
+    @MainActor static func applyAppearanceOverride() {
+        guard let appearance else { return }
+        NSApplication.shared.appearance = appearance
+    }
+
     /// The main window's size in points, as "1440x900". Absent leaves the window
     /// wherever macOS put it.
     static var windowSize: CGSize? {
