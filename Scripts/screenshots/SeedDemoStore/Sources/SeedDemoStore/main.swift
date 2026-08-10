@@ -100,15 +100,17 @@ struct Demo {
     var drafts: [ActionItemDraft] = []
     var lines: [Line] = []
     var participants: [String]?
-    /// Audio still on disk. Only worth setting inside the retention window (7 days by
+    /// Audio still on disk. Only worth setting inside the retention window (3 days by
     /// default) — the app purges anything older at launch and nils this out anyway.
+    /// Stay at `daysAgo` ≤ 2 with it: a 3-day-old meeting straddles the cutoff
+    /// depending on what time of day the capture runs.
     var hasAudio = false
 }
 
 let demos: [Demo] = [
     Demo(
         title: "Wednesday sync — release planning",
-        daysAgo: 2,
+        daysAgo: 1,
         hour: 10,
         minute: 2,
         minutes: 34,
@@ -210,7 +212,7 @@ let demos: [Demo] = [
 
     Demo(
         title: "Call with Dana about the pilot",
-        daysAgo: 4,
+        daysAgo: 2,
         hour: 15,
         minute: 30,
         minutes: 22,
@@ -303,8 +305,11 @@ let demos: [Demo] = [
                     "Every issue you do open gets the symbolicated trace and the OS build on it, because without those it's not actionable and it'll sit there for a month."
             ),
         ],
-        participants: [owner],
-        hasAudio: true
+        // No audio: at 5 days old this sits outside the 3-day default window, so the
+        // launch purge would delete the files and nil `audioDirectory` before the
+        // shutter anyway — seeding them would only misstate what a default install
+        // shows for a meeting this age.
+        participants: [owner]
     ),
 
     Demo(

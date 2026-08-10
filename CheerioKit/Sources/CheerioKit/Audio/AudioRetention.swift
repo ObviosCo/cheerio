@@ -11,13 +11,14 @@ public enum AudioRetention: Int, CaseIterable, Identifiable, Sendable {
     /// Discard audio as soon as the meeting finishes.
     case none = 0
     case day = 1
+    case threeDays = 3
     case week = 7
     case month = 30
     case forever = -1
 
     public static let defaultsKey = "audioRetentionDays"
     /// Privacy-leaning default, per the spec.
-    public static let `default` = AudioRetention.week
+    public static let `default` = AudioRetention.threeDays
 
     public var id: Int { rawValue }
 
@@ -25,6 +26,7 @@ public enum AudioRetention: Int, CaseIterable, Identifiable, Sendable {
         switch self {
         case .none: "Don't keep audio"
         case .day: "24 hours"
+        case .threeDays: "3 days"
         case .week: "7 days"
         case .month: "30 days"
         case .forever: "Forever"
@@ -44,7 +46,7 @@ public enum AudioRetention: Int, CaseIterable, Identifiable, Sendable {
         switch self {
         case .forever: nil
         case .none: now
-        case .day, .week, .month: now.addingTimeInterval(-Double(rawValue) * 86_400)
+        case .day, .threeDays, .week, .month: now.addingTimeInterval(-Double(rawValue) * 86_400)
         }
     }
 }

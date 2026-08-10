@@ -122,6 +122,9 @@ private func makeBuffer(format: AVAudioFormat, frames: AVAudioFrameCount, seed: 
     }
 
     @Test func windowedRetentionCutsOffNDaysBack() throws {
+        let threeDays = try #require(AudioRetention.threeDays.purgeCutoff(now: now))
+        #expect(threeDays == now.addingTimeInterval(-3 * 86_400))
+
         let week = try #require(AudioRetention.week.purgeCutoff(now: now))
         #expect(week == now.addingTimeInterval(-7 * 86_400))
 
@@ -129,8 +132,8 @@ private func makeBuffer(format: AVAudioFormat, frames: AVAudioFrameCount, seed: 
         #expect(month == now.addingTimeInterval(-30 * 86_400))
     }
 
-    @Test func defaultIsSevenDays() {
-        #expect(AudioRetention.default == .week)
-        #expect(AudioRetention.default.rawValue == 7)
+    @Test func defaultIsThreeDays() {
+        #expect(AudioRetention.default == .threeDays)
+        #expect(AudioRetention.default.rawValue == 3)
     }
 }

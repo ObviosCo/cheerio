@@ -135,7 +135,7 @@ The most open-ended track, and after the icon the most valuable. Everything belo
 | Meeting detail | [MeetingDetailView.swift](../Cheerio/Views/MeetingDetailView.swift) | One editable title with a pencil affordance, rendered Markdown notes, editable rough notes, "Re-identify speakers", speakers panel, and a collapsed-by-default transcript with a per-line speaker menu, each separated by a rule — Export |
 | Speakers panel | [MeetingSpeakersSection.swift](../Cheerio/Views/MeetingSpeakersSection.swift) | Per-meeting speaker list with line/duration counts, rename-or-merge menu, "Use as voice sample" |
 | Roster menu | [ParticipantRosterMenu.swift](../Cheerio/Views/ParticipantRosterMenu.swift) | "Who was here" — picks which enrolled voices get primed, with an over-cap warning |
-| Settings → Privacy | [SettingsView.swift](../Cheerio/Views/SettingsView.swift) | Audio retention picker (none / 24h / 7d / 30d / forever), "Delete audio now" |
+| Settings → Privacy | [SettingsView.swift](../Cheerio/Views/SettingsView.swift) | Audio retention picker (none / 24h / 3d / 7d / 30d / forever), "Delete audio now" |
 | Settings → Participants | [ParticipantsView.swift](../Cheerio/Views/ParticipantsView.swift) | Enrolled voices, "This is me", remove, and a 30-second guided voice-sample recorder |
 | Menu bar | [MenuBarView.swift](../Cheerio/Views/MenuBarView.swift) | Start/stop, current calendar event, open window |
 
@@ -184,7 +184,7 @@ Roughly in priority order.
 
 10. **Permissions.** Three prompts, and they don't matter equally. **Microphone** is required for everything and is the only one with a recovery path today. **System audio** is the unfamiliar one, and it's what captures anything coming out of the machine — the far end of a remote call, but also whatever's playing while you record alone. Denying it costs you every remote participant and quietly narrows what a solo recording captures. **Calendar** is genuinely optional; without it recordings just get timestamp titles instead of event names. Design the pre-prompt explanation and the recovery state for each, and let the stakes differ — asking for all three with equal urgency at launch would be the wrong answer.
 
-11. **Audio retention, which is a real control and currently a bare picker.** How long recorded audio sticks around — immediately, 24 hours, 7 days, 30 days, forever — plus a "Delete audio now" button, sitting in a Settings tab with an explanatory caption. It's worth designing properly because deleting the audio has a consequence the UI doesn't yet connect: once it's gone, speakers can't be re-identified and "Use as voice sample" stops working. That relationship should be visible at the moment of choosing, not discovered later.
+11. **Audio retention, which is a real control and currently a bare picker.** How long recorded audio sticks around — immediately, 24 hours, 3 days, 7 days, 30 days, forever — plus a "Delete audio now" button, sitting in a Settings tab with an explanatory caption. It's worth designing properly because deleting the audio has a consequence the UI doesn't yet connect: once it's gone, speakers can't be re-identified and "Use as voice sample" stops working. That relationship should be visible at the moment of choosing, not discovered later.
 
     The tab is currently titled "Privacy," and one caption in it carries the app's only statement about being local. Both are fine as far as they go; neither needs amplifying into a theme.
 

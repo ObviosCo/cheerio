@@ -42,7 +42,7 @@ Meeting transcripts are already used as instructions for AI agents — record a 
 - Whether a recording is running is answerable at a glance, with the app in the background
 - Live transcript visible during the meeting with < 2s lag
 - Enhanced notes generated in < 30s for a 60-minute meeting
-- Audio optionally discarded after transcription (privacy default: keep 7 days)
+- Audio optionally discarded after transcription (privacy default: keep 3 days)
 
 ## v2 candidates
 
