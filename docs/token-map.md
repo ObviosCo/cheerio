@@ -114,9 +114,12 @@ single-colour by definition, so it carries 1 alone and must be unmistakable at
 ## Speaker identity
 
 Eleven colour sets: nine identity colours (`Self` plus eight slots) and two
-supporting tokens (`Unresolved`, `OnChip`). Speaker colour fills the **monogram chip and nothing else** —
-never transcript text, never a row background. That rule is what keeps a
-400-line transcript readable.
+supporting tokens (`Unresolved`, `OnChip`). Speaker colour fills the **monogram
+chip and the speakers-panel timeline, and nothing else** — never transcript
+text, never a row background. `SpeakerTimelineBar` earns the exception because
+the bar is itself a visual element, not text sitting next to one (see
+`Cheerio/Design/README.md`). That rule is what keeps a 400-line transcript
+readable.
 
 | CSS custom property | Color Set | Light | Dark | Slot |
 | --- | --- | --- | --- | --- |

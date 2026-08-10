@@ -68,7 +68,8 @@ public extension Theme {
         public static let recordingQuiet = Color("Recording/Quiet", bundle: .main)
 
         // MARK: Speaker identity
-        // Fills the monogram chip and nothing else. Never transcript text,
+        // Fills the monogram chip and the speakers-panel timeline
+        // (`SpeakerTimelineBar`), and nothing else. Never transcript text,
         // never a row background. Reach these through `SpeakerSlot.color`.
 
         public static let speakerOnChip = Color("Speaker/OnChip", bundle: .main)
