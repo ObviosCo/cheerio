@@ -15,17 +15,20 @@ public extension View {
     /// replaces the system pill wholesale (verified by offscreen render on
     /// macOS 26) — using `Accent/Selection`, a fill chosen to clear 4.5:1 under
     /// `Text/Primary` and `Text/Secondary` in both appearances. When the window
-    /// isn't key it falls back to the neutral `Accent/SelectionInactive`, the
-    /// same way unemphasized system selections go grey.
+    /// doesn't appear active it falls back to the neutral
+    /// `Accent/SelectionInactive`, the same way unemphasized system selections
+    /// go grey.
     func chListRowSelection(isSelected: Bool) -> some View {
         modifier(CheerioListRowSelection(isSelected: isSelected))
     }
 }
 
 private struct CheerioListRowSelection: ViewModifier {
-    /// `.key` and `.active` count as emphasized; `.inactive` mirrors AppKit's
-    /// unemphasized-selection grey.
-    @Environment(\.controlActiveState) private var controlActiveState
+    /// An active-looking window (key, or main behind a key panel) gets the
+    /// emphasized fill; an inactive one mirrors AppKit's unemphasized-selection
+    /// grey. `appearsActive` is that exact distinction — and it's what the SDK's
+    /// soft-deprecation of `controlActiveState` points at.
+    @Environment(\.appearsActive) private var appearsActive
 
     let isSelected: Bool
 
@@ -43,8 +46,8 @@ private struct CheerioListRowSelection: ViewModifier {
         if isSelected {
             RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
                 .fill(
-                    controlActiveState == .inactive
-                        ? Theme.Colors.accentSelectionInactive : Theme.Colors.accentSelection
+                    appearsActive
+                        ? Theme.Colors.accentSelection : Theme.Colors.accentSelectionInactive
                 )
                 // The system pill this replaces doesn't run edge-to-edge either.
                 .padding(.horizontal, Theme.Space.x1)
