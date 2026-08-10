@@ -485,9 +485,21 @@ struct MeetingDetailView: View {
     /// ``MeetingAudioPlayerView``'s caller shows nothing rather than a disabled
     /// control — and merely *disabled* while a recording runs, matching the
     /// player controls it drives. Hidden-by-opacity so revealing it never
-    /// reflows the selectable text beside it, with hit testing gated to the
-    /// same hover: an invisible click target sitting past the end of a line
-    /// would swallow clicks meant to start a text selection there.
+    /// reflows the selectable text beside it, with hit testing *and*
+    /// focusability gated to the same reveal. The hit-testing gate keeps an
+    /// invisible click target past the end of a line from swallowing clicks
+    /// meant to start a text selection there. The focusability gate exists
+    /// because opacity doesn't take a button out of Full Keyboard Access's Tab
+    /// order: without it, Tab lands on — and Space *activates* — a control
+    /// with no visible presence (measured, not assumed). Reveal-on-focus
+    /// isn't an option: no SwiftUI signal (`@FocusState` via `.focused`, or
+    /// `\.isFocused` in the label or a `ButtonStyle`) fires when a bridged
+    /// button takes key-loop focus on macOS 26, `.focusable(true)` adds a
+    /// second, Space-inert tab stop beside the button's own — and even
+    /// working, a tab stop per line is the keyboard shape of the number
+    /// column #130 avoids. So this control is pointer-only, unconditionally
+    /// out of the Tab order: keyboard users get the scrubber, VoiceOver keeps
+    /// the per-line action above (its navigation isn't the Tab loop).
     private func seekButton(for segment: TranscriptSegment) -> some View {
         let isRevealed = hoveredSegmentID == segment.persistentModelID
         return Button {
@@ -503,6 +515,7 @@ struct MeetingDetailView: View {
         }
         .buttonStyle(.borderless)
         .disabled(session.state != .idle)
+        .focusable(false)
         .opacity(isRevealed ? 1 : 0)
         .allowsHitTesting(isRevealed)
         .accessibilityLabel(seekActionName(for: segment))
