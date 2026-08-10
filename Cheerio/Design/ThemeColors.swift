@@ -51,6 +51,17 @@ public extension Theme {
         public static let accentHover = Color("Accent/Hover", bundle: .main)
         /// Fill only — never text.
         public static let accentQuiet = Color("Accent/Quiet", bundle: .main)
+        /// Fill only — the selected list row in a key window. Deliberately not
+        /// `accent`: that copper is darkened to clear AA *as text*, which is the
+        /// wrong direction for a fill sitting behind text — `textSecondary` on it
+        /// reads 1.06:1. This one is tuned the other way, to hold ≥ 4.5:1 under
+        /// `textPrimary` and `textSecondary` in both appearances; the numbers
+        /// live in `docs/token-map.md`. Reach it through `chListRowSelection`.
+        public static let accentSelection = Color("Accent/Selection", bundle: .main)
+        /// `accentSelection` for a window that isn't key: neutral, the way
+        /// AppKit's unemphasized selection goes grey, so a background window
+        /// stops claiming attention. Same AA pairing as `accentSelection`.
+        public static let accentSelectionInactive = Color("Accent/SelectionInactive", bundle: .main)
 
         // MARK: Semantic states
         // Never the only signal. Reach for `StatusLabel`, which pairs each of
