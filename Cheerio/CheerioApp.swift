@@ -103,6 +103,8 @@ struct CheerioApp: App {
         // prompts for nothing — notification permission is asked for lazily, at the
         // first moment something would actually be posted.
         NotificationService.shared.start(session: session, container: container)
+
+        MCPManifestRefresh.runAtLaunch()
     }
 
     var body: some Scene {
