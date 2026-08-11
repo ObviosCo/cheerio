@@ -38,26 +38,26 @@ final class MicrophoneCapture: @unchecked Sendable {
     /// counterpart to `SystemAudioTap`'s `SilenceWatch`.
     private let peakWatch = CapturePeakWatch()
 
-    /// Whether `stop()` logs the silence/signal verdict at all. Defaults on for
-    /// real captures — a meeting or an enrollment take that recorded silence is
-    /// exactly the failure the log line exists to diagnose. The enrollment flow's
-    /// mic check opts out: it runs the tap while somebody watches a level meter,
-    /// possibly without saying a word, so a silent verdict there is a false alarm,
-    /// not a diagnosis — same reasoning as `SystemAudioTap`'s onboarding probe.
-    private let logsSilenceVerdict: Bool
+    /// Armed by the caller, not by `start()`, because only the caller knows when
+    /// the recording it is assembling is genuinely underway. `CaptureSession`
+    /// starts this engine *before* `SystemAudioTap`; if the tap then throws, its
+    /// rollback stops a mic that ran for under a second during which nobody was
+    /// asked to speak — a verdict there would log a TCC diagnosis for a recording
+    /// that never existed. Same for an enrollment take cancelled mid-setup. An
+    /// unarmed watch stays quiet, and the enrollment mic check never arms at all:
+    /// it runs the tap while somebody watches a level meter, possibly without
+    /// saying a word — same reasoning as `SystemAudioTap`'s onboarding probe.
+    private let verdictArmed = Atomic<Bool>(false)
 
-    /// Cleanup paths call `stop()` even when `start()` threw partway — no buffer
-    /// ever flowed, and an "only silence" verdict would blame the wrong failure.
-    /// Only a capture whose engine actually started gets a verdict, and only once.
-    private let engineStarted = Atomic<Bool>(false)
-
-    init(
-        logsSilenceVerdict: Bool = true,
-        onBuffer: @escaping @Sendable (sending AVAudioPCMBuffer) -> Void
-    ) {
-        self.logsSilenceVerdict = logsSilenceVerdict
+    init(onBuffer: @escaping @Sendable (sending AVAudioPCMBuffer) -> Void) {
         self.onBuffer = onBuffer
         (levels, levelsContinuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(1))
+    }
+
+    /// Call once every capture source in the session has started and the
+    /// recording is really on — from then on, `stop()` logs the verdict.
+    func armSilenceVerdict() {
+        verdictArmed.store(true, ordering: .releasing)
     }
 
     enum Permission {
@@ -111,7 +111,6 @@ final class MicrophoneCapture: @unchecked Sendable {
         }
         engine.prepare()
         try engine.start()
-        engineStarted.store(true, ordering: .releasing)
     }
 
     /// Best-effort: voice processing can reject a device or format outright, and failing the
@@ -164,7 +163,7 @@ final class MicrophoneCapture: @unchecked Sendable {
     /// The exchange makes the verdict once-only: some teardown paths can reach
     /// `stop()` twice, and the second pass shouldn't log a duplicate.
     private func logSilenceVerdict() {
-        guard logsSilenceVerdict, engineStarted.exchange(false, ordering: .acquiringAndReleasing) else { return }
+        guard verdictArmed.exchange(false, ordering: .acquiringAndReleasing) else { return }
         let verdict = peakWatch.verdict
         switch verdict {
         case .signal:
