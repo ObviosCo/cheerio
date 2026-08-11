@@ -46,6 +46,19 @@ enum ScreenshotMode {
         UserDefaults.standard.bool(forKey: "screenshotOpenSettings")
     }
 
+    /// Closes the library window after ``opensSettings`` has done its work.
+    ///
+    /// Exists for the Settings *audits* (`CheerioAccessibilityTests`), not the
+    /// screenshots: `performAccessibilityAudit` walks every window the app has, and
+    /// on a CI runner's 1024×768 screen the Settings window always overlaps the
+    /// library behind it — so auditing "Settings" also samples library elements
+    /// through the Settings window's pixels, producing contrast findings about
+    /// text that isn't visible at all. Screenshots don't have this problem (they
+    /// photograph one window by title) and keep the library open for depth.
+    static var closesMainWindow: Bool {
+        UserDefaults.standard.bool(forKey: "screenshotCloseMainWindow")
+    }
+
     /// Which onboarding step the walkthrough starts on, as a
     /// `OnboardingCoordinator.Step` raw value. Absent means the first one, which is
     /// what a real first run does.
@@ -63,6 +76,17 @@ enum ScreenshotMode {
         UserDefaults.standard.bool(forKey: "screenshotExpandTranscript")
     }
 
+    /// Presents the speakers panel's "Use as voice sample" sheet
+    /// (`EnrollFromMeetingSheet`) for the selected meeting's first speaker.
+    ///
+    /// The sheet is otherwise only reachable through a row's ellipsis menu, which
+    /// neither harness clicks — without this the accessibility audits (#142)
+    /// could never measure its text. Same shape as every other hook here: it
+    /// pre-sets presentation state, it doesn't save a sample or touch the store.
+    static var showsEnrollFromMeetingSheet: Bool {
+        UserDefaults.standard.bool(forKey: "screenshotEnrollFromMeetingSheet")
+    }
+
     /// Shows `VoiceEnrollmentRecorder`'s post-save acknowledgment (issue #128)
     /// instead of its empty form.
     ///
@@ -75,6 +99,32 @@ enum ScreenshotMode {
     /// issue added.
     static var showsVoiceEnrollmentConfirmation: Bool {
         UserDefaults.standard.bool(forKey: "screenshotVoiceEnrollmentConfirmed")
+    }
+
+    /// Which appearance the whole app renders in — "light" or "dark" — overriding
+    /// the system setting for this launch only. Absent follows the system, which is
+    /// what a real launch does.
+    ///
+    /// Exists for the accessibility audits (`CheerioAccessibilityTests`), which have
+    /// to check contrast under both appearances no matter what the machine running
+    /// them is set to — a dark-on-dark mistake like #141 is invisible to an audit
+    /// that only ever sees light mode. `NSApplication.appearance` rather than a
+    /// per-window override, because the audits also cover Settings and the
+    /// walkthrough, which are separate windows.
+    static var appearance: NSAppearance? {
+        switch UserDefaults.standard.string(forKey: "screenshotAppearance") {
+        case "light": NSAppearance(named: .aqua)
+        case "dark": NSAppearance(named: .darkAqua)
+        default: nil
+        }
+    }
+
+    /// Applies ``appearance``. Called from `CheerioApp.init()` rather than
+    /// ``applyAtLaunch(openWindow:)``, which only runs once the *library* renders —
+    /// a first-run launch (the walkthrough audits) never gets there.
+    @MainActor static func applyAppearanceOverride() {
+        guard let appearance else { return }
+        NSApplication.shared.appearance = appearance
     }
 
     /// The main window's size in points, as "1440x900". Absent leaves the window
@@ -111,6 +161,17 @@ enum ScreenshotMode {
         guard opensSettings || onboardingStep != nil else { return }
         try? await Task.sleep(for: .milliseconds(400))
         makeSecondaryWindowKey()
+        // Only after the secondary window exists and is key — closing the last
+        // visible window first would leave nothing on screen for a moment, and
+        // the app quits nothing here (the menu bar scene keeps it alive).
+        if closesMainWindow { closeMainWindow() }
+    }
+
+    @MainActor private static func closeMainWindow() {
+        for window in NSApplication.shared.windows
+        where window.identifier?.rawValue == mainWindowIdentifier {
+            window.close()
+        }
     }
 
     /// Brings whichever window was just opened to the front and makes it key.

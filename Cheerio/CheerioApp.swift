@@ -66,6 +66,11 @@ struct CheerioApp: App {
             UserDefaultsMigration.migrateIfNeeded()
         }
 
+        // Before any window exists, so every scene — library, Settings, the
+        // walkthrough — renders in the appearance the harness asked for. A no-op
+        // without the launch argument; see `ScreenshotMode.appearance`.
+        ScreenshotMode.applyAppearanceOverride()
+
         let session = CaptureSession()
         _captureSession = State(initialValue: session)
         _updater = State(initialValue: AppUpdater(session: session))

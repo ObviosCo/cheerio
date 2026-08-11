@@ -37,7 +37,7 @@ struct ParticipantRosterMenu: View {
         if enrolled.isEmpty {
             Label("No voices enrolled", systemImage: "person.2.slash")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.Colors.textSecondary)
                 .help("Enroll voices in Settings → Participants to have speakers named.")
         } else {
             Menu {

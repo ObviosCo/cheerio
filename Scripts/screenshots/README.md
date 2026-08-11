@@ -21,7 +21,15 @@ There are two capture paths, and they share everything except the shutter.
 | Good for | publishing the site's imagery, and iterating with your own eyes | **PR previews — this path is the authoritative one** |
 
 Both seed the same store, through the same `seed-store.sh`, and both reach the states
-they photograph through the same `ScreenshotMode` launch arguments. Only the shutter
+they photograph through the same `ScreenshotMode` launch arguments.
+
+A third consumer shares the seeder and the launch arguments without taking pictures
+at all: `CheerioAccessibilityTests` (scheme `CheerioAccessibility`, run by
+`.github/workflows/accessibility.yml`) audits the same screens for accessibility —
+contrast first — in both appearances, via `-screenshotAppearance`. It's a sibling
+bundle rather than more tests in `CheerioScreenshotTests` because the two have
+opposite failure semantics: capture is capture-and-continue, an audit finding must
+go red, and a red audit must never stop screenshots from being captured. Only the shutter
 differs, and it differs because a GitHub runner has nobody to grant Screen Recording
 to: denied, `screencapture` hands back a solid black frame rather than an error. A UI
 test's own screenshot API isn't reaching into another process's window, so it isn't

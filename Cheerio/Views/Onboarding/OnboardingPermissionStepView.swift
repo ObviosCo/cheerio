@@ -75,7 +75,7 @@ struct OnboardingPermissionStepView: View {
                 if kind.isOptional {
                     Label("Optional — skip any time", systemImage: "info.circle")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.Colors.textSecondary)
                 }
 
                 statusView
@@ -108,14 +108,14 @@ struct OnboardingPermissionStepView: View {
                 StatusLabel(.attention, "Access denied")
                 Text("You can turn this on later in System Settings → Privacy & Security.")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.textSecondary)
             }
         case .requested:
             Text(
                 "If macOS asked for permission, you're set. Check System Settings → Privacy & Security → Screen & System Audio Recording any time you're unsure."
             )
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Theme.Colors.textSecondary)
             .multilineTextAlignment(.center)
             .frame(maxWidth: 360)
         }

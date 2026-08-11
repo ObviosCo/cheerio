@@ -18,11 +18,11 @@ struct CallbackStatusLabel: View {
         case .running(let title):
             Label("Running for “\(title)”…", systemImage: "hourglass")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.Colors.textSecondary)
         case .succeeded(let title):
             Label("Finished for “\(title)”", systemImage: "checkmark.circle")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.Colors.textSecondary)
         case .failed(let title, let detail):
             // `.error`, not `.attention` — this is an actual failure of the command
             // run, not a warning to notice and move past.

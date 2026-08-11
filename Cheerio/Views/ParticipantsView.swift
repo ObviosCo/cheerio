@@ -16,7 +16,7 @@ struct ParticipantsView: View {
                 if speakers.isEmpty {
                     Text("No one enrolled yet. Without a voice sample, speakers appear as “Speaker 1”, “Speaker 2”, and so on.")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.Colors.textSecondary)
                 }
                 ForEach(speakers, id: \EnrolledSpeaker.persistentModelID) { speaker in
                     row(for: speaker)
@@ -28,6 +28,10 @@ struct ParticipantsView: View {
                     "Save as many voices as you like. At most \(SpeakerAttributionService.maximumSpeakers) are primed for any one meeting, chosen per meeting under “Who was here” — so a voice that wasn't in the room doesn't take a slot from someone who was."
                 )
                 .font(.caption)
+                // Explicit, not left to the Form's own footer style: the system's
+                // grouped-form footer gray measures 3.9:1 in light mode, under AA
+                // (found by the #142 contrast audit).
+                .foregroundStyle(Theme.Colors.textSecondary)
             }
 
             Section("Add a voice") {
@@ -59,7 +63,8 @@ struct ParticipantsView: View {
                 Text(durationLabel(for: speaker))
                     .font(.caption)
                     .foregroundStyle(
-                        speaker.hasEnoughAudio ? AnyShapeStyle(.secondary) : AnyShapeStyle(Theme.Colors.attention)
+                        speaker.hasEnoughAudio
+                            ? AnyShapeStyle(Theme.Colors.textSecondary) : AnyShapeStyle(Theme.Colors.attention)
                     )
             }
             Spacer()

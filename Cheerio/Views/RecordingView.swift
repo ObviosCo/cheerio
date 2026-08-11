@@ -257,7 +257,7 @@ struct RecordingView: View {
                 Image(systemName: "xmark")
             }
             .buttonStyle(.borderless)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Theme.Colors.textSecondary)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -289,7 +289,7 @@ struct RecordingView: View {
                 .overlay(alignment: .topLeading) {
                     if session.roughNotes.isEmpty {
                         Text("Rough notes — jot anything; AI merges it with the transcript later.")
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(Theme.Colors.textSecondary)
                             .padding(12)
                             .allowsHitTesting(false)
                     }
@@ -311,10 +311,10 @@ struct RecordingView: View {
                     }
                     Spacer()
                     Text("\(session.liveLines.count) lines")
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Theme.Colors.textSecondary)
                 }
                 .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.Colors.textSecondary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
 
@@ -391,7 +391,7 @@ struct RecordingView: View {
                 .font(.title3)
         }
         .buttonStyle(.borderless)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(Theme.Colors.textSecondary)
         .padding(6)
         .background(.regularMaterial, in: Circle())
         .padding(10)
@@ -403,7 +403,7 @@ struct RecordingView: View {
             if showsTimestamp {
                 Text(TranscriptTimestamp.format(line.startTime))
                     .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Theme.Colors.textSecondary)
             }
             HStack(alignment: .top, spacing: 8) {
                 // Both channels stay plain secondary text: speaker colour fills the
@@ -412,7 +412,7 @@ struct RecordingView: View {
                 // provenance anyway, which carries no identity colour even on a chip.
                 Text(line.channel == .me ? "Me" : "Them")
                     .font(.caption.bold())
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.textSecondary)
                     .frame(width: 44, alignment: .trailing)
                 Text(line.text)
                     .textSelection(.enabled)

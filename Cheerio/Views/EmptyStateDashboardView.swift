@@ -135,5 +135,12 @@ struct EmptyStateDashboardView: View {
             Image(systemName: "lightbulb")
         }
         .chText(.caption)
+        // One element, not the Label's default children: the lightbulb is
+        // decorative, and SwiftUI reports the inner text's accessibility frame
+        // offset from where the Label actually renders it — measured on the CI
+        // runner (#142), the contrast audit sampled a blank strip while the tip
+        // drew just above it. The combined element's frame covers the Label's
+        // real rendered bounds, so the audit measures the tip's own pixels.
+        .accessibilityElement(children: .combine)
     }
 }

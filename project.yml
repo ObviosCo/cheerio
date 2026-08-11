@@ -57,6 +57,19 @@ schemes:
       gatherCoverageData: false
       targets:
         - CheerioScreenshotTests
+  # The accessibility audit pass (issue #142), likewise kept out of the Cheerio
+  # scheme — it launches the app — and out of CheerioScreenshots: screenshots are
+  # capture-and-continue, audits are pass/fail, and a red audit must not stop
+  # screenshots from being captured. Run by .github/workflows/accessibility.yml.
+  CheerioAccessibility:
+    build:
+      targets:
+        CheerioAccessibilityTests: [test]
+    test:
+      config: Debug
+      gatherCoverageData: false
+      targets:
+        - CheerioAccessibilityTests
 targets:
   Cheerio:
     type: application
@@ -132,6 +145,30 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: co.obvios.cheerio.mac.screenshots
+        GENERATE_INFOPLIST_FILE: true
+        # Set explicitly rather than left to the app-target dependency above:
+        # it's what tells XCUIApplication() which app to launch, and a UI test
+        # bundle that can't resolve it fails at runtime, not at build time.
+        TEST_TARGET_NAME: Cheerio
+
+  # Audits the same screens the screenshot bundle photographs, with
+  # XCUIApplication.performAccessibilityAudit — contrast first (issue #142). A
+  # sibling of CheerioScreenshotTests rather than more tests inside it, because
+  # the two have opposite failure semantics: a screenshot that fails to come out
+  # must not cost the reviewer the rest, while an audit finding must go red. It
+  # reuses the same seeded store and ScreenshotMode launch arguments; only the
+  # assertion differs. Ships in no product — it exists to be run by
+  # .github/workflows/accessibility.yml.
+  CheerioAccessibilityTests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - path: CheerioAccessibilityTests
+    dependencies:
+      - target: Cheerio
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: co.obvios.cheerio.mac.accessibility
         GENERATE_INFOPLIST_FILE: true
         # Set explicitly rather than left to the app-target dependency above:
         # it's what tells XCUIApplication() which app to launch, and a UI test

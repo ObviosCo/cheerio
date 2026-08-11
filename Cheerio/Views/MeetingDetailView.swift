@@ -113,7 +113,7 @@ struct MeetingDetailView: View {
                         .disabled(isRelabeling || session.isProcessing(meeting))
                         Text("Uses the voices enrolled in Settings → Participants.")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.Colors.textSecondary)
                     }
                 }
 
@@ -268,12 +268,12 @@ struct MeetingDetailView: View {
                         .labelStyle(.iconOnly)
                 }
                 .buttonStyle(.borderless)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.Colors.textSecondary)
                 .help("Rename meeting")
             }
             Text(subtitle)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.Colors.textSecondary)
         }
     }
 
@@ -304,7 +304,7 @@ struct MeetingDetailView: View {
                 "No enhanced notes for this meeting — the transcript below is intact.",
                 systemImage: "sparkles"
             )
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Theme.Colors.textSecondary)
         }
     }
 
@@ -391,7 +391,7 @@ struct MeetingDetailView: View {
                 MarkdownNotesView(markdown: meeting.roughNotes, preservesLineBreaksInParagraphs: true)
             } else {
                 Text("No rough notes for this meeting yet.")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.textSecondary)
             }
             // Only true once the meeting has actually ended and been enhanced —
             // while it's still recording, nothing above has run yet to be stale.
@@ -404,7 +404,7 @@ struct MeetingDetailView: View {
                     "Notes added here stay with the meeting. If a summary already ran above, it won't include edits made after the meeting ended."
                 )
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.Colors.textSecondary)
             }
         }
     }
@@ -420,7 +420,7 @@ struct MeetingDetailView: View {
         DisclosureGroup(isExpanded: $isTranscriptExpanded) {
             if sortedSegments.isEmpty {
                 Text("No transcript for this meeting.")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.textSecondary)
                     .padding(.top, 6)
             } else {
                 let marked = timestampedIndices
@@ -431,7 +431,7 @@ struct MeetingDetailView: View {
                     // fixed point to convert from.
                     Text(meeting.startedAt.formatted(date: .abbreviated, time: .shortened))
                         .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.Colors.textSecondary)
 
                     // Lazy: a long meeting runs to hundreds of lines, and each one
                     // carries a menu now.
@@ -449,7 +449,7 @@ struct MeetingDetailView: View {
                                     // column of numbers this stamp avoids.
                                     Text(TranscriptTimestamp.format(segment.startTime))
                                         .font(.caption2.monospacedDigit())
-                                        .foregroundStyle(.tertiary)
+                                        .foregroundStyle(Theme.Colors.textSecondary)
                                 }
                                 HStack(alignment: .top, spacing: 8) {
                                     speakerMenu(for: segment)
@@ -666,7 +666,7 @@ struct MeetingDetailView: View {
                 }
                 Text("Hands this meeting's transcript to a trigger from Settings → Callback.")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.textSecondary)
             }
             // The same shared status line Settings shows, because the run it
             // reports may well have been started right here.
