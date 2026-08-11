@@ -256,7 +256,11 @@ struct RecordingView: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 6) {
                     Image(systemName: "waveform")
-                    Text("Live transcript")
+                    // "Live" is a claim about capture, and in `.holding` capture is
+                    // over — the banner above says "Recording finished", and this
+                    // header contradicting it would leave doubt about whether the
+                    // mic is still hot.
+                    Text(session.state == .holding ? "Transcript" : "Live transcript")
                     if let startedAt = session.startedAt {
                         // Absolute and local, per #130 — the per-line stamps below
                         // are all relative to this one instant.

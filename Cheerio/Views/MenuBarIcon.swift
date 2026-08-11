@@ -109,11 +109,17 @@ enum MenuBarIcon {
             // processed. Distinct at a glance from `.recording` (solid) and
             // `.finishing` (ellipsis), which matters because this is the one
             // state that's waiting on the user rather than on the machine.
+            //
+            // The hole is a proportion of the dot, never a stroke-width
+            // subtraction: on the 18pt canvas the dot's radius is ~1.3pt while
+            // the ring's stroke is ~5pt, so anything derived from the stroke
+            // swallows the dot whole — a negative inner radius, no hole, and a
+            // `.holding` glyph indistinguishable from `.recording`.
             let path = ringPath()
             let dotRadius = innerRadius * 0.55
-            let dotStroke = max(1.0, stroke * 0.45)
+            let holeRadius = dotRadius * 0.55
             path.addEllipse(in: dot(radius: dotRadius))
-            path.addEllipse(in: dot(radius: dotRadius - dotStroke))
+            path.addEllipse(in: dot(radius: holeRadius))
             ctx.addPath(path)
             ctx.fillPath(using: .evenOdd)
 

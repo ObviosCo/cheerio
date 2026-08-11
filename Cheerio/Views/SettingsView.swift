@@ -343,10 +343,16 @@ struct TranscriptCallbackSettingsView: View {
     /// *before* diarization and enhancement run, so between those two moments the
     /// most recent `endedAt != nil` meeting has channel-only labels and no notes.
     /// Exporting it then would contradict the single definition of "ready" that
-    /// `stop` documents at its `fireTranscriptReadyCallback` call — the test button
-    /// exists to rehearse the real callback, so it has to wait for the same point.
+    /// `CaptureSession` documents at its `fireTranscriptReadyCallback` call — the
+    /// test button exists to rehearse the real callback, so it has to wait for
+    /// the same point.
+    ///
+    /// `isProcessingInBackground` for the same reason `UpdatePolicy` reads it:
+    /// launch recovery of a held meeting runs that same pipeline while `state`
+    /// sits at `.idle`, and the meeting it's mid-way through is exactly the
+    /// "most recently completed" one this would export half-processed.
     private var lastMeeting: Meeting? {
-        guard session.state == .idle else { return nil }
+        guard session.state == .idle, !session.isProcessingInBackground else { return nil }
         return completedMeetings.first
     }
 
@@ -372,7 +378,7 @@ struct TranscriptCallbackSettingsView: View {
             Section {
                 Button("Run now on last meeting") { runNow() }
                     .disabled(lastMeeting == nil || trimmedCommand.isEmpty)
-                if session.state != .idle {
+                if session.state != .idle || session.isProcessingInBackground {
                     Text("Waiting for the current recording to finish processing.")
                         .font(.caption)
                         .foregroundStyle(.secondary)

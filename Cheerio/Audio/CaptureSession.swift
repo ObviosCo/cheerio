@@ -909,6 +909,11 @@ final class CaptureSession {
             // unrecoverable, and launch ordering is the caller's detail.
             guard meeting != self.meeting else { continue }
             beginProcessing(meeting)
+            // Per-iteration, not function exit: a `defer` runs when its enclosing
+            // *scope* ends, and a loop body is one — Swift, unlike Go. So each
+            // meeting's mark is already cleared (on `continue` too) by the time
+            // the post-loop sweep below reads `meetingIDsBeingProcessed`, which
+            // is what lets that sweep actually reach the meetings it exists for.
             defer { endProcessing(meeting) }
             // Same claim discipline as `completeHold`, for the same reason: the
             // cleared plan must be durable before any work runs, or a crash
