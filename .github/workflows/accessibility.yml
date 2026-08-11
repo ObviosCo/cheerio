@@ -133,3 +133,16 @@ jobs:
             -resultBundlePath "$RUNNER_TEMP/accessibility.xcresult" \
             CODE_SIGNING_ALLOWED=NO \
             | xcbeautify --renderer github-actions
+
+      # The log only says "Contrast failed" per finding; the element, its measured
+      # ratio, and the screenshot of it live in the result bundle, and a red audit
+      # is unactionable without them. `always()` because the failing run is
+      # exactly the one whose bundle matters. Still just an artifact — nothing
+      # here writes to the repository.
+      - name: Upload the result bundle
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: accessibility-xcresult
+          path: ${{ runner.temp }}/accessibility.xcresult
+          if-no-files-found: ignore
