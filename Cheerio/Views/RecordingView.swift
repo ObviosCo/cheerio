@@ -183,12 +183,29 @@ struct RecordingView: View {
                 .fixedSize()
                 .labelsHidden()
 
-                // Only offered when a command exists to run — a toggle that
-                // controls nothing would read as broken, and Settings › Callback
-                // is where a command gets configured in the first place.
-                if TranscriptCallbackSettings.command != nil {
+                // Only offered when a trigger exists that could run — a toggle
+                // that controls nothing would read as broken, and Settings ›
+                // Callback is where triggers get configured in the first place.
+                // `hasRunnableTrigger`, not `command != nil`: a blank default
+                // with a usable second trigger still leaves something to choose.
+                if TranscriptCallbackSettings.hasRunnableTrigger {
                     Toggle("Run callback", isOn: $session.holdRunsCallback)
                         .toggleStyle(.checkbox)
+                    // The per-meeting trigger choice (#137). Hidden with one
+                    // trigger configured, when there's nothing to choose — the
+                    // single-command experience stays exactly what it was.
+                    let triggers = TranscriptCallbackSettings.triggers
+                    if triggers.count > 1 {
+                        Picker("Trigger", selection: $session.holdTriggerID) {
+                            ForEach(triggers) { trigger in
+                                Text(trigger.displayName).tag(trigger.id as UUID?)
+                            }
+                        }
+                        .fixedSize()
+                        .labelsHidden()
+                        .accessibilityLabel("Callback trigger")
+                        .disabled(!session.holdRunsCallback)
+                    }
                     TextField(
                         "Additional prompt for the callback (CHEERIO_ADDITIONAL_PROMPT)",
                         text: $session.holdCallbackPrompt

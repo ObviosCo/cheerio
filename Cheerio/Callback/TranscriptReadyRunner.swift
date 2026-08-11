@@ -54,26 +54,31 @@ enum TranscriptReadyRunner {
     ]
 
     /// Fires the callback for `export` if the settings — and the holding state's
-    /// per-meeting decision, when the meeting went through one — say to. Called
-    /// from `CaptureSession` at the one point a meeting counts as "ready" — see
+    /// per-meeting decision, when the meeting went through one — say to, running
+    /// the trigger the plan chose (or the default — see
+    /// ``TranscriptCallbackSettings/trigger(for:)``). Called from
+    /// `CaptureSession` at the one point a meeting counts as "ready" — see
     /// the comment there for why that point and not earlier. Returns immediately:
     /// the subprocess runs on its own detached task, and nothing in the capture
     /// pipeline waits on it.
     @MainActor
     static func fireIfNeeded(export: MeetingExport, plan: ProcessingPlan?) {
         guard TranscriptCallbackSettings.shouldFire(for: export.kind, plan: plan),
-            let command = TranscriptCallbackSettings.command
+            let command = TranscriptCallbackSettings.trigger(for: plan)?.trimmedCommand
         else { return }
         fire(command: command, export: export, additionalPrompt: plan?.trimmedCallbackPrompt)
     }
 
-    /// Runs unconditionally, ignoring the scope setting. Backs Settings' "Run now
-    /// on last meeting" button, whose entire point is to test a command regardless
-    /// of what scope it's currently set to. No additional prompt: the button
-    /// rehearses the command against a meeting that already finished, and any
-    /// prompt its hold once carried was consumed by the real run.
+    /// Runs unconditionally, ignoring the scope setting and the default mark.
+    /// Backs the two user-initiated surfaces: Settings' "Run now on last
+    /// meeting" button, whose entire point is rehearsing a command regardless of
+    /// what scope it's set to, and the meeting detail view's per-trigger run,
+    /// where the user pointing a specific agent at a finished meeting *is* the
+    /// decision the settings would otherwise make. No additional prompt: both
+    /// run against a meeting that already finished, and any prompt its hold once
+    /// carried was consumed by the automatic run.
     @MainActor
-    static func fireForTest(command: String, export: MeetingExport) {
+    static func fireManually(command: String, export: MeetingExport) {
         fire(command: command, export: export, additionalPrompt: nil)
     }
 

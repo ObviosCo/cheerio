@@ -676,6 +676,20 @@ final class CaptureSession {
         }
     }
 
+    /// See ``holdRunsCallback`` — same routing, for which trigger the callback
+    /// runs (issue #137). Reads as the default trigger's id while the plan hasn't
+    /// chosen one, so the holding UI's picker opens on what will actually run
+    /// rather than an empty selection; once set, the concrete id rides the plan
+    /// to processing (and through a crash, like every other plan field).
+    var holdTriggerID: UUID? {
+        get { meeting?.pendingProcessingPlan?.triggerID ?? TranscriptCallbackSettings.defaultTrigger?.id }
+        set {
+            guard state == .holding else { return }
+            meeting?.pendingProcessingPlan?.triggerID = newValue
+            recordHoldActivity()
+        }
+    }
+
     /// See ``holdRunsCallback`` — same routing, for the per-meeting prompt.
     var holdCallbackPrompt: String {
         get { meeting?.pendingProcessingPlan?.callbackPrompt ?? "" }

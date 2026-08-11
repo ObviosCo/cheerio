@@ -111,6 +111,16 @@ struct MeetingDetailView: View {
                     }
                 }
 
+                // Any configured trigger, not just the default (#137) — pointing
+                // a different agent at a finished meeting is also how it gets
+                // re-processed through one. Only for meetings that actually
+                // ended: a crash-abandoned recording has nothing "ready" to hand
+                // an agent, and the live meeting reaches this view too.
+                if meeting.endedAt != nil, TranscriptCallbackSettings.hasRunnableTrigger {
+                    Divider()
+                    runTriggerSection
+                }
+
                 Divider()
                 MeetingSpeakersSection(meeting: meeting)
 
@@ -606,6 +616,69 @@ struct MeetingDetailView: View {
             prior.restore(to: segment)
             relabelError = error.localizedDescription
         }
+    }
+
+    /// "Run this meeting through an agent" (#137): every configured trigger is
+    /// offered, not only the default — the automatic run already happened (or was
+    /// declined), so this is the review-time surface where the *user's* pick is
+    /// the whole point. One trigger gets a plain button; a list gets a menu of
+    /// names. Busy-gated the same way re-identify is: `isProcessing` covers the
+    /// live recording, a hold whose deadline could claim processing any moment,
+    /// and launch recovery mid-pipeline — all states where the export this would
+    /// build is about to be superseded.
+    private var runTriggerSection: some View {
+        let triggers = TranscriptCallbackSettings.triggers
+        return VStack(alignment: .leading, spacing: Theme.Space.x1) {
+            HStack(spacing: Theme.Space.x2) {
+                if triggers.count == 1, let only = triggers.first {
+                    Button {
+                        runTrigger(only)
+                    } label: {
+                        Label("Run callback", systemImage: "terminal")
+                    }
+                    .disabled(session.isProcessing(meeting))
+                } else {
+                    Menu {
+                        ForEach(triggers) { trigger in
+                            Button(trigger.displayName) { runTrigger(trigger) }
+                                .disabled(trigger.trimmedCommand == nil)
+                        }
+                    } label: {
+                        Label("Run callback", systemImage: "terminal")
+                    }
+                    .fixedSize()
+                    .disabled(session.isProcessing(meeting))
+                }
+                Text("Hands this meeting's transcript to a trigger from Settings → Callback.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            // The same shared status line Settings shows, because the run it
+            // reports may well have been started right here.
+            CallbackStatusLabel()
+        }
+    }
+
+    /// Same discipline as Settings' "Run now on last meeting": the export reads
+    /// `stableID`, which backfills `uuid` on an old meeting, and that ID is about
+    /// to be handed to an external consumer as CHEERIO_MEETING_ID — persist it
+    /// first or don't run at all, reporting on the status line either way.
+    private func runTrigger(_ trigger: CallbackTrigger) {
+        // The menu is disabled on the same condition, but a click can be in
+        // flight when the disable lands — this is the check that holds.
+        guard !session.isProcessing(meeting), let command = trigger.trimmedCommand else { return }
+        let ownerNames = SpeakerLabeling.ownerNames(context: context)
+        let export = meeting.export(ownerNames: ownerNames)
+        do {
+            try context.save()
+        } catch {
+            TranscriptCallbackStatus.shared.markFailedBeforeStarting(
+                title: export.title,
+                detail: "Couldn't save this meeting's ID, so the command wasn't run: \(error.localizedDescription)"
+            )
+            return
+        }
+        TranscriptReadyRunner.fireManually(command: command, export: export)
     }
 
     /// Re-runs diarization. Worth offering because labels improve as more voices get

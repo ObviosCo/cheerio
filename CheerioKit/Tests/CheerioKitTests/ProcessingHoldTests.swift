@@ -124,6 +124,17 @@ import Testing
         #expect(ProcessingPlan(runCallback: true, callbackPrompt: "  \n ").trimmedCallbackPrompt == nil)
         #expect(ProcessingPlan(runCallback: true, callbackPrompt: " focus on budget ").trimmedCallbackPrompt == "focus on budget")
     }
+
+    @Test func aPlanSavedBeforeTriggersExistedStillDecodes() throws {
+        // A crash-recovery row written by a pre-#137 build carries no
+        // `triggerID`; it has to come back as "the default trigger", not fail
+        // to decode and strand the held meeting.
+        let legacy = Data(#"{"runCallback":true,"callbackPrompt":"file the follow-ups"}"#.utf8)
+        let plan = try JSONDecoder().decode(ProcessingPlan.self, from: legacy)
+        #expect(plan.runCallback)
+        #expect(plan.callbackPrompt == "file the follow-ups")
+        #expect(plan.triggerID == nil)
+    }
 }
 
 /// The quit-mid-holding contract, pinned against a real (in-memory) store: a
@@ -246,9 +257,10 @@ import Testing
 
     @Test func planRoundTripsThroughTheStore() throws {
         let context = try makeContext()
+        let triggerID = UUID()
         let held = Meeting(title: "Held")
         held.endedAt = .now
-        held.pendingProcessingPlan = ProcessingPlan(runCallback: true, callbackPrompt: "prompt")
+        held.pendingProcessingPlan = ProcessingPlan(runCallback: true, callbackPrompt: "prompt", triggerID: triggerID)
         context.insert(held)
         try context.save()
 
@@ -256,6 +268,8 @@ import Testing
         // store rather than out of the first context's live objects.
         let reread = ModelContext(context.container)
         let meetings = try reread.fetch(FetchDescriptor<Meeting>())
-        #expect(meetings.first?.pendingProcessingPlan == ProcessingPlan(runCallback: true, callbackPrompt: "prompt"))
+        #expect(
+            meetings.first?.pendingProcessingPlan
+                == ProcessingPlan(runCallback: true, callbackPrompt: "prompt", triggerID: triggerID))
     }
 }
