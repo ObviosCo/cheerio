@@ -122,7 +122,9 @@ struct VoiceEnrollmentRecorder: View {
                     ProgressView(value: min(elapsed / EnrolledSpeaker.recommendedDuration, 1))
                     Text(recordingHint)
                         .font(.caption)
-                        .foregroundStyle(isSampleLongEnough ? .green : .secondary)
+                        .foregroundStyle(
+                            isSampleLongEnough ? Theme.Colors.success : Theme.Colors.textSecondary
+                        )
                 } else if isCheckingMic {
                     LevelMeterView(level: level)
                     HStack {
@@ -131,7 +133,7 @@ struct VoiceEnrollmentRecorder: View {
                         // only needs to say what to do, not what it found.
                         Text("Check one, two.")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.Colors.textSecondary)
                         Spacer()
                         Button("Open Sound Settings") { openSoundSettings() }
                             .buttonStyle(.borderless)
@@ -147,7 +149,7 @@ struct VoiceEnrollmentRecorder: View {
                         "Talk naturally for about \(Int(EnrolledSpeaker.recommendedDuration)) seconds — read something aloud, tell a quick story, anything works. The fuller the sample, the more confidently Cheerio can pick \(markAsMe ? "you" : "them") out of a meeting."
                     )
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.textSecondary)
                     HStack {
                         Button("Record voice sample") {
                             // Check-and-set `isStarting` synchronously, before the `Task`

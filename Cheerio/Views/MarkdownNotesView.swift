@@ -44,8 +44,15 @@ struct MarkdownNotesView: View {
         case .listItem(let marker, let text):
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(marker)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.textSecondary)
                     .monospacedDigit()
+                    // Decorative: the marker conveys nothing the list structure
+                    // doesn't. Leaving it in the tree also fed the contrast audit
+                    // (#142) a frame whose rendered pixels miss the glyph — a
+                    // baseline-aligned "•" reports a region the audit measures as
+                    // blank and flags — so it goes the way any purely decorative
+                    // glyph should.
+                    .accessibilityHidden(true)
                 Text(Self.inline(text))
                     .frame(maxWidth: .infinity, alignment: .leading)
             }

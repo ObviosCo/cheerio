@@ -28,7 +28,7 @@ struct OnboardingScaffold<Content: View, Footer: View>: View {
                 if let subtitle {
                     Text(subtitle)
                         .font(.body)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.Colors.textSecondary)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: 420)

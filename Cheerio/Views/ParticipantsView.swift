@@ -16,7 +16,7 @@ struct ParticipantsView: View {
                 if speakers.isEmpty {
                     Text("No one enrolled yet. Without a voice sample, speakers appear as “Speaker 1”, “Speaker 2”, and so on.")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.Colors.textSecondary)
                 }
                 ForEach(speakers, id: \EnrolledSpeaker.persistentModelID) { speaker in
                     row(for: speaker)
@@ -59,7 +59,8 @@ struct ParticipantsView: View {
                 Text(durationLabel(for: speaker))
                     .font(.caption)
                     .foregroundStyle(
-                        speaker.hasEnoughAudio ? AnyShapeStyle(.secondary) : AnyShapeStyle(Theme.Colors.attention)
+                        speaker.hasEnoughAudio
+                            ? AnyShapeStyle(Theme.Colors.textSecondary) : AnyShapeStyle(Theme.Colors.attention)
                     )
             }
             Spacer()

@@ -32,6 +32,13 @@ on:
       - "Cheerio/Views/**"
       - "Cheerio/Design/**"
       - "Cheerio/*.swift"
+      # The audited colors are Color Sets in the catalog — an asset-only edit to
+      # `Accent/Selection` or `Text/Secondary` can regress contrast without
+      # touching a single .swift file.
+      - "Cheerio/Resources/Assets.xcassets/**"
+      # Source of the audit target and scheme — a target or scheme regression
+      # should re-run the check that depends on them.
+      - "project.yml"
       - "CheerioAccessibilityTests/**"
       - "Scripts/screenshots/seed-store.sh"
       - "Scripts/screenshots/SeedDemoStore/**"
@@ -122,6 +129,11 @@ jobs:
         env:
           TEST_RUNNER_CHEERIO_SCREENSHOT_HOME: ${{ env.SCREENSHOT_HOME }}
           TEST_RUNNER_CHEERIO_SCREENSHOT_HOME_NO_ENROLLMENT: ${{ env.SCREENSHOT_HOME_NO_ENROLLMENT }}
+          # A missing seeded store fails the run here instead of skipping it — the
+          # steps above just seeded, so absence means the seeder or this env
+          # plumbing broke, and a check that greens by skipping its fixtures
+          # would report "audited" while auditing nothing.
+          TEST_RUNNER_CHEERIO_REQUIRE_SEEDED_STORE: "1"
         run: |
           set -o pipefail
           xcodebuild test-without-building \

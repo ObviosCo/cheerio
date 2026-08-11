@@ -468,7 +468,7 @@ CI runs `swift format lint --strict` (config in [`.swift-format`](.swift-format)
 tests, and an app build on every PR. Format locally before pushing:
 
 ```sh
-swift format --in-place --recursive Cheerio CheerioMCP CheerioScreenshotTests CheerioKit/Sources CheerioKit/Tests
+swift format --in-place --recursive Cheerio CheerioMCP CheerioScreenshotTests CheerioAccessibilityTests CheerioKit/Sources CheerioKit/Tests
 ```
 
 ## License

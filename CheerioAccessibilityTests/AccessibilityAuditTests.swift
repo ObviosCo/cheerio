@@ -22,21 +22,41 @@ import XCTest
 ///
 /// The library audits pass `-screenshotSelectMeeting`, so the *selected* row state
 /// is on screen — #141 shipped precisely because selection is invisible to anything
-/// that never selects a row.
+/// that never selects a row — and the selected row is audited both with the window
+/// key (`Accent/Selection`) and without it (`Accent/SelectionInactive`), since
+/// `chListRowSelection` draws a different fill for each.
+///
+/// ## What a finding means, and what gets suppressed
 ///
 /// The audit set is `.contrast` only, for now. The issue's shape is "start with
 /// contrast; widen the audit set as the findings get manageable" — the other
 /// macOS-supported checks (element descriptions, hit regions, element detection)
 /// come with a triage pass first, so pre-existing findings become tracked issues
 /// or justified exemptions instead of burying the one check that's non-negotiable.
-/// Widen `auditTypes` as that triage lands.
-// `XCUIApplication`'s API surface is main-actor isolated in this SDK; the class-level
-// annotation is what keeps every helper's calls into it synchronous instead of
-// scattering awaits (or warnings) through code that XCTest runs serially anyway.
+///
+/// Findings pass through one filter, ``shouldSuppress(_:)``, and the bar for a rule
+/// there is the bar #142 sets for any exemption: a written justification, grounded
+/// in measurement. The first CI run (PR #158) produced 159 contrast findings whose
+/// attached element screenshots were measured pixel-by-pixel afterwards: the real
+/// ones were all one class (system `.secondary`/`.tertiary` text measuring
+/// 2.7–4.3:1, since fixed by moving every text style onto the design tokens), and
+/// the rest were artifacts of *where* the audit sampled, not of any color in the
+/// app — elements occluded by an overlapping
+/// window, rows clipped by a scroll viewport, and small-glyph antialiasing on the
+/// runner's 1x display flagging text whose rendered pixels measure 5.9:1 and up
+/// (one flagged element measured 17.3:1). The filter re-measures exactly what the
+/// audit claims: the element's rendered pixels, from its own screenshot. Nothing
+/// is suppressed by name, screen, or appearance — a real regression on those same
+/// elements still measures below AA and still fails.
 @MainActor
 final class AccessibilityAuditTests: XCTestCase {
     /// What every audit checks. See the type-level comment before widening.
     private static let auditTypes: XCUIAccessibilityAuditType = [.contrast]
+
+    /// The WCAG AA ratio for normal text, which is also what the audit enforces.
+    /// Applied uniformly — large text is allowed 3:1, so re-measuring against 4.5
+    /// never suppresses something the audit would hold to a stricter bar.
+    private static let aaContrast = 4.5
 
     /// Where the workflow seeded the demo store, as a home directory. Same contract
     /// as `CheerioScreenshotTests`: `TEST_RUNNER_CHEERIO_SCREENSHOT_HOME` reaches
@@ -76,6 +96,11 @@ final class AccessibilityAuditTests: XCTestCase {
         case dark
     }
 
+    /// Missing seeded store, in an environment that demanded one.
+    private struct MissingSeededStore: Error, CustomStringConvertible {
+        let description: String
+    }
+
     private var app: XCUIApplication?
 
     override func setUp() {
@@ -107,6 +132,17 @@ final class AccessibilityAuditTests: XCTestCase {
 
     func testLibrarySelectedRowDark() throws {
         try auditSeededLibrary(appearance: .dark, extraArguments: ["-screenshotSelectMeeting", "1"])
+    }
+
+    /// The same selected row while the window doesn't appear active —
+    /// `chListRowSelection` swaps to `Accent/SelectionInactive` for that, and #141's
+    /// bar was explicit that both fills have to hold their text pairings.
+    func testLibrarySelectedRowInactiveLight() throws {
+        try auditSelectedRowInactive(appearance: .light)
+    }
+
+    func testLibrarySelectedRowInactiveDark() throws {
+        try auditSelectedRowInactive(appearance: .dark)
     }
 
     /// The detail pane with the transcript disclosure open — speaker names, chips,
@@ -148,7 +184,7 @@ final class AccessibilityAuditTests: XCTestCase {
 
     // Tab indices are the order of `SettingsView`'s TabView, opened via the same
     // launch arguments the screenshots use; the window takes the selected tab's
-    // name as its title, which is how it's told apart from the library behind it.
+    // name as its title, which is how it's told apart from any other window.
 
     func testSettingsGeneralLight() throws { try auditSettings(tab: 0, titled: "General", appearance: .light) }
     func testSettingsGeneralDark() throws { try auditSettings(tab: 0, titled: "General", appearance: .dark) }
@@ -184,14 +220,13 @@ final class AccessibilityAuditTests: XCTestCase {
 
     // MARK: - Audits
 
-    /// Runs the audit over everything the app currently has on screen.
-    ///
-    /// No issue handler: nothing is exempted today, and that's the standard —
-    /// a finding gets fixed, or it gets a handler entry here with a written
-    /// justification and a tracking issue, the same bar as declining a review
-    /// comment.
+    /// Runs the audit over everything the app currently has on screen, filtering
+    /// each finding through ``shouldSuppress(_:)`` — see the type-level comment for
+    /// the standard a suppression rule has to meet.
     private func audit(_ app: XCUIApplication) throws {
-        try app.performAccessibilityAudit(for: Self.auditTypes)
+        try app.performAccessibilityAudit(for: Self.auditTypes) { issue in
+            self.shouldSuppress(issue)
+        }
     }
 
     private func auditSeededLibrary(appearance: Appearance, extraArguments: [String] = []) throws {
@@ -200,16 +235,32 @@ final class AccessibilityAuditTests: XCTestCase {
         try audit(app)
     }
 
-    private func auditNoEnrollmentLibrary(appearance: Appearance) throws {
-        let app = try launchNoEnrollment(Self.libraryArguments, appearance: appearance)
+    /// Selection with the window *not* key. Handing activation to another app —
+    /// Finder is always running and puts no window of its own over ours — flips
+    /// `\.appearsActive` for the whole app without covering a single pixel of it,
+    /// which an overlapping window of our own could never guarantee on the
+    /// runner's 1024×768 screen.
+    private func auditSelectedRowInactive(appearance: Appearance) throws {
+        let app = try launchSeeded(
+            Self.libraryArguments + ["-screenshotSelectMeeting", "1"],
+            appearance: appearance
+        )
         awaitWindow(of: app)
+        XCUIApplication(bundleIdentifier: "com.apple.finder").activate()
+        Thread.sleep(forTimeInterval: 1)
         try audit(app)
     }
 
     private func auditSettings(tab: Int, titled title: String, appearance: Appearance) throws {
+        // `-screenshotCloseMainWindow` because this audit is *of Settings*: the
+        // library window can't help but sit underneath it on a small CI display,
+        // and an audit walks every window — leaving the library up would re-audit
+        // its text through the Settings window's pixels. The library gets its own
+        // audits above, unoccluded.
         let app = try launchSeeded(
             Self.libraryArguments + [
                 "-screenshotOpenSettings", "YES",
+                "-screenshotCloseMainWindow", "YES",
                 "-com_apple_SwiftUI_Settings_selectedTabIndex", String(tab),
             ],
             appearance: appearance
@@ -246,6 +297,103 @@ final class AccessibilityAuditTests: XCTestCase {
         try audit(app)
     }
 
+    // MARK: - Suppression
+
+    /// Whether a finding is one of the audit's known measurement artifacts rather
+    /// than a color problem in the app. Everything here re-checks evidence about
+    /// *this* element at *this* moment — no rule matches on name, screen, or
+    /// appearance, so a genuine regression on a suppressed element's twin still
+    /// fails.
+    ///
+    /// Two rules, both grounded in the first run's measured findings (see the
+    /// type-level comment):
+    ///
+    /// 1. **The element isn't where the audit sampled.** An element scrolled out of
+    ///    its viewport, or whose accessibility frame misses its rendered glyphs
+    ///    (a baseline-aligned bullet reports a frame the glyph isn't in), samples a
+    ///    slice of background — or of whatever text happens to sit next to it — and
+    ///    the resulting ratio describes pixels the element didn't draw. Not being
+    ///    hittable at its own hit point, or rendering as one flat color, is that
+    ///    case. The flat-region rule's known blind spot is text drawn in *exactly*
+    ///    its background's color — pixels can't see what was never rendered — but
+    ///    that requires equality, not just poor contrast: #141's dark-on-dark still
+    ///    renders two clusters and still fails.
+    ///
+    /// 2. **The rendered pixels prove AA.** On the runner's 1x display the audit
+    ///    flags small text whose core glyph pixels measure well past 4.5:1 — the
+    ///    first run flagged one element at a measured 17.3:1 — because antialiased
+    ///    edge pixels dominate a small glyph's coverage. Re-measuring the element's
+    ///    own screenshot, foreground cluster against background cluster, and
+    ///    suppressing only at ≥ 4.5:1 keeps the check anchored to what WCAG
+    ///    actually asks of the colors on screen.
+    private func shouldSuppress(_ issue: XCUIAccessibilityAuditIssue) -> Bool {
+        guard let element = issue.element, element.exists else { return false }
+        if !element.isHittable { return true }
+        guard let measured = Self.measuredContrast(of: element) else { return false }
+        // Flat region: nothing distinguishable was rendered inside the frame the
+        // audit measured — rule 1's second half.
+        if measured < 1.1 { return true }
+        return measured >= Self.aaContrast
+    }
+
+    /// The element's rendered contrast, measured from its own screenshot: the most
+    /// frequent color is the background, and the most contrasting color that still
+    /// covers a meaningful share of pixels (≥ 0.5%, floor 3 — below that it's an
+    /// antialiasing remnant, not a glyph) is the foreground.
+    private static func measuredContrast(of element: XCUIElement) -> Double? {
+        let image = element.screenshot().image
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        let width = cgImage.width
+        let height = cgImage.height
+        guard width > 0, height > 0, let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
+            guard
+                let context = CGContext(
+                    data: buffer.baseAddress,
+                    width: width,
+                    height: height,
+                    bitsPerComponent: 8,
+                    bytesPerRow: width * 4,
+                    space: colorSpace,
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                )
+            else { return false }
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        guard drawn else { return nil }
+
+        var counts: [UInt32: Int] = [:]
+        for offset in stride(from: 0, to: pixels.count, by: 4) {
+            let key =
+                UInt32(pixels[offset]) << 16 | UInt32(pixels[offset + 1]) << 8 | UInt32(pixels[offset + 2])
+            counts[key, default: 0] += 1
+        }
+        guard let background = counts.max(by: { $0.value < $1.value })?.key else { return nil }
+        let significant = max(3, (width * height) / 200)
+        let backgroundLuminance = luminance(background)
+        var best = 1.0
+        for (color, count) in counts where count >= significant {
+            let l = luminance(color)
+            let ratio =
+                (max(l, backgroundLuminance) + 0.05) / (min(l, backgroundLuminance) + 0.05)
+            if ratio > best { best = ratio }
+        }
+        return best
+    }
+
+    /// WCAG 2.1 relative luminance of a packed sRGB pixel.
+    private static func luminance(_ packed: UInt32) -> Double {
+        func linear(_ channel: UInt32) -> Double {
+            let c = Double(channel) / 255
+            return c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * linear((packed >> 16) & 0xFF)
+            + 0.7152 * linear((packed >> 8) & 0xFF)
+            + 0.0722 * linear(packed & 0xFF)
+    }
+
     // MARK: - Launching
 
     /// Launches against the demo store the workflow seeded.
@@ -273,20 +421,32 @@ final class AccessibilityAuditTests: XCTestCase {
         )
     }
 
-    /// Skips rather than fails when the store isn't there: an unseeded machine is a
-    /// setup problem, and reporting it as a contrast regression would teach people
-    /// to ignore this check. The workflow seeds unconditionally, so CI never skips.
+    private func auditNoEnrollmentLibrary(appearance: Appearance) throws {
+        let app = try launchNoEnrollment(Self.libraryArguments, appearance: appearance)
+        awaitWindow(of: app)
+        try audit(app)
+    }
+
+    /// On a developer's machine a missing store skips, with instructions — an
+    /// unseeded checkout is a setup problem, and reporting it as a contrast
+    /// regression teaches people to ignore the check. In CI it *fails*: the
+    /// workflow seeds unconditionally and sets `CHEERIO_REQUIRE_SEEDED_STORE`, so a
+    /// store missing there means the seeder or the env plumbing broke — and a
+    /// required check that greens by skipping every fixture-dependent test would
+    /// be worse than red.
     private func requireStore(in home: String, seedHint: String) throws {
         let store = URL(filePath: home).appending(path: "Library/Application Support/co.obvios.cheerio.mac")
-        try XCTSkipUnless(
-            FileManager.default.fileExists(atPath: store.path),
-            """
+        guard !FileManager.default.fileExists(atPath: store.path) else { return }
+        let message = """
             No seeded demo store at \(store.path).
             \(seedHint), or set CHEERIO_SCREENSHOT_HOME / CHEERIO_SCREENSHOT_HOME_NO_ENROLLMENT \
             (TEST_RUNNER_-prefixed for xcodebuild) to a home that has one. These tests audit a \
             store full of invented meetings; they never open yours.
             """
-        )
+        if ProcessInfo.processInfo.environment["CHEERIO_REQUIRE_SEEDED_STORE"] != nil {
+            throw MissingSeededStore(description: message)
+        }
+        throw XCTSkip(message)
     }
 
     /// An empty home, for the audits that have to look like a first run.
@@ -299,7 +459,7 @@ final class AccessibilityAuditTests: XCTestCase {
     }
 
     /// `CFFIXED_USER_HOME` is what actually relocates `~/Library/Application Support`
-    /// and the SwiftData store inside it — Foundation resolves the home directory
+    /// and the SwiftData store inside it: Foundation resolves the home directory
     /// through CoreFoundation, which reads that variable and ignores `HOME`. `HOME`
     /// is set as well, for anything that shells out.
     private func launch(home: URL, arguments: [String]) -> XCUIApplication {

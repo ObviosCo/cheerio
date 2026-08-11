@@ -46,6 +46,19 @@ enum ScreenshotMode {
         UserDefaults.standard.bool(forKey: "screenshotOpenSettings")
     }
 
+    /// Closes the library window after ``opensSettings`` has done its work.
+    ///
+    /// Exists for the Settings *audits* (`CheerioAccessibilityTests`), not the
+    /// screenshots: `performAccessibilityAudit` walks every window the app has, and
+    /// on a CI runner's 1024×768 screen the Settings window always overlaps the
+    /// library behind it — so auditing "Settings" also samples library elements
+    /// through the Settings window's pixels, producing contrast findings about
+    /// text that isn't visible at all. Screenshots don't have this problem (they
+    /// photograph one window by title) and keep the library open for depth.
+    static var closesMainWindow: Bool {
+        UserDefaults.standard.bool(forKey: "screenshotCloseMainWindow")
+    }
+
     /// Which onboarding step the walkthrough starts on, as a
     /// `OnboardingCoordinator.Step` raw value. Absent means the first one, which is
     /// what a real first run does.
@@ -137,6 +150,17 @@ enum ScreenshotMode {
         guard opensSettings || onboardingStep != nil else { return }
         try? await Task.sleep(for: .milliseconds(400))
         makeSecondaryWindowKey()
+        // Only after the secondary window exists and is key — closing the last
+        // visible window first would leave nothing on screen for a moment, and
+        // the app quits nothing here (the menu bar scene keeps it alive).
+        if closesMainWindow { closeMainWindow() }
+    }
+
+    @MainActor private static func closeMainWindow() {
+        for window in NSApplication.shared.windows
+        where window.identifier?.rawValue == mainWindowIdentifier {
+            window.close()
+        }
     }
 
     /// Brings whichever window was just opened to the front and makes it key.

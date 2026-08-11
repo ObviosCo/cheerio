@@ -41,7 +41,7 @@ struct MCPSettingsView: View {
                     "Cheerio ships a small MCP server, so agents already running on this Mac can look up what was said in a meeting. It reads your meetings and can't change them, start a recording, or run anything. It talks over a pipe to whichever client launched it — nothing is listening, and Cheerio itself sends nothing off this Mac. What the client you connect does with the results is that client\u{2019}s policy: an agent backed by a cloud model will send what it reads to that model."
                 )
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.Colors.textSecondary)
             } header: {
                 Text("Let agents read your meetings")
             }
@@ -50,7 +50,7 @@ struct MCPSettingsView: View {
                 CopyableSnippet(label: "Server", text: helperPath, monospaced: true)
                 Text("Installed inside Cheerio itself, so it updates when Cheerio does.")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.textSecondary)
             }
 
             Section {
@@ -92,13 +92,13 @@ private struct CopyableSnippet: View {
             }
             Text(text)
                 .font(.system(.caption, design: monospaced ? .monospaced : .default))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.Colors.textSecondary)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let caption {
                 Text(caption)
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Theme.Colors.textSecondary)
             }
         }
     }
@@ -141,7 +141,7 @@ struct UpdateSettingsView: View {
                     """
                 )
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.Colors.textSecondary)
             } header: {
                 Text("Updates")
             }
@@ -152,7 +152,7 @@ struct UpdateSettingsView: View {
                     "Recording, transcribing and summarizing never touch the network, and no update check starts while a recording is going."
                 )
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.Colors.textSecondary)
             }
         }
         .formStyle(.grouped)
@@ -182,7 +182,7 @@ struct GeneralSettingsView: View {
                     "Cheerio asks macOS for permission to notify you the first time it has something to say — not at launch. Meeting suggestions need calendar access; without it there's nothing to suggest."
                 )
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.Colors.textSecondary)
                 if systemDenied {
                     // Stated once, where somebody has come looking, and nowhere else:
                     // no badge, no banner, nothing that follows the user around. The
@@ -190,7 +190,7 @@ struct GeneralSettingsView: View {
                     // still worth recording while the system says no.
                     Text("macOS is currently blocking notifications from Cheerio. Turn them on in System Settings › Notifications.")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.Colors.textSecondary)
                 }
             } header: {
                 Text("Notifications")
@@ -204,7 +204,7 @@ struct GeneralSettingsView: View {
                     "Walks through permissions and voice enrollment again. Nothing you've already set up gets reset or re-asked unless you want it to."
                 )
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.Colors.textSecondary)
             }
         }
         .formStyle(.grouped)
@@ -235,7 +235,7 @@ struct PrivacySettingsView: View {
                 }
                 Text(explanation)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.textSecondary)
             } header: {
                 Text("Privacy")
             }
@@ -247,7 +247,7 @@ struct PrivacySettingsView: View {
                 }
                 Text("Transcripts and notes are always kept. Nothing ever leaves this Mac.")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.textSecondary)
             }
         }
         .formStyle(.grouped)
@@ -325,7 +325,7 @@ struct TranscriptCallbackSettingsView: View {
                     "Runs when a meeting finishes processing — recording stopped, and speaker identification and note generation have completed or conclusively failed (the export carries whatever exists). The command receives the transcript as JSON on stdin, at the path in CHEERIO_EXPORT_PATH, and gets CHEERIO_MEETING_ID, CHEERIO_MEETING_KIND, and CHEERIO_TITLE in its environment. Never anything from the transcript itself is placed on the command line. Commands resolve against a fixed PATH — the system directories plus /opt/homebrew/bin, /opt/homebrew/sbin, /usr/local/bin, and ~/.local/bin — not your shell profile, so give an absolute path for anything installed elsewhere. Leave blank to turn this off."
                 )
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.Colors.textSecondary)
             } header: {
                 Text("When a transcript is ready")
             }
@@ -336,7 +336,7 @@ struct TranscriptCallbackSettingsView: View {
                 if session.state != .idle {
                     Text("Waiting for the current recording to finish processing.")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.Colors.textSecondary)
                 }
                 statusView
             } footer: {
@@ -357,11 +357,11 @@ struct TranscriptCallbackSettingsView: View {
         case .running(let title):
             Label("Running for “\(title)”…", systemImage: "hourglass")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.Colors.textSecondary)
         case .succeeded(let title):
             Label("Finished for “\(title)”", systemImage: "checkmark.circle")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.Colors.textSecondary)
         case .failed(let title, let detail):
             // `.error`, not `.attention` — this is an actual failure of the command
             // run, not a warning to notice and move past.

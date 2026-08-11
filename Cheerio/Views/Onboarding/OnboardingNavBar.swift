@@ -15,7 +15,7 @@ struct OnboardingNavBar: View {
             if showBack {
                 Button("Back", action: onBack)
                     .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.textSecondary)
             }
             Spacer()
             Button(primaryLabel, action: onPrimary)

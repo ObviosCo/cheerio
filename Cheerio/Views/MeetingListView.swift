@@ -83,12 +83,12 @@ struct MeetingListView: View {
             if visibleMeetings.isEmpty, !searchText.isEmpty {
                 Section("Meetings") {
                     Text("No meetings match “\(searchText)”.")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.Colors.textSecondary)
                 }
             } else if visibleMeetings.isEmpty, directivesOnly {
                 Section("Meetings") {
                     Text("No directives yet.")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.Colors.textSecondary)
                 }
             } else {
                 // One `Section` per date bucket instead of a single flat "Meetings"
@@ -312,7 +312,7 @@ struct MeetingListView: View {
                         VStack(alignment: .leading, spacing: 1) {
                             Text("Use calendar event instead")
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Theme.Colors.textSecondary)
                             Text(currentEvent.title)
                                 .lineLimit(2)
                         }
@@ -324,7 +324,7 @@ struct MeetingListView: View {
 
         case .preparingModel:
             Label("Preparing model…", systemImage: "arrow.down.circle")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.Colors.textSecondary)
 
         case .recording:
             Button(role: .destructive) {
@@ -339,7 +339,7 @@ struct MeetingListView: View {
                         if let startedAt = session.startedAt {
                             Text(startedAt, style: .timer)
                                 .font(.caption.monospacedDigit())
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Theme.Colors.textSecondary)
                         }
                     }
                 } icon: {
@@ -370,7 +370,7 @@ struct MeetingListView: View {
                     Image(systemName: "calendar")
                 }
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.Colors.textSecondary)
             }
 
             // Reading an earlier meeting mid-call replaces the live view, so there has
@@ -385,7 +385,7 @@ struct MeetingListView: View {
 
         case .finishing:
             Label("Finishing up…", systemImage: "ellipsis.circle")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.Colors.textSecondary)
         }
     }
 

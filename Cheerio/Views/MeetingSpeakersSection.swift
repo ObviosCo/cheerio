@@ -27,7 +27,7 @@ struct MeetingSpeakersSection: View {
                     HStack(spacing: 8) {
                         Text("Who was here")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.Colors.textSecondary)
                         ParticipantRosterMenu(meeting: meeting)
                         Spacer()
                     }
@@ -42,7 +42,7 @@ struct MeetingSpeakersSection: View {
                         "Renaming or confirming a speaker updates every line they're on. Corrections stick — “Re-identify speakers” leaves hand-named and confirmed lines alone."
                     )
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.textSecondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             } label: {
@@ -79,12 +79,12 @@ struct MeetingSpeakersSection: View {
                 // cover both.
                 Image(systemName: "hand.raised.fill")
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.textSecondary)
                     .help(summary.isManual ? "Named by hand" : "Confirmed by you")
             }
             Text(talkTimeText(for: talkTime))
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.Colors.textSecondary)
 
             Spacer()
 
@@ -323,7 +323,7 @@ private struct EnrollFromMeetingSheet: View {
                 "Takes the \(Int(summary.duration.rounded()))s this speaker was recorded for in this meeting and saves it as their reference clip."
             )
             .font(.callout)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Theme.Colors.textSecondary)
             .fixedSize(horizontal: false, vertical: true)
 
             TextField("Name", text: $name)
