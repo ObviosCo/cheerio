@@ -29,6 +29,14 @@ final class MeetingAudioPlayerModel {
     private var player: AVPlayer?
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
+    /// Bumped by every `teardown()` so an in-flight `load` can tell it was torn
+    /// down *while suspended*. Task cancellation doesn't cover that case: a
+    /// retention purge removes the renderer (whose disappearance calls
+    /// `teardown()`) without touching the owner's meeting-keyed `.task` — the
+    /// meeting never changed — so the suspended load would otherwise resume,
+    /// rebuild the player and observers, and resurrect the seek affordances
+    /// for audio that no longer exists.
+    private var generation = 0
 
     /// Whether `load(urls:)` has finished and there's a real `AVPlayer` behind
     /// this model. `MeetingAudioPlayerView` disables the controls until this is
@@ -42,20 +50,26 @@ final class MeetingAudioPlayerModel {
     /// call once per instance — `MeetingDetailView` creates a fresh model per
     /// meeting rather than reloading this one.
     func load(urls: [URL]) async {
+        // Two distinct ways this load can be obsolete by the time its awaits
+        // resume, each needing its own signal. A meeting switch cancels the
+        // owning `.task(id:)` — by then this instance has already been
+        // replaced, and finishing would stand up a player, and a periodic
+        // time observer retaining it, that nothing will ever tear down. A
+        // retention purge of the *still-selected* meeting cancels nothing (the
+        // task's meeting ID didn't change); its only trace is the renderer's
+        // disappearance having called `teardown()`, which the generation
+        // records.
+        let startedGeneration = generation
         do {
             let composition = try await MeetingAudioPlayback.makeComposition(from: urls)
             let seconds = try await composition.load(.duration).seconds
-            // The owning `.task(id:)` cancels when the sidebar selects another
-            // meeting, and by then this instance has already been replaced —
-            // finishing the load would stand up a player, and a periodic time
-            // observer retaining it, that nothing will ever tear down.
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, generation == startedGeneration else { return }
             duration = seconds
             let player = AVPlayer(playerItem: AVPlayerItem(asset: composition))
             self.player = player
             observe(player)
         } catch {
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, generation == startedGeneration else { return }
             loadError = error.localizedDescription
         }
     }
@@ -124,6 +138,12 @@ final class MeetingAudioPlayerModel {
     }
 
     func teardown() {
+        // Unconditional, before anything else: even when there's no player to
+        // dismantle yet (teardown racing a still-suspended `load`), the bump
+        // is the whole point — it's what tells that load not to finish.
+        // Repeat calls just bump again, so idempotency is preserved: every
+        // generation but the current one is equally stale.
+        generation += 1
         pause()
         if let timeObserver {
             player?.removeTimeObserver(timeObserver)
