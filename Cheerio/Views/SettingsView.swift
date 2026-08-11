@@ -235,12 +235,15 @@ struct GeneralSettingsView: View {
         }
     }
 
+    /// "Processed", not "notes and the callback run" — the callback is off by
+    /// default and declinable per meeting, so naming it here would promise
+    /// something the default configuration never does.
     private var holdExplanation: String {
         switch holdDuration {
         case .off:
-            "Notes and the callback run the moment a recording stops, with no pause."
+            "A stopped recording is processed the moment it ends, with no pause."
         default:
-            "A stopped meeting waits \(holdDuration.label.lowercased()) — or until you confirm — before notes and the callback run, so you can still add rough notes, set the meeting kind, and adjust the callback. Editing anything restarts the wait. Directives always process immediately."
+            "A stopped meeting waits \(holdDuration.label.lowercased()) — or until you confirm — before it's processed, so you can still add rough notes, set the meeting kind, and adjust whether the callback runs. Editing anything restarts the wait. Directives always process immediately."
         }
     }
 }

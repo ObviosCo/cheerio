@@ -112,8 +112,16 @@ final class CaptureSession {
     /// it), so two diarization passes never rewrite the same meeting's labels
     /// concurrently — launch recovery of a held meeting runs at `.idle`, exactly
     /// when that button is otherwise live.
+    ///
+    /// The session's own ``meeting`` counts as busy for its whole lifetime, not
+    /// just once the pipeline populates the marks: its row is in the store (and
+    /// so in the sidebar) from recording start, but while recording its CAFs are
+    /// still being written under any pass that would read them, and while held
+    /// the grace deadline can start the pipeline at any moment — a re-identify
+    /// begun seconds earlier would then run concurrently with it over the same
+    /// segments.
     func isProcessing(_ meeting: Meeting) -> Bool {
-        processingMeetingIDs[meeting.persistentModelID] != nil
+        meeting == self.meeting || processingMeetingIDs[meeting.persistentModelID] != nil
     }
 
     /// The marked meetings, for `AudioRetentionService.purge`'s exclusion: a purge

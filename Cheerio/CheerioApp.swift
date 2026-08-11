@@ -406,6 +406,17 @@ struct ContentView: View {
     /// A selected meeting wins over the live view: mid-call you sometimes need to
     /// look something up in an earlier meeting, and the sidebar offers a way back.
     ///
+    /// An *earlier* meeting, specifically — selecting the session's own current
+    /// meeting resolves to `RecordingView`, not the detail view. The current
+    /// meeting's row sits in the sidebar from recording start, and the detail
+    /// view is the wrong surface for it in every live state: its rough-notes
+    /// binding and rename alert don't count as holding activity, so during
+    /// `.holding` the idle deadline could expire mid-edit — and `completeHold`'s
+    /// notes sync from the session's scratchpad would then overwrite what was
+    /// typed there — while the countdown and callback controls the hold exists
+    /// for aren't visible at all. `RecordingView` *is* that meeting's detail
+    /// while the session owns it.
+    ///
     /// The enrollment banner above a selected meeting (#125) is a slim addition
     /// here rather than the dashboard's full-width card: a meeting's own header,
     /// notes and transcript are the reason this pane is open, and they need to stay
@@ -413,7 +424,7 @@ struct ContentView: View {
     /// forgotten, not compete with the content underneath it. The dashboard case
     /// below is the one place this app has room to make the fuller case instead.
     @ViewBuilder private var detail: some View {
-        if let selectedMeeting {
+        if let selectedMeeting, selectedMeeting != session.meeting {
             VStack(spacing: 0) {
                 // Gates the padding and the divider too, not just the prompt
                 // inside them — `VoiceEnrollmentPrompt` already renders nothing

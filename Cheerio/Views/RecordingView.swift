@@ -155,9 +155,12 @@ struct RecordingView: View {
                 if let deadline = session.holdDeadline {
                     // `.timer` counts down on its own — no TimelineView needed —
                     // and the deadline moving on each edit is picked up because
-                    // `holdDeadline` is observed state.
+                    // `holdDeadline` is observed state. "Processing", not "notes
+                    // and callback": whether the callback is part of processing
+                    // is exactly what the toggle to the right decides, and this
+                    // line has to stay true in every position of it.
                     Text(
-                        "Recording finished. Notes and callback run in \(Text(deadline, style: .timer).fontWeight(.semibold)) — editing anything here keeps it waiting."
+                        "Recording finished. Processing starts in \(Text(deadline, style: .timer).fontWeight(.semibold)) — editing anything here keeps it waiting."
                     )
                     .font(.callout)
                 }
