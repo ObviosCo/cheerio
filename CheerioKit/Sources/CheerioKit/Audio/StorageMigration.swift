@@ -144,6 +144,11 @@ public enum StorageMigration {
             for meeting in abandoned {
                 let lastKnownOffset = meeting.segments.map(\.endTime).max() ?? 0
                 meeting.endedAt = meeting.startedAt.addingTimeInterval(lastKnownOffset)
+                // The backfilled `endedAt` is indistinguishable from a real stop
+                // on its own, and the difference matters downstream: this row
+                // never ran diarization or enhancement, so surfaces gating on
+                // "processed" (`Meeting.endedCleanly`) must be able to tell.
+                meeting.wasAbandoned = true
             }
             try context.save()
             log.notice("Closed \(abandoned.count, privacy: .public) meeting(s) left recording by a previous run")

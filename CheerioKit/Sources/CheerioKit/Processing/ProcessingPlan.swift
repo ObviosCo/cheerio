@@ -10,11 +10,9 @@ import SwiftData
 /// crash mid-hold leaves the plan on disk, and the next launch processes the
 /// meeting with it (see ``Meeting/awaitingProcessing(in:)``).
 ///
-/// The seam for issue #137 (multiple callback triggers) is here, deliberately:
-/// "which trigger to run, with what extra prompt" is per-meeting data this struct
-/// already carries half of. When triggers become plural, this grows a trigger
-/// identifier next to ``callbackPrompt`` rather than the pipeline growing a second
-/// channel for the same decision.
+/// "Which trigger to run, with what extra prompt" is per-meeting data, so it
+/// travels here (issue #137) rather than the pipeline growing a second channel
+/// for the same decision — exactly the seam this struct was built to carry.
 public struct ProcessingPlan: Codable, Sendable, Equatable {
     /// Whether the transcript-ready callback fires for this meeting. A per-meeting
     /// override of the global scope setting — see
@@ -26,10 +24,22 @@ public struct ProcessingPlan: Codable, Sendable, Equatable {
     /// meeting. Delivered as `CHEERIO_ADDITIONAL_PROMPT` in the command's
     /// environment (see `CallbackPayload`); blank means none.
     public var callbackPrompt: String
+    /// Which configured trigger runs — a ``CallbackTrigger/id`` — or nil for
+    /// whatever the default trigger is at fire time. Resolution, including the
+    /// fallback when the chosen trigger was deleted mid-hold, is
+    /// ``TranscriptCallbackSettings/trigger(for:)``'s.
+    ///
+    /// Optional with a nil default, and both halves matter for migration: plans
+    /// persisted before this field existed — including crash-recovery rows still
+    /// on disk from an older build — decode without it, and the flattened
+    /// composite attribute migrates additively as NULL, the same story as
+    /// ``Meeting/pendingProcessingPlan`` itself.
+    public var triggerID: UUID?
 
-    public init(runCallback: Bool, callbackPrompt: String = "") {
+    public init(runCallback: Bool, callbackPrompt: String = "", triggerID: UUID? = nil) {
         self.runCallback = runCallback
         self.callbackPrompt = callbackPrompt
+        self.triggerID = triggerID
     }
 
     /// The prompt as the callback should receive it, or nil when it's blank —

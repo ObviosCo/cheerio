@@ -316,16 +316,21 @@ struct PrivacySettingsView: View {
     }
 }
 
-/// Configures the transcript-ready callback (issue #26): a command that runs
-/// once a meeting is fully processed, so local agentic tooling can pick up the
-/// transcript without anyone copy-pasting it. Off by default — an empty command
-/// disables it, per ``TranscriptCallbackSettings``.
+/// Configures the transcript-ready callback (issue #26): named CLI agent
+/// triggers (#137), one of which — the default — runs automatically once a
+/// meeting is fully processed, so local agentic tooling can pick up the
+/// transcript without anyone copy-pasting it. Off by default — no triggers, or
+/// an empty command, disables it, per ``TranscriptCallbackSettings``.
 struct TranscriptCallbackSettingsView: View {
     @Environment(\.modelContext) private var context
     /// Only for the readiness check below — this tab never starts or stops
     /// anything.
     @Environment(CaptureSession.self) private var session
-    @AppStorage(TranscriptCallbackSettings.commandDefaultsKey) private var command = ""
+    /// The editable list, persisted through ``TranscriptCallbackSettings`` on
+    /// every change rather than bound via `@AppStorage` — the storage is one
+    /// JSON blob, and the settings type owns its normalization (exactly one
+    /// default) and the legacy-key mirror.
+    @State private var triggers = TranscriptCallbackSettings.triggers
     @AppStorage(TranscriptCallbackScope.defaultsKey) private var scopeRaw = TranscriptCallbackScope.default.rawValue
 
     /// Most recently completed meeting, for the "run now" test button — the same
@@ -336,15 +341,6 @@ struct TranscriptCallbackSettingsView: View {
         order: .reverse
     )
     private var completedMeetings: [Meeting]
-
-    /// Read directly from the singleton rather than copied into `@State`: it's
-    /// already `@Observable`, and accessing `status.outcome` from `body` is what
-    /// registers this view for updates when `TranscriptReadyRunner` changes it.
-    private let status = TranscriptCallbackStatus.shared
-
-    private var trimmedCommand: String {
-        command.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
 
     /// Nil while a recording is in flight. `CaptureSession.stop` sets `endedAt`
     /// *before* diarization and enhancement run, so between those two moments the
@@ -358,23 +354,51 @@ struct TranscriptCallbackSettingsView: View {
     /// launch recovery of a held meeting runs that same pipeline while `state`
     /// sits at `.idle`, and the meeting it's mid-way through is exactly the
     /// "most recently completed" one this would export half-processed.
+    ///
+    /// `endedCleanly`, the same readiness contract the detail view's run surface
+    /// enforces: a crash-abandoned recording gets its `endedAt` backfilled at
+    /// launch without ever running processing, and when that row is newest it
+    /// would both hand a crash-partial transcript to an agent *and* stand in
+    /// front of the most recent clean meeting someone actually wants to test
+    /// against. Filtered here rather than in the `#Predicate`, which can't call
+    /// a computed property — and keeping the one definition of "clean" in
+    /// `Meeting.endedCleanly` beats duplicating its logic into a query string.
     private var lastMeeting: Meeting? {
         guard session.state == .idle, !session.isProcessingInBackground else { return nil }
-        return completedMeetings.first
+        return completedMeetings.first(where: \.endedCleanly)
     }
 
     var body: some View {
         Form {
             Section {
-                TextField("Command", text: $command, prompt: Text("e.g. claude -p \"Handle this transcript\""))
-                    .font(.system(.body, design: .monospaced))
+                // One trigger reads exactly like the single command this started
+                // as; the named-list machinery only appears once there's a list.
+                if triggers.count > 1 {
+                    triggerRows
+                } else {
+                    TextField("Command", text: soleCommand, prompt: Text("e.g. claude -p \"Handle this transcript\""))
+                        .font(.system(.body, design: .monospaced))
+                }
+                // Hidden until there's a configured trigger to add *to*: from an
+                // empty configuration the first click used to create a blank
+                // trigger that the single-command branch rendered identically to
+                // the empty field already showing — a click that visibly did
+                // nothing, two clicks to reach the named editor. Gated like
+                // this, every click moves the count past one and lands in the
+                // editor; an unconfigured setup types its first command first,
+                // which is also the order that makes sense.
+                if triggers.count > 1 || triggers.first?.trimmedCommand != nil {
+                    Button("Add Trigger", systemImage: "plus") { addTrigger() }
+                        .buttonStyle(.borderless)
+                        .font(.caption)
+                }
                 Picker("Run for", selection: $scopeRaw) {
                     ForEach(TranscriptCallbackScope.allCases) { option in
                         Text(option.label).tag(option.rawValue)
                     }
                 }
                 Text(
-                    "Runs when a meeting finishes processing — recording stopped, and speaker identification and note generation have completed or conclusively failed (the export carries whatever exists). The command receives the transcript as JSON on stdin, at the path in CHEERIO_EXPORT_PATH, and gets CHEERIO_MEETING_ID, CHEERIO_MEETING_KIND, and CHEERIO_TITLE in its environment. Never anything from the transcript itself is placed on the command line. Commands resolve against a fixed PATH — the system directories plus /opt/homebrew/bin, /opt/homebrew/sbin, /usr/local/bin, and ~/.local/bin — not your shell profile, so give an absolute path for anything installed elsewhere. Leave blank to turn this off."
+                    "The default trigger runs when a meeting finishes processing — recording stopped, and speaker identification and note generation have completed or conclusively failed (the export carries whatever exists). With more than one trigger configured, a different one can be chosen per meeting in the post-meeting review window, and any of them can be run from a finished meeting's page. The command receives the transcript as JSON on stdin, at the path in CHEERIO_EXPORT_PATH, and gets CHEERIO_MEETING_ID, CHEERIO_MEETING_KIND, and CHEERIO_TITLE in its environment. Never anything from the transcript itself is placed on the command line. Commands resolve against a fixed PATH — the system directories plus /opt/homebrew/bin, /opt/homebrew/sbin, /usr/local/bin, and ~/.local/bin — not your shell profile, so give an absolute path for anything installed elsewhere. Leave the command blank to turn a trigger off."
                 )
                 .font(.caption)
                 .foregroundStyle(Theme.Colors.textSecondary)
@@ -383,17 +407,29 @@ struct TranscriptCallbackSettingsView: View {
             }
 
             Section {
-                Button("Run now on last meeting") { runNow() }
-                    .disabled(lastMeeting == nil || trimmedCommand.isEmpty)
+                if triggers.count > 1 {
+                    Menu("Run now on last meeting") {
+                        ForEach(triggers) { trigger in
+                            Button(trigger.displayName) { runNow(trigger) }
+                                .disabled(trigger.trimmedCommand == nil)
+                        }
+                    }
+                    .disabled(lastMeeting == nil)
+                } else {
+                    Button("Run now on last meeting") {
+                        if let trigger = triggers.first { runNow(trigger) }
+                    }
+                    .disabled(lastMeeting == nil || triggers.first?.trimmedCommand == nil)
+                }
                 if session.state != .idle || session.isProcessingInBackground {
                     Text("Waiting for the current recording to finish processing.")
                         .font(.caption)
                         .foregroundStyle(Theme.Colors.textSecondary)
                 }
-                statusView
+                CallbackStatusLabel()
             } footer: {
                 Text(
-                    "Fires your command against the most recently completed meeting, regardless of the scope above, so you can verify it works without recording something new."
+                    "Fires a trigger's command against the most recently completed meeting, regardless of the scope above, so you can verify it works without recording something new."
                 )
                 .font(.caption)
                 // Explicit, not left to the Form's own footer style: the system's
@@ -404,30 +440,95 @@ struct TranscriptCallbackSettingsView: View {
         }
         .formStyle(.grouped)
         .frame(width: 480)
-    }
-
-    @ViewBuilder private var statusView: some View {
-        switch status.outcome {
-        case .idle:
-            EmptyView()
-        case .running(let title):
-            Label("Running for “\(title)”…", systemImage: "hourglass")
-                .font(.caption)
-                .foregroundStyle(Theme.Colors.textSecondary)
-        case .succeeded(let title):
-            Label("Finished for “\(title)”", systemImage: "checkmark.circle")
-                .font(.caption)
-                .foregroundStyle(Theme.Colors.textSecondary)
-        case .failed(let title, let detail):
-            // `.error`, not `.attention` — this is an actual failure of the command
-            // run, not a warning to notice and move past.
-            StatusLabel(.error, "Failed for “\(title)”: \(detail)")
-                .lineLimit(2)
+        // Persisted on every edit rather than on dismiss — a Settings window has
+        // no save button, and a crash shouldn't lose a typed command. Reading
+        // back what the setter normalized keeps the view showing the same
+        // exactly-one-default state the store now holds; equality guards the
+        // write-back, so the `onChange` chain settles instead of looping.
+        .onChange(of: triggers) { _, newValue in
+            TranscriptCallbackSettings.triggers = newValue
+            let normalized = TranscriptCallbackSettings.triggers
+            if normalized != newValue {
+                triggers = normalized
+            }
         }
     }
 
-    private func runNow() {
-        guard let lastMeeting, !trimmedCommand.isEmpty else { return }
+    /// The multi-trigger editor: name, command, which one is the default, and a
+    /// remove button per row. Default is a single choice across the list — the
+    /// exactly-one-default invariant rendered as radio-style selection rather
+    /// than per-row toggles that could express zero or two.
+    private var triggerRows: some View {
+        ForEach($triggers) { $trigger in
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    TextField("Name", text: $trigger.name, prompt: Text("Trigger name"))
+                        .font(.body.weight(.medium))
+                    if trigger.isDefault {
+                        Text("Default")
+                            .font(.caption2.weight(.medium))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(.tint.opacity(0.15), in: .capsule)
+                    } else {
+                        Button("Make Default") {
+                            triggers = triggers.settingDefault(trigger.id)
+                        }
+                        .buttonStyle(.borderless)
+                        .font(.caption)
+                    }
+                    Button {
+                        triggers = triggers.removing(trigger.id)
+                    } label: {
+                        Label("Remove trigger", systemImage: "minus.circle")
+                            .labelStyle(.iconOnly)
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .help("Remove trigger")
+                }
+                TextField(
+                    "Command", text: $trigger.command,
+                    prompt: Text("e.g. claude -p \"Handle this transcript\"")
+                )
+                .font(.system(.body, design: .monospaced))
+                .labelsHidden()
+            }
+            .padding(.vertical, 2)
+        }
+    }
+
+    /// The single-trigger command field: editing writes through to the sole
+    /// trigger, and the first character typed into an empty configuration
+    /// creates it — named "Default" like the migrated legacy command, since in
+    /// a one-trigger world the name never shows. Never deletes on blank: a
+    /// blank command already reads as "off" (``CallbackTrigger/trimmedCommand``),
+    /// and keeping the row means backspacing through a command doesn't churn
+    /// trigger identities.
+    private var soleCommand: Binding<String> {
+        Binding(
+            get: { triggers.first?.command ?? "" },
+            set: { newValue in
+                if var first = triggers.first {
+                    first.command = newValue
+                    triggers = [first]
+                } else if !newValue.isEmpty {
+                    triggers = [CallbackTrigger(name: "Default", command: newValue, isDefault: true)]
+                }
+            }
+        )
+    }
+
+    /// Blank name on purpose — the row's empty field prompts for one, which
+    /// beats inventing "Trigger 2" style names someone has to delete before
+    /// typing. Default only when it's the first trigger, so adding a second
+    /// never silently changes what fires automatically.
+    private func addTrigger() {
+        triggers.append(CallbackTrigger(name: "", command: "", isDefault: triggers.isEmpty))
+    }
+
+    private func runNow(_ trigger: CallbackTrigger) {
+        guard let lastMeeting, let command = trigger.trimmedCommand else { return }
         let ownerNames = SpeakerLabeling.ownerNames(context: context)
         let export = lastMeeting.export(ownerNames: ownerNames)
         // Building the export reads `stableID`, which backfills `uuid` for a meeting
@@ -441,12 +542,12 @@ struct TranscriptCallbackSettingsView: View {
         do {
             try context.save()
         } catch {
-            status.markFailedBeforeStarting(
+            TranscriptCallbackStatus.shared.markFailedBeforeStarting(
                 title: export.title,
                 detail: "Couldn't save this meeting's ID, so the command wasn't run: \(error.localizedDescription)"
             )
             return
         }
-        TranscriptReadyRunner.fireForTest(command: trimmedCommand, export: export)
+        TranscriptReadyRunner.fireManually(command: command, export: export)
     }
 }
