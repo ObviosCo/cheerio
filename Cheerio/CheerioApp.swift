@@ -110,6 +110,23 @@ struct CheerioApp: App {
         NotificationService.shared.start(session: session, container: container)
 
         MCPManifestRefresh.runAtLaunch()
+
+        // After `closeAbandonedRecordings` above, which owns the crashed-mid-
+        // recording rows; this owns the quit-or-crashed-mid-*holding* ones —
+        // meetings whose capture finished but whose processing was still waiting
+        // on the post-meeting holding state when the process died. They're
+        // processed now, with the inputs persisted at hold entry, rather than
+        // re-offered for review — see `resumeInterruptedProcessing` for why. A
+        // task rather than an inline await because `init()` must not block launch
+        // on a summarization pass; the pipeline runs against meetings this fresh
+        // session doesn't hold, so it can't collide with a recording the user
+        // starts in the meantime.
+        //
+        // The context is bound outside the closure because a `Task` in a struct's
+        // `init` must not capture the still-mutating `self` that reading
+        // `container` directly would.
+        let launchContext = container.mainContext
+        Task { await session.resumeInterruptedProcessing(context: launchContext) }
     }
 
     var body: some Scene {
@@ -363,8 +380,14 @@ struct ContentView: View {
             // picks up whatever the user already decided, there or in System
             // Settings, so `CalendarService`'s cached flag survives a relaunch.
             await CalendarService.shared.refreshAccessStatus()
-            // Audio that aged out while the app was closed.
-            _ = try? AudioRetentionService.purge(retention: .current, context: context)
+            // Audio that aged out while the app was closed. Excludes anything the
+            // launch recovery task (`CheerioApp.init()`) has mid-pipeline right
+            // now — those meetings' rows no longer show they're in use once the
+            // recovery marker is claimed, and diarization is reading exactly
+            // these files. Recovery runs its own purge when it finishes.
+            _ = try? AudioRetentionService.purge(
+                retention: .current, context: context,
+                excludingMeetingIDs: session.meetingIDsBeingProcessed)
         }
     }
 
@@ -388,6 +411,17 @@ struct ContentView: View {
     /// A selected meeting wins over the live view: mid-call you sometimes need to
     /// look something up in an earlier meeting, and the sidebar offers a way back.
     ///
+    /// An *earlier* meeting, specifically — selecting the session's own current
+    /// meeting resolves to `RecordingView`, not the detail view. The current
+    /// meeting's row sits in the sidebar from recording start, and the detail
+    /// view is the wrong surface for it in every live state: its rough-notes
+    /// binding and rename alert don't count as holding activity, so during
+    /// `.holding` the idle deadline could expire mid-edit — and `completeHold`'s
+    /// notes sync from the session's scratchpad would then overwrite what was
+    /// typed there — while the countdown and callback controls the hold exists
+    /// for aren't visible at all. `RecordingView` *is* that meeting's detail
+    /// while the session owns it.
+    ///
     /// The enrollment banner above a selected meeting (#125) is a slim addition
     /// here rather than the dashboard's full-width card: a meeting's own header,
     /// notes and transcript are the reason this pane is open, and they need to stay
@@ -395,7 +429,7 @@ struct ContentView: View {
     /// forgotten, not compete with the content underneath it. The dashboard case
     /// below is the one place this app has room to make the fuller case instead.
     @ViewBuilder private var detail: some View {
-        if let selectedMeeting {
+        if let selectedMeeting, selectedMeeting != session.meeting {
             VStack(spacing: 0) {
                 // Gates the padding and the divider too, not just the prompt
                 // inside them — `VoiceEnrollmentPrompt` already renders nothing
@@ -412,7 +446,7 @@ struct ContentView: View {
                 }
                 MeetingDetailView(meeting: selectedMeeting) { self.selectedMeeting = nil }
             }
-        } else if session.state == .recording || session.state == .finishing {
+        } else if [.recording, .holding, .finishing].contains(session.state) {
             RecordingView()
         } else {
             EmptyStateDashboardView(selection: $selectedMeeting, enrollmentPromptDismissed: $enrollmentPromptDismissed)

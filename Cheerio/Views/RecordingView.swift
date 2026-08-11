@@ -55,7 +55,10 @@ struct RecordingView: View {
                     // pass at the end of the recording uses it, so getting it right now
                     // saves a re-identify later.
                     ParticipantRosterMenu(meeting: meeting)
-                    if let startedAt = session.startedAt {
+                    // Hidden in `.holding`: the ring means "capturing right now",
+                    // and the holding state's whole premise is that capture is
+                    // over. The holding bar below carries the state instead.
+                    if session.state != .holding, let startedAt = session.startedAt {
                         // The ring and the word travel with the timer here, not just
                         // the digits — a bare timer is exactly the drift
                         // `RecordingIndicator` exists to stop between this header,
@@ -73,20 +76,50 @@ struct RecordingView: View {
                 Divider()
             }
 
+            if session.state == .holding {
+                holdingControls
+                Divider()
+            }
+
             recordingPanes
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button {
-                    Task { await session.stop(context: context) }
-                } label: {
-                    Label(
-                        session.state == .finishing ? "Finishing…" : "Stop",
-                        systemImage: "stop.circle.fill"
-                    )
+                if session.state == .holding {
+                    Button {
+                        Task { await session.confirmProcessing(context: context) }
+                    } label: {
+                        Label("Process Now", systemImage: "sparkles")
+                    }
+                } else {
+                    Button {
+                        Task { await session.stop(context: context) }
+                    } label: {
+                        Label(
+                            session.state == .finishing ? "Finishing…" : "Stop",
+                            systemImage: "stop.circle.fill"
+                        )
+                    }
+                    .disabled(session.state == .finishing)
                 }
-                .disabled(session.state == .finishing)
             }
+        }
+        // Every edit surface this view keeps live through `.holding` counts as
+        // holding activity — the scratchpad, the title field, and the participant
+        // roster all restart the grace window, or auto-processing could cut off a
+        // rename mid-word and ship the callback a partial title. All no-ops
+        // outside `.holding` (the session guards), so none need their own state
+        // check. The kind picker and callback controls don't need observers here:
+        // they already route through the session's `hold*` accessors, which record
+        // activity themselves.
+        .onChange(of: session.roughNotes) {
+            session.recordHoldActivity()
+        }
+        .onChange(of: session.meeting?.title) {
+            session.recordHoldActivity()
+        }
+        .onChange(of: session.meeting?.participantNames) {
+            session.recordHoldActivity()
         }
         .onAppear {
             // Only ever the first recording after a skipped enrollment — this view
@@ -104,6 +137,70 @@ struct RecordingView: View {
                 showEnrollmentNudge = false
             }
         }
+    }
+
+    /// The post-meeting holding state's controls (issue #136): the countdown to
+    /// auto-processing, the meeting-kind switch, and the callback decision with
+    /// its per-meeting prompt. Everything binds through the session's `hold*`
+    /// accessors rather than the meeting directly, so each edit also restarts the
+    /// grace window — the countdown measures idle time, and touching a control is
+    /// not idle.
+    private var holdingControls: some View {
+        @Bindable var session = session
+
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "hourglass")
+                    .foregroundStyle(.tint)
+                if let deadline = session.holdDeadline {
+                    // `.timer` counts down on its own — no TimelineView needed —
+                    // and the deadline moving on each edit is picked up because
+                    // `holdDeadline` is observed state. "Processing", not "notes
+                    // and callback": whether the callback is part of processing
+                    // is exactly what the toggle to the right decides, and this
+                    // line has to stay true in every position of it.
+                    Text(
+                        "Recording finished. Processing starts in \(Text(deadline, style: .timer).fontWeight(.semibold)) — editing anything here keeps it waiting."
+                    )
+                    .font(.callout)
+                }
+                Spacer()
+                Button("Process Now") {
+                    Task { await session.confirmProcessing(context: context) }
+                }
+                .buttonStyle(.borderedProminent)
+            }
+
+            HStack(spacing: 12) {
+                // Cheap to change *now*, before notes exist to go stale — see
+                // `CaptureSession.holdKind`. After processing it's the detail
+                // view's convert action, with its documented regeneration caveat.
+                Picker("Kind", selection: $session.holdKind) {
+                    Text("Meeting").tag(MeetingKind.meeting)
+                    Text("Directive").tag(MeetingKind.directive)
+                }
+                .pickerStyle(.segmented)
+                .fixedSize()
+                .labelsHidden()
+
+                // Only offered when a command exists to run — a toggle that
+                // controls nothing would read as broken, and Settings › Callback
+                // is where a command gets configured in the first place.
+                if TranscriptCallbackSettings.command != nil {
+                    Toggle("Run callback", isOn: $session.holdRunsCallback)
+                        .toggleStyle(.checkbox)
+                    TextField(
+                        "Additional prompt for the callback (CHEERIO_ADDITIONAL_PROMPT)",
+                        text: $session.holdCallbackPrompt
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .disabled(!session.holdRunsCallback)
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(.tint.opacity(0.08))
     }
 
     private var enrollmentNudgeBanner: some View {
@@ -162,7 +259,11 @@ struct RecordingView: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 6) {
                     Image(systemName: "waveform")
-                    Text("Live transcript")
+                    // "Live" is a claim about capture, and in `.holding` capture is
+                    // over — the banner above says "Recording finished", and this
+                    // header contradicting it would leave doubt about whether the
+                    // mic is still hot.
+                    Text(session.state == .holding ? "Transcript" : "Live transcript")
                     if let startedAt = session.startedAt {
                         // Absolute and local, per #130 — the per-line stamps below
                         // are all relative to this one instant.

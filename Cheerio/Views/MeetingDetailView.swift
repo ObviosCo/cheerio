@@ -46,6 +46,19 @@ struct MeetingDetailView: View {
     /// ``isTranscriptExpanded`` below, for the same reason: this view is reused,
     /// not recreated, across a sidebar selection change.
     @State private var isEditingRoughNotes = false
+    /// Owned here, not inside ``MeetingAudioPlayerView``, because two sibling
+    /// sections drive the same player: the scrubber controls, and the
+    /// transcript's tap-to-seek (#123). Replaced wholesale — teardown, fresh
+    /// instance, fresh load — in the meeting-keyed `.task` below, since this
+    /// view is reused across a sidebar selection change and one model must
+    /// never outlive the meeting whose audio it was loaded from.
+    @State private var playerModel = MeetingAudioPlayerModel()
+    /// Which transcript row's seek affordance is visible. Hover-revealed rather
+    /// than always-on: a stamp on every line is exactly the column of numbers
+    /// the per-minute timestamps (#130) exist to avoid, and the row's text keeps
+    /// `.textSelection(.enabled)`, so the tap target has to be its own control
+    /// beside the text, not the line itself.
+    @State private var hoveredSegmentID: PersistentIdentifier?
 
     private var sortedSegments: [TranscriptSegment] {
         meeting.segments.sorted { $0.startTime < $1.startTime }
@@ -67,7 +80,11 @@ struct MeetingDetailView: View {
 
                 if MeetingAudioPlayback.hasPlayableAudio(for: meeting) {
                     Divider()
-                    MeetingAudioPlayerView(meeting: meeting)
+                    // `.id` resets the view's own scrub-in-progress state on a
+                    // meeting switch; the player model's lifetime is the
+                    // meeting-keyed `.task` below, not this identity.
+                    MeetingAudioPlayerView(model: playerModel)
+                        .id(meeting.persistentModelID)
                 }
 
                 if meeting.audioDirectory != nil {
@@ -81,7 +98,13 @@ struct MeetingDetailView: View {
                                 systemImage: "person.wave.2"
                             )
                         }
-                        .disabled(isRelabeling)
+                        // `isProcessing` too, not just this view's own flag: launch
+                        // recovery of a held meeting runs its pipeline while the
+                        // session is `.idle` — exactly when this view can be
+                        // showing that meeting — and two diarization passes
+                        // rewriting the same labels concurrently is a race no
+                        // ordering of their saves makes right.
+                        .disabled(isRelabeling || session.isProcessing(meeting))
                         Text("Uses the voices enrolled in Settings → Participants.")
                             .font(.caption)
                             .foregroundStyle(Theme.Colors.textSecondary)
@@ -110,6 +133,24 @@ struct MeetingDetailView: View {
             isEditingRoughNotes = false
             meeting.resolveSpeakerSlots(ownerNames: SpeakerLabeling.ownerNames(context: context))
             try? context.save()
+            // Same reuse story as the state resets above: the previous
+            // meeting's player has to go before this meeting's audio loads,
+            // or a stale instance keeps a time observer alive against an
+            // asset nothing renders anymore. Loading last keeps every
+            // synchronous reset ahead of the one await in this task.
+            playerModel.teardown()
+            playerModel = MeetingAudioPlayerModel()
+            let urls = MeetingAudioPlayback.channelFileURLs(for: meeting)
+            if !urls.isEmpty {
+                await playerModel.load(urls: urls)
+            }
+        }
+        .onDisappear { playerModel.teardown() }
+        // Never both at once (see #14 and the mic-hears-your-speakers issue,
+        // #5): a recording starting must actively pause audio that was already
+        // playing, not just leave the controls disabled from here on.
+        .onChange(of: session.state) { _, newState in
+            if newState != .idle { playerModel.pause() }
         }
         .alert("Couldn't identify speakers", isPresented: $relabelError.presented()) {
             Button("OK") { relabelError = nil }
@@ -379,10 +420,12 @@ struct MeetingDetailView: View {
                             segment in
                             VStack(alignment: .leading, spacing: 2) {
                                 if marked.contains(index) {
-                                    // The anchor issue #123's tap-to-seek is meant to
-                                    // attach to — one per elapsed minute, not per
-                                    // segment, so the affordance stays as sparse as
-                                    // the stamp it sits next to.
+                                    // Orientation only (#130) — one per elapsed
+                                    // minute, and never interactive. The seek
+                                    // affordance (#123) is per row instead,
+                                    // hover-revealed at the trailing edge, so
+                                    // it can be exact without becoming the
+                                    // column of numbers this stamp avoids.
                                     Text(TranscriptTimestamp.format(segment.startTime))
                                         .font(.caption2.monospacedDigit())
                                         .foregroundStyle(Theme.Colors.textSecondary)
@@ -393,6 +436,37 @@ struct MeetingDetailView: View {
                                         .font(.callout)
                                         .textSelection(.enabled)
                                         .frame(maxWidth: .infinity, alignment: .leading)
+                                        // VoiceOver's route to tap-to-seek: it
+                                        // can't hover, and the button below is
+                                        // invisible (and unfocusable) until
+                                        // something does. Purged audio offers no
+                                        // action, like the button; and because a
+                                        // custom action can't be *disabled*, only
+                                        // absent, the recording gate the button
+                                        // expresses as `.disabled` has to remove
+                                        // this action entirely — otherwise
+                                        // VoiceOver could restart playback
+                                        // mid-capture (never both at once, #14/#5).
+                                        .accessibilityActions {
+                                            if playerModel.isReady && session.state == .idle {
+                                                Button(seekActionName(for: segment)) {
+                                                    playerModel.playFrom(segment.startTime)
+                                                }
+                                            }
+                                        }
+                                    if playerModel.isReady {
+                                        seekButton(for: segment)
+                                    }
+                                }
+                            }
+                            .onHover { hovering in
+                                // Entering the next row can fire before exiting
+                                // this one, so an exit only clears its own claim
+                                // — never whichever row won since.
+                                if hovering {
+                                    hoveredSegmentID = segment.persistentModelID
+                                } else if hoveredSegmentID == segment.persistentModelID {
+                                    hoveredSegmentID = nil
                                 }
                             }
                         }
@@ -404,6 +478,57 @@ struct MeetingDetailView: View {
             Text("Transcript (\(meeting.segments.count) segments)")
                 .font(.headline)
         }
+    }
+
+    private func seekActionName(for segment: TranscriptSegment) -> String {
+        "Play from \(TranscriptTimestamp.format(segment.startTime))"
+    }
+
+    /// One transcript row's tap-to-seek control (#123): the segment's own mm:ss
+    /// in the per-minute stamps' treatment, plus a play glyph so it reads as
+    /// "go here", not another passive timestamp. Rendered at all only once the
+    /// player loaded — audio that retention purged never shows it, matching how
+    /// ``MeetingAudioPlayerView``'s caller shows nothing rather than a disabled
+    /// control — and merely *disabled* while a recording runs, matching the
+    /// player controls it drives. Hidden-by-opacity so revealing it never
+    /// reflows the selectable text beside it, with hit testing *and*
+    /// focusability gated to the same reveal. The hit-testing gate keeps an
+    /// invisible click target past the end of a line from swallowing clicks
+    /// meant to start a text selection there. The focusability gate exists
+    /// because opacity doesn't take a button out of Full Keyboard Access's Tab
+    /// order: without it, Tab lands on — and Space *activates* — a control
+    /// with no visible presence (measured, not assumed). Reveal-on-focus
+    /// isn't an option: no SwiftUI signal (`@FocusState` via `.focused`, or
+    /// `\.isFocused` in the label or a `ButtonStyle`) fires when a bridged
+    /// button takes key-loop focus on macOS 26, `.focusable(true)` adds a
+    /// second, Space-inert tab stop beside the button's own — and even
+    /// working, a tab stop per line is the keyboard shape of the number
+    /// column #130 avoids. So this control is pointer-only, unconditionally
+    /// out of the Tab order: keyboard users get the scrubber, VoiceOver keeps
+    /// the per-line action above (its navigation isn't the Tab loop).
+    private func seekButton(for segment: TranscriptSegment) -> some View {
+        let isRevealed = hoveredSegmentID == segment.persistentModelID
+        return Button {
+            playerModel.playFrom(segment.startTime)
+        } label: {
+            HStack(spacing: 2) {
+                Image(systemName: "play.fill")
+                    .font(.system(size: 7))
+                Text(TranscriptTimestamp.format(segment.startTime))
+                    .font(.caption2.monospacedDigit())
+            }
+            .foregroundStyle(Theme.Colors.accent)
+        }
+        .buttonStyle(.borderless)
+        .disabled(session.state != .idle)
+        .focusable(false)
+        .opacity(isRevealed ? 1 : 0)
+        .allowsHitTesting(isRevealed)
+        // Pointer-only by design: keyboard is out of the Tab loop above, and
+        // VoiceOver already has the same labeled action on the line's text —
+        // exposing this (often invisible) button too would read as a duplicate.
+        .accessibilityHidden(true)
+        .help(seekActionName(for: segment))
     }
 
     /// The speaker label, as a menu for fixing one line. Whole-speaker renames live in
@@ -486,6 +611,11 @@ struct MeetingDetailView: View {
     /// Re-runs diarization. Worth offering because labels improve as more voices get
     /// enrolled, and the audio stays on disk until retention purges it.
     private func relabel() async {
+        // The button above is disabled on the same condition, but a click can be
+        // in flight when the disable lands — this is the check that actually
+        // holds. The marks are reference-counted so an overlap wouldn't corrupt
+        // *them* anymore; it's the two concurrent diarization passes this refuses.
+        guard !session.isProcessing(meeting) else { return }
         isRelabeling = true
         // Before the first `await` below, so nothing can observe this meeting as
         // deletable between that call starting and this line running. Cleared in

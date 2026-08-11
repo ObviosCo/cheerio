@@ -303,6 +303,10 @@ struct VoiceEnrollmentRecorder: View {
                 await cleanUpFailedRecording()
                 return
             }
+            // Armed only past the cancellation guard: a take unwound before the
+            // user was ever asked to speak isn't a silent capture, just one that
+            // never happened.
+            capture.armSilenceVerdict()
             elapsed = 0
         } catch {
             errorMessage = error.localizedDescription
@@ -398,6 +402,9 @@ struct VoiceEnrollmentRecorder: View {
         // has been created yet, so returning here is a plain no-op.
         guard !Task.isCancelled else { return }
 
+        // Never arms the silence verdict: a mic check runs the tap while somebody
+        // watches the meter, possibly without speaking, and the meter itself is
+        // already showing them whatever a log line would have said.
         let candidate = MicrophoneCapture { _ in }
         do {
             // Same rationale as `startRecording()`: a close-mic'd single voice with

@@ -2,6 +2,7 @@ import AVFoundation
 import CheerioKit
 import Foundation
 import OSLog
+import Synchronization
 
 /// Captures microphone audio via AVAudioEngine and delivers PCM buffers.
 /// This is the "Me" channel. Portable to iOS as-is (move to CheerioKit in v2).
@@ -26,9 +27,37 @@ final class MicrophoneCapture: @unchecked Sendable {
     let levels: AsyncStream<AudioLevel>
     private let levelsContinuation: AsyncStream<AudioLevel>.Continuation
 
+    /// A quiet mic doesn't reliably fail loud. A denied TCC grant fails at
+    /// `permission()` when the user answers the prompt, but a grant revoked in
+    /// System Settings, a voice-processing failure, or an input device pointed at
+    /// nothing all leave the engine running and the tap firing — every buffer just
+    /// reads (near-)zero, and issue #159's meeting loses its whole Me channel with
+    /// no error anywhere. This watches the peak across the recording — fed from
+    /// the same `AudioLevel` each tap buffer already computes for `levels`, so the
+    /// samples are never scanned twice — and `stop()` logs the verdict, the mic's
+    /// counterpart to `SystemAudioTap`'s `SilenceWatch`.
+    private let peakWatch = CapturePeakWatch()
+
+    /// Armed by the caller, not by `start()`, because only the caller knows when
+    /// the recording it is assembling is genuinely underway. `CaptureSession`
+    /// starts this engine *before* `SystemAudioTap`; if the tap then throws, its
+    /// rollback stops a mic that ran for under a second during which nobody was
+    /// asked to speak — a verdict there would log a TCC diagnosis for a recording
+    /// that never existed. Same for an enrollment take cancelled mid-setup. An
+    /// unarmed watch stays quiet, and the enrollment mic check never arms at all:
+    /// it runs the tap while somebody watches a level meter, possibly without
+    /// saying a word — same reasoning as `SystemAudioTap`'s onboarding probe.
+    private let verdictArmed = Atomic<Bool>(false)
+
     init(onBuffer: @escaping @Sendable (sending AVAudioPCMBuffer) -> Void) {
         self.onBuffer = onBuffer
         (levels, levelsContinuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(1))
+    }
+
+    /// Call once every capture source in the session has started and the
+    /// recording is really on — from then on, `stop()` logs the verdict.
+    func armSilenceVerdict() {
+        verdictArmed.store(true, ordering: .releasing)
     }
 
     enum Permission {
@@ -66,11 +95,15 @@ final class MicrophoneCapture: @unchecked Sendable {
             enableEchoCancellation(on: input)
         }
         let format = input.outputFormat(forBus: 0)
-        input.installTap(onBus: 0, bufferSize: 4096, format: format) { [onBuffer, levelsContinuation] buffer, _ in
+        input.installTap(onBus: 0, bufferSize: 4096, format: format) { [onBuffer, levelsContinuation, peakWatch] buffer, _ in
             // Measured on the tap's own buffer, before the copy below — reading
             // samples that are already resident costs nothing a level meter
-            // couldn't also cost by way of a bigger copy handed downstream.
-            levelsContinuation.yield(AudioLevel.measuring(buffer))
+            // couldn't also cost by way of a bigger copy handed downstream. One
+            // measurement serves both consumers: the meter takes the reading as
+            // is, the peak watch folds its `peak` into the recording-wide max.
+            let level = AudioLevel.measuring(buffer)
+            levelsContinuation.yield(level)
+            peakWatch.record(peak: level.peak)
             // The tap recycles `buffer` after this returns; the transcription
             // engine outlives the callback, so hand it a copy it owns.
             guard let copy = buffer.detachedCopy() else { return }
@@ -124,5 +157,28 @@ final class MicrophoneCapture: @unchecked Sendable {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         levelsContinuation.finish()
+        logSilenceVerdict()
+    }
+
+    /// The exchange makes the verdict once-only: some teardown paths can reach
+    /// `stop()` twice, and the second pass shouldn't log a duplicate.
+    private func logSilenceVerdict() {
+        guard verdictArmed.exchange(false, ordering: .acquiringAndReleasing) else { return }
+        let verdict = peakWatch.verdict
+        switch verdict {
+        case .signal:
+            // .notice so it survives to `log show`; .info is memory-only.
+            Self.log.notice("Microphone capture stopped — captured signal, peak \(verdict.peakDescription, privacy: .public)")
+        case .silence:
+            Self.log.error(
+                """
+                Microphone capture stopped — captured ONLY SILENCE (peak \(verdict.peakDescription, privacy: .public)). \
+                The engine ran without error but the Me channel is empty. Most likely: microphone access is \
+                denied (System Settings → Privacy & Security → Microphone — the co.obvios.cheerio.mac \
+                bundle-identifier change reset the old grant), voice processing failed on this input device, \
+                or the selected input (System Settings → Sound → Input) isn't the device hearing the room.
+                """
+            )
+        }
     }
 }

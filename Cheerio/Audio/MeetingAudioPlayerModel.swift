@@ -4,13 +4,16 @@ import Foundation
 
 /// Plays back one meeting's retained audio as a single merged track.
 ///
-/// One instance per meeting, owned by the view that shows it — see
-/// `MeetingAudioPlayerView`, which keys that view's identity on the meeting so
-/// switching meetings tears this down rather than reusing it against a different
-/// asset. This class never touches `Meeting` or `ModelContext` itself: it's
-/// handed the URLs `MeetingAudioPlayback.channelFileURLs(for:)` already found on
-/// disk, so it can't be asked to play a meeting whose audio was never checked to
-/// exist.
+/// One instance per meeting, owned by `MeetingDetailView` rather than the player
+/// controls that render it — the transcript's tap-to-seek (#123) needs to reach
+/// the same player the scrubber drives, and the detail view is the nearest
+/// ancestor both of them share. That view is *reused* across a sidebar selection
+/// change, not recreated, so its meeting-keyed `.task` replaces this instance
+/// wholesale (teardown, fresh model, fresh `load`) instead of keying identity
+/// through `.id` the way the controls' `@State` version once did. This class
+/// never touches `Meeting` or `ModelContext` itself: it's handed the URLs
+/// `MeetingAudioPlayback.channelFileURLs(for:)` already found on disk, so it
+/// can't be asked to play a meeting whose audio was never checked to exist.
 @MainActor
 @Observable
 final class MeetingAudioPlayerModel {
@@ -26,6 +29,14 @@ final class MeetingAudioPlayerModel {
     private var player: AVPlayer?
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
+    /// Bumped by every `teardown()` so an in-flight `load` can tell it was torn
+    /// down *while suspended*. Task cancellation doesn't cover that case: a
+    /// retention purge removes the renderer (whose disappearance calls
+    /// `teardown()`) without touching the owner's meeting-keyed `.task` — the
+    /// meeting never changed — so the suspended load would otherwise resume,
+    /// rebuild the player and observers, and resurrect the seek affordances
+    /// for audio that no longer exists.
+    private var generation = 0
 
     /// Whether `load(urls:)` has finished and there's a real `AVPlayer` behind
     /// this model. `MeetingAudioPlayerView` disables the controls until this is
@@ -36,16 +47,29 @@ final class MeetingAudioPlayerModel {
     var isReady: Bool { player != nil }
 
     /// Builds the merged composition and prepares an `AVPlayer` over it. Safe to
-    /// call once per instance — `MeetingAudioPlayerView` creates a fresh model
-    /// per meeting rather than reloading this one.
+    /// call once per instance — `MeetingDetailView` creates a fresh model per
+    /// meeting rather than reloading this one.
     func load(urls: [URL]) async {
+        // Two distinct ways this load can be obsolete by the time its awaits
+        // resume, each needing its own signal. A meeting switch cancels the
+        // owning `.task(id:)` — by then this instance has already been
+        // replaced, and finishing would stand up a player, and a periodic
+        // time observer retaining it, that nothing will ever tear down. A
+        // retention purge of the *still-selected* meeting cancels nothing (the
+        // task's meeting ID didn't change); its only trace is the renderer's
+        // disappearance having called `teardown()`, which the generation
+        // records.
+        let startedGeneration = generation
         do {
             let composition = try await MeetingAudioPlayback.makeComposition(from: urls)
-            duration = try await composition.load(.duration).seconds
+            let seconds = try await composition.load(.duration).seconds
+            guard !Task.isCancelled, generation == startedGeneration else { return }
+            duration = seconds
             let player = AVPlayer(playerItem: AVPlayerItem(asset: composition))
             self.player = player
             observe(player)
         } catch {
+            guard !Task.isCancelled, generation == startedGeneration else { return }
             loadError = error.localizedDescription
         }
     }
@@ -100,7 +124,26 @@ final class MeetingAudioPlayerModel {
         currentTime = time
     }
 
+    /// The transcript's tap-to-seek (#123): put the playhead at a segment's
+    /// start and make sure something is audible — a tap that lands while
+    /// playback is stopped starts it there rather than silently moving a
+    /// paused playhead. Clamping lives in `MeetingAudioPlayback.seekTime` so
+    /// the edge cases (a segment finalized past the audio's end, a duration
+    /// the asset hasn't reported yet) are covered by CheerioKit's tests, not
+    /// re-derived here.
+    func playFrom(_ segmentStart: TimeInterval) {
+        guard player != nil else { return }
+        seek(to: MeetingAudioPlayback.seekTime(forSegmentStart: segmentStart, duration: duration))
+        play()
+    }
+
     func teardown() {
+        // Unconditional, before anything else: even when there's no player to
+        // dismantle yet (teardown racing a still-suspended `load`), the bump
+        // is the whole point — it's what tells that load not to finish.
+        // Repeat calls just bump again, so idempotency is preserved: every
+        // generation but the current one is equally stale.
+        generation += 1
         pause()
         if let timeObserver {
             player?.removeTimeObserver(timeObserver)

@@ -89,4 +89,56 @@ import Testing
             }
         }
     }
+
+    // The `ProcessingPlan` cases below live in this suite, not next to the plan's
+    // own tests, because they read and write these same two keys — and
+    // `.serialized` only orders tests *within* a suite, so a second suite over
+    // the same keys would still race this one.
+
+    @Test func defaultPlanMirrorsWhatWouldHaveFiredAnyway() {
+        withCommand("claude -p go") {
+            withScope(.allRecordings) {
+                #expect(ProcessingPlan.makeDefault(for: .meeting).runCallback)
+                #expect(ProcessingPlan.makeDefault(for: .meeting).callbackPrompt.isEmpty)
+            }
+            withScope(.directivesOnly) {
+                #expect(!ProcessingPlan.makeDefault(for: .meeting).runCallback)
+            }
+        }
+        withCommand(nil) {
+            withScope(.allRecordings) {
+                #expect(!ProcessingPlan.makeDefault(for: .meeting).runCallback)
+            }
+        }
+    }
+
+    @Test func planOverridesTheScopeInBothDirections() {
+        withCommand("claude -p go") {
+            withScope(.directivesOnly) {
+                // The user said yes during the hold; the scope's "no" doesn't outrank them.
+                #expect(TranscriptCallbackSettings.shouldFire(for: .meeting, plan: ProcessingPlan(runCallback: true)))
+            }
+            withScope(.allRecordings) {
+                // And their "no" holds against a scope that would have fired.
+                #expect(!TranscriptCallbackSettings.shouldFire(for: .meeting, plan: ProcessingPlan(runCallback: false)))
+            }
+        }
+    }
+
+    @Test func nilPlanIsTheZeroTouchPathAndDefersToTheScope() {
+        withCommand("claude -p go") {
+            withScope(.directivesOnly) {
+                #expect(!TranscriptCallbackSettings.shouldFire(for: .meeting, plan: nil))
+                #expect(TranscriptCallbackSettings.shouldFire(for: .directive, plan: nil))
+            }
+        }
+    }
+
+    @Test func noCommandMeansNoFireWhateverThePlanSays() {
+        withCommand(nil) {
+            withScope(.allRecordings) {
+                #expect(!TranscriptCallbackSettings.shouldFire(for: .meeting, plan: ProcessingPlan(runCallback: true)))
+            }
+        }
+    }
 }

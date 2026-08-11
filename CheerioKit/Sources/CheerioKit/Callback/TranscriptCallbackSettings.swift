@@ -66,4 +66,17 @@ public enum TranscriptCallbackSettings {
     public static func shouldFire(for kind: MeetingKind) -> Bool {
         command != nil && TranscriptCallbackScope.current.includes(kind)
     }
+
+    /// The same question with a per-meeting decision in hand: a ``ProcessingPlan``
+    /// exists only for meetings that went through the post-meeting holding state
+    /// (issue #136), and there the user saw and owned the toggle, so their answer
+    /// replaces the global scope outright — in both directions. A nil plan is the
+    /// zero-touch path (holding off, or a directive), which keeps deferring to the
+    /// scope exactly as ``shouldFire(for:)`` always has. The command still gates
+    /// either way: a per-meeting "yes" can't run a command nobody configured.
+    public static func shouldFire(for kind: MeetingKind, plan: ProcessingPlan?) -> Bool {
+        guard command != nil else { return false }
+        guard let plan else { return TranscriptCallbackScope.current.includes(kind) }
+        return plan.runCallback
+    }
 }

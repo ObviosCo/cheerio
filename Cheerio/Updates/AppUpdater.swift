@@ -129,6 +129,13 @@ final class UpdatePolicy: NSObject, SPUUpdaterDelegate {
     /// shows the user `UpdateDeferral.recordingInProgress`'s message instead of
     /// silently doing nothing; that's the right UX for a check the user asked for.
     ///
+    /// `state` alone stopped being the whole answer once processing could run
+    /// *outside* the capture flow: launch recovery of a meeting left holding
+    /// (issue #136) and the manual re-identify pass both run diarization and
+    /// enhancement while `state` sits at `.idle`, so the gate also consults
+    /// `session.isProcessingInBackground` — the same "is anything mid-mutation"
+    /// set the delete affordances already trust.
+    ///
     /// Honest about what this does and doesn't cover: it's a start-time gate only. A
     /// check (or a download) already admitted while idle is not aborted if a recording
     /// starts partway through it. That's a documented edge, not machinery — there is
@@ -140,7 +147,7 @@ final class UpdatePolicy: NSObject, SPUUpdaterDelegate {
     /// interval (about a day later) rather than as soon as the meeting ends. That is
     /// the whole of the behavior; there is deliberately no catch-up machinery.
     func updater(_ updater: SPUUpdater, mayPerform updateCheck: SPUUpdateCheck) throws {
-        guard session.state == .idle else {
+        guard session.state == .idle, !session.isProcessingInBackground else {
             throw UpdateDeferral.recordingInProgress
         }
     }
@@ -169,7 +176,8 @@ enum UpdateDeferral: LocalizedError {
         case .recordingInProgress:
             // No promise of an automatic retry: a vetoed scheduled check waits out
             // Sparkle's next interval, and a manual one is the user's to repeat.
-            // "Busy with", not "recording" — the veto also covers `.finishing`.
+            // "Busy with", not "recording" — the veto also covers `.finishing`,
+            // `.holding`, and background processing of a recovered meeting.
             "Cheerio is busy with a meeting. Check for updates again once it finishes."
         }
     }
