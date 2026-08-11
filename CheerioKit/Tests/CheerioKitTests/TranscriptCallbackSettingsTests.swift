@@ -250,6 +250,30 @@ import Testing
         }
     }
 
+    @Test func triggerWithIDReadsTheCurrentConfigurationNeverAFallback() throws {
+        // The user-initiated resolution: a click on a trigger by name must run
+        // what that trigger's command is *now* (Settings can have edited it
+        // since the menu rendered), and a deleted trigger resolves to nothing —
+        // not to the default, which would run a different command than the one
+        // clicked. Contrast with `trigger(for:)`, whose fallback exists for the
+        // automatic path where "run the callback" outlives the specific choice.
+        let repo = CallbackTrigger(name: "Repo", command: "claude -p repo", isDefault: true)
+        let triage = CallbackTrigger(name: "Triage", command: "triage.sh")
+        try withCommand(nil) {
+            try withTriggers([repo, triage]) {
+                #expect(TranscriptCallbackSettings.trigger(withID: triage.id)?.command == "triage.sh")
+            }
+            var edited = triage
+            edited.command = "triage-v2.sh"
+            try withTriggers([repo, edited]) {
+                #expect(TranscriptCallbackSettings.trigger(withID: triage.id)?.command == "triage-v2.sh")
+            }
+            try withTriggers([repo]) {
+                #expect(TranscriptCallbackSettings.trigger(withID: triage.id) == nil)
+            }
+        }
+    }
+
     @Test func aDeletedTriggerFallsBackToTheDefault() throws {
         let repo = CallbackTrigger(name: "Repo", command: "claude -p repo", isDefault: true)
         try withCommand(nil) {

@@ -124,6 +124,18 @@ public enum TranscriptCallbackSettings {
         triggers.contains { $0.trimmedCommand != nil }
     }
 
+    /// The trigger with this id *as currently configured*, or nil if it has been
+    /// deleted. This is the resolution for user-initiated runs — a click on a
+    /// trigger by name — where falling back to the default would silently run a
+    /// different command than the one clicked. Call it at decision time, never
+    /// on a `CallbackTrigger` value captured earlier: any UI listing triggers
+    /// can be minutes stale against a Settings window editing them, and the
+    /// command that runs must be the one configured *now*, not the one rendered
+    /// then.
+    public static func trigger(withID id: UUID) -> CallbackTrigger? {
+        triggers.first { $0.id == id }
+    }
+
     /// The trigger `plan` asks for, falling back to the default.
     ///
     /// A plan naming a trigger that has since been *deleted* resolves to the

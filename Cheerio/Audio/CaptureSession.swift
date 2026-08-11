@@ -677,12 +677,17 @@ final class CaptureSession {
     }
 
     /// See ``holdRunsCallback`` — same routing, for which trigger the callback
-    /// runs (issue #137). Reads as the default trigger's id while the plan hasn't
-    /// chosen one, so the holding UI's picker opens on what will actually run
-    /// rather than an empty selection; once set, the concrete id rides the plan
-    /// to processing (and through a crash, like every other plan field).
+    /// runs (issue #137). The getter resolves through the *same* fallback the
+    /// fire decision uses (`TranscriptCallbackSettings.trigger(for:)`) rather
+    /// than returning the plan's raw id: Settings can delete the chosen trigger
+    /// mid-hold, and a raw stale id would leave the picker showing no selection
+    /// while the default is what would actually fire — the UI must show the
+    /// effective choice, not the recorded one. Before anything is chosen it
+    /// reads as the default trigger for the same reason: the picker opens on
+    /// what will actually run. Once set, the concrete id rides the plan to
+    /// processing (and through a crash, like every other plan field).
     var holdTriggerID: UUID? {
-        get { meeting?.pendingProcessingPlan?.triggerID ?? TranscriptCallbackSettings.defaultTrigger?.id }
+        get { TranscriptCallbackSettings.trigger(for: meeting?.pendingProcessingPlan)?.id }
         set {
             guard state == .holding else { return }
             meeting?.pendingProcessingPlan?.triggerID = newValue

@@ -630,9 +630,13 @@ struct MeetingDetailView: View {
         let triggers = TranscriptCallbackSettings.triggers
         return VStack(alignment: .leading, spacing: Theme.Space.x1) {
             HStack(spacing: Theme.Space.x2) {
+                // Buttons carry only the trigger's *id*; the command is
+                // re-resolved when clicked (see `runTrigger(id:)`) — this list
+                // is whatever was configured at render, and a Settings window
+                // open beside this one can edit or delete a trigger in between.
                 if triggers.count == 1, let only = triggers.first {
                     Button {
-                        runTrigger(only)
+                        runTrigger(id: only.id)
                     } label: {
                         Label("Run callback", systemImage: "terminal")
                     }
@@ -640,7 +644,7 @@ struct MeetingDetailView: View {
                 } else {
                     Menu {
                         ForEach(triggers) { trigger in
-                            Button(trigger.displayName) { runTrigger(trigger) }
+                            Button(trigger.displayName) { runTrigger(id: trigger.id) }
                                 .disabled(trigger.trimmedCommand == nil)
                         }
                     } label: {
@@ -663,10 +667,25 @@ struct MeetingDetailView: View {
     /// `stableID`, which backfills `uuid` on an old meeting, and that ID is about
     /// to be handed to an external consumer as CHEERIO_MEETING_ID — persist it
     /// first or don't run at all, reporting on the status line either way.
-    private func runTrigger(_ trigger: CallbackTrigger) {
+    private func runTrigger(id: UUID) {
         // The menu is disabled on the same condition, but a click can be in
         // flight when the disable lands — this is the check that holds.
-        guard !session.isProcessing(meeting), let command = trigger.trimmedCommand else { return }
+        guard !session.isProcessing(meeting) else { return }
+        // Resolved *now*, not at render: this view doesn't observe the trigger
+        // list, so the menu can be arbitrarily stale against a Settings window
+        // editing it — the command that runs must be the one configured at the
+        // moment of the click. A trigger that's been deleted (or blanked) since
+        // render refuses to run, on the same status line a failed run would
+        // use, rather than executing a command the user can no longer see —
+        // and deliberately *without* the fire-time fallback to the default,
+        // which here would run a different command than the one clicked.
+        guard let command = TranscriptCallbackSettings.trigger(withID: id)?.trimmedCommand else {
+            TranscriptCallbackStatus.shared.markFailedBeforeStarting(
+                title: meeting.title,
+                detail: "That trigger was removed or its command cleared in Settings, so nothing was run."
+            )
+            return
+        }
         let ownerNames = SpeakerLabeling.ownerNames(context: context)
         let export = meeting.export(ownerNames: ownerNames)
         do {
