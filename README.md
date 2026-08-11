@@ -475,7 +475,10 @@ dependency during capture never is), and no analytics or accounts. Beyond that, 
 logic in `CheerioKit`, do no work on realtime audio callbacks, and leave strict concurrency on.
 
 CI runs `swift format lint --strict` (config in [`.swift-format`](.swift-format)), the package
-tests, and an app build on every PR. Format locally before pushing:
+tests, and an app build on every PR. A PR that touches the UI also gets automated
+accessibility audits — every covered screen, light and dark, contrast first — and screenshot
+previews; an audit finding is a red check, same as failing lint. Format locally before
+pushing:
 
 ```sh
 swift format --in-place --recursive Cheerio CheerioMCP CheerioScreenshotTests CheerioAccessibilityTests CheerioKit/Sources CheerioKit/Tests
