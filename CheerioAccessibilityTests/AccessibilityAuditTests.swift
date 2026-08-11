@@ -331,22 +331,49 @@ final class AccessibilityAuditTests: XCTestCase {
     /// each finding through ``shouldSuppress(_:in:)`` — see the type-level comment
     /// for the standard a suppression rule has to meet.
     ///
-    /// `scope` limits an audit to one presented surface: with a modal sheet up,
+    /// `sheet` limits an audit to one presented surface: with a modal sheet up,
     /// everything behind it renders through the sheet's dimming veil —
     /// de-emphasis macOS applies on purpose, to content that is neither
     /// interactive nor meant to be read right now, and content every one of
-    /// those elements gets audited *undimmed* by this suite's other cases. A
-    /// finding whose element lies entirely outside the scope is that dimmed
-    /// backdrop, never the surface under audit.
-    private func audit(_ app: XCUIApplication, within scope: CGRect? = nil) throws {
+    /// those elements gets audited *undimmed* by this suite's other cases.
+    ///
+    /// Membership in the sheet's own accessibility hierarchy is what separates
+    /// the surface under audit from that backdrop — not screen coordinates,
+    /// which were only ever a proxy: the library sits geometrically *behind* the
+    /// sheet, so its elements intersect the same rect while belonging to a
+    /// different surface entirely. The descendants are snapshotted once, before
+    /// the audit, keyed on type, label, and rounded frame.
+    private func audit(_ app: XCUIApplication, withinSheet sheet: XCUIElement? = nil) throws {
+        let members: Set<String>? = sheet.map { sheet in
+            var keys = Set<String>()
+            for element in sheet.descendants(matching: .any).allElementsBoundByIndex {
+                keys.insert(Self.membershipKey(of: element))
+            }
+            return keys
+        }
         try app.performAccessibilityAudit(for: Self.auditTypes) { issue in
-            if let scope, let element = issue.element, element.exists,
-                !scope.intersects(element.frame)
+            if let members, let element = issue.element, element.exists,
+                !members.contains(Self.membershipKey(of: element))
             {
                 return true
             }
             return self.shouldSuppress(issue, in: app)
         }
+    }
+
+    /// Identity for hierarchy membership: enough to match the same element
+    /// between the descendants snapshot and an audit issue, while the frame's
+    /// rounding forgives sub-pixel drift and nothing more.
+    private static func membershipKey(of element: XCUIElement) -> String {
+        let frame = element.frame
+        return [
+            String(element.elementType.rawValue),
+            element.label,
+            String(Int(frame.minX.rounded())),
+            String(Int(frame.minY.rounded())),
+            String(Int(frame.width.rounded())),
+            String(Int(frame.height.rounded())),
+        ].joined(separator: "|")
     }
 
     // The library states' anchors — one element per state that only exists once
@@ -451,8 +478,8 @@ final class AccessibilityAuditTests: XCTestCase {
         Thread.sleep(forTimeInterval: Self.settle)
         // Scoped to the sheet: the library behind it renders through the modal
         // dimming veil, and every one of those elements is audited undimmed by
-        // the other cases here — see `audit(_:within:)`.
-        try audit(app, within: sheet.frame)
+        // the other cases here — see `audit(_:withinSheet:)`.
+        try audit(app, withinSheet: sheet)
     }
 
     private func auditSettings(

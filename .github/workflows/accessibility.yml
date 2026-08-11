@@ -21,11 +21,12 @@
 # Same rule as `screenshots.yml`, same reason: this is a `pull_request` workflow, so
 # everything it runs — `bootstrap.sh`, the seeder, the test bundle, this file — is
 # unreviewed code from the pull request. It holds `contents: read` and nothing else,
-# and it publishes nothing. Its outputs are the check's verdict and one diagnostic
-# artifact (the `.xcresult`, uploaded below so a red run names its elements) — an
-# artifact upload needs no write permission and nothing downstream executes or
-# publishes it. If a step here ever needs to write anything, it belongs behind a
-# `workflow_run` split like `screenshots-publish.yml`.
+# and it publishes nothing. Its outputs are the check's verdict and, on a red run
+# only, one diagnostic artifact (the `.xcresult`, uploaded below so the failure
+# names its elements) — an artifact upload needs no write permission and nothing
+# downstream executes or publishes it. If a step here ever needs to write
+# anything, it belongs behind a `workflow_run` split like
+# `screenshots-publish.yml`.
 name: Accessibility audit
 
 on:
@@ -150,11 +151,12 @@ jobs:
 
       # The log only says "Contrast failed" per finding; the element, its measured
       # ratio, and the screenshot of it live in the result bundle, and a red audit
-      # is unactionable without them. `always()` because the failing run is
-      # exactly the one whose bundle matters. Still just an artifact — nothing
-      # here writes to the repository.
+      # is unactionable without them. `failure()` because the failing run is the
+      # only one with anything to diagnose — green runs would otherwise upload
+      # ~130 MB apiece for nobody. Still just an artifact — nothing here writes
+      # to the repository.
       - name: Upload the result bundle
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: accessibility-xcresult
