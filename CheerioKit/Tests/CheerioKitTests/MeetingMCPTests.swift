@@ -594,6 +594,13 @@ import Testing
         #expect(crashed.endedAt == iso.date(from: "2026-08-07T15:00:12Z")!)
         #expect(stillborn.endedAt == stillborn.startedAt)
 
+        // Marked as the backfill it is: the assigned `endedAt` alone would read
+        // as a real stop, and these rows never ran processing — surfaces gating
+        // on `endedCleanly` must see the difference.
+        #expect(crashed.wasAbandoned)
+        #expect(stillborn.wasAbandoned)
+        #expect(!crashed.endedCleanly)
+
         // Idempotent: a second run has nothing left with `endedAt == nil`.
         #expect(StorageMigration.closeAbandonedRecordings(context: context, excluding: nil) == 0)
     }
@@ -616,6 +623,27 @@ import Testing
         #expect(StorageMigration.closeAbandonedRecordings(context: context, excluding: recordingNow) == 1)
         #expect(recordingNow.endedAt == nil)
         #expect(leftoverFromACrash.endedAt != nil)
+        #expect(!recordingNow.wasAbandoned)
+        #expect(leftoverFromACrash.wasAbandoned)
+    }
+
+    @Test func endedCleanlyMeansAnActualStopNotABackfill() {
+        // The whole point of the flag: `endedAt != nil` can't distinguish a real
+        // stop (processing ran, or conclusively failed — either way the pipeline
+        // had its chance) from `closeAbandonedRecordings`' backfill (it never
+        // did). Old rows default to not-abandoned, deliberately, so a legacy
+        // library's processed meetings keep their callback affordance.
+        let live = Meeting(title: "Recording now")
+        #expect(!live.endedCleanly)
+
+        let stopped = Meeting(title: "Stopped")
+        stopped.endedAt = .now
+        #expect(stopped.endedCleanly)
+
+        let abandoned = Meeting(title: "Crashed")
+        abandoned.endedAt = .now
+        abandoned.wasAbandoned = true
+        #expect(!abandoned.endedCleanly)
     }
 
     @Test func theStorePathOverrideWins() throws {

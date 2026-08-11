@@ -53,6 +53,12 @@ struct MeetingDetailView: View {
     /// view is reused across a sidebar selection change and one model must
     /// never outlive the meeting whose audio it was loaded from.
     @State private var playerModel = MeetingAudioPlayerModel()
+    /// Same as `RecordingView.observedTriggersData`: the raw trigger blob,
+    /// observed so ``runTriggerSection`` (its presence, and the menu's rows)
+    /// re-renders when Settings edits triggers — the click path re-resolves by
+    /// id regardless (`runTrigger(id:)`), so this is about the *list* staying
+    /// honest, not about what runs. Read in `body`, never decoded here.
+    @AppStorage(TranscriptCallbackSettings.triggersDefaultsKey) private var observedTriggersData: Data?
     /// Which transcript row's seek affordance is visible. Hover-revealed rather
     /// than always-on: a stamp on every line is exactly the column of numbers
     /// the per-minute timestamps (#130) exist to avoid, and the row's text keeps
@@ -109,6 +115,21 @@ struct MeetingDetailView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
+                }
+
+                // Any configured trigger, not just the default (#137) — pointing
+                // a different agent at a finished meeting is also how it gets
+                // re-processed through one. `endedCleanly`, not `endedAt != nil`:
+                // a crash-abandoned recording gets an `endedAt` backfilled at the
+                // next launch without ever running diarization or enhancement,
+                // and offering to hand that partial capture to an agent as
+                // "ready" would ship the exact half-processed state the callback
+                // contract exists to rule out. (The live meeting reaches this
+                // view too; it has no `endedAt` at all.)
+                let _ = observedTriggersData
+                if meeting.endedCleanly, TranscriptCallbackSettings.hasRunnableTrigger {
+                    Divider()
+                    runTriggerSection
                 }
 
                 Divider()
@@ -606,6 +627,91 @@ struct MeetingDetailView: View {
             prior.restore(to: segment)
             relabelError = error.localizedDescription
         }
+    }
+
+    /// "Run this meeting through an agent" (#137): every configured trigger is
+    /// offered, not only the default — the automatic run already happened (or was
+    /// declined), so this is the review-time surface where the *user's* pick is
+    /// the whole point. One trigger gets a plain button; a list gets a menu of
+    /// names. Busy-gated the same way re-identify is: `isProcessing` covers the
+    /// live recording, a hold whose deadline could claim processing any moment,
+    /// and launch recovery mid-pipeline — all states where the export this would
+    /// build is about to be superseded.
+    private var runTriggerSection: some View {
+        let triggers = TranscriptCallbackSettings.triggers
+        return VStack(alignment: .leading, spacing: Theme.Space.x1) {
+            HStack(spacing: Theme.Space.x2) {
+                // Buttons carry only the trigger's *id*; the command is
+                // re-resolved when clicked (see `runTrigger(id:)`) — this list
+                // is whatever was configured at render, and a Settings window
+                // open beside this one can edit or delete a trigger in between.
+                if triggers.count == 1, let only = triggers.first {
+                    Button {
+                        runTrigger(id: only.id)
+                    } label: {
+                        Label("Run callback", systemImage: "terminal")
+                    }
+                    .disabled(session.isProcessing(meeting))
+                } else {
+                    Menu {
+                        ForEach(triggers) { trigger in
+                            Button(trigger.displayName) { runTrigger(id: trigger.id) }
+                                .disabled(trigger.trimmedCommand == nil)
+                        }
+                    } label: {
+                        Label("Run callback", systemImage: "terminal")
+                    }
+                    .fixedSize()
+                    .disabled(session.isProcessing(meeting))
+                }
+                Text("Hands this meeting's transcript to a trigger from Settings → Callback.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            // The same shared status line Settings shows, because the run it
+            // reports may well have been started right here.
+            CallbackStatusLabel()
+        }
+    }
+
+    /// Same discipline as Settings' "Run now on last meeting": the export reads
+    /// `stableID`, which backfills `uuid` on an old meeting, and that ID is about
+    /// to be handed to an external consumer as CHEERIO_MEETING_ID — persist it
+    /// first or don't run at all, reporting on the status line either way.
+    private func runTrigger(id: UUID) {
+        // The menu is disabled on the same condition, but a click can be in
+        // flight when the disable lands — this is the check that holds.
+        guard !session.isProcessing(meeting) else { return }
+        // Resolved *now*, not at render: `observedTriggersData` refreshes the
+        // menu when Settings edits triggers, but a re-render is an eventual
+        // courtesy, not a guarantee at the instant of the click — an open menu
+        // built from the previous configuration can still deliver its action
+        // after an edit lands. The command that runs must be the one configured
+        // at the moment of the click, so it's read here, from the id alone. A
+        // trigger that's been deleted (or blanked) in that window refuses to
+        // run, on the same status line a failed run would use, rather than
+        // executing a command the user can no longer see — and deliberately
+        // *without* the fire-time fallback to the default, which here would run
+        // a different command than the one clicked.
+        guard let command = TranscriptCallbackSettings.trigger(withID: id)?.trimmedCommand else {
+            TranscriptCallbackStatus.shared.markFailedBeforeStarting(
+                title: meeting.title,
+                detail: "That trigger was removed or its command cleared in Settings, so nothing was run."
+            )
+            return
+        }
+        let ownerNames = SpeakerLabeling.ownerNames(context: context)
+        let export = meeting.export(ownerNames: ownerNames)
+        do {
+            try context.save()
+        } catch {
+            TranscriptCallbackStatus.shared.markFailedBeforeStarting(
+                title: export.title,
+                detail: "Couldn't save this meeting's ID, so the command wasn't run: \(error.localizedDescription)"
+            )
+            return
+        }
+        TranscriptReadyRunner.fireManually(command: command, export: export)
     }
 
     /// Re-runs diarization. Worth offering because labels improve as more voices get

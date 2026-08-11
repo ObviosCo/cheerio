@@ -69,7 +69,8 @@ its context menu or detail view).
   (two minutes of idle time by default — every edit restarts it; configurable in Settings ›
   General, and directives skip it) where notes you didn't get to type live still make it into
   the enhancement pass, and where you can set the meeting kind and decide whether the
-  transcript-ready callback runs for this meeting, with an optional per-meeting prompt for it.
+  transcript-ready callback runs for this meeting, with an optional per-meeting prompt for it —
+  and, when more than one callback trigger is configured, which one it goes to.
   Confirm to process immediately, or walk away and it processes itself. Notes stay editable
   from the meeting's detail view afterward too, for the follow-up thought that occurs to you
   once the call ends — but editing *there* doesn't re-run the enhancement pass below, which is
@@ -87,7 +88,12 @@ its context menu or detail view).
   convertible after the fact if you forgot to say so going in — turn a finished meeting into
   something an agent can act on without you copying and pasting — see
   [Use with Claude Desktop, Claude Code, or any MCP client](#use-with-claude-desktop-claude-code-or-any-mcp-client)
-  below.
+  below. The callback isn't one command anymore: Settings → Callback manages several named
+  triggers — a directive session to Claude Code against a repo, a client meeting to a triage
+  prompt — with exactly one marked default. The default fires automatically; a different one
+  can be picked in the post-meeting review window; and any trigger can be run against an
+  already-processed meeting from its page, which is also how you re-process a meeting through
+  a different agent.
 - **Calendar-aware, optionally.** EventKit supplies the current event to title a recording and
   link it back. Denying calendar access costs you only the convenience.
 - **Nothing to configure before your first recording.** First launch walks through the microphone,

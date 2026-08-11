@@ -18,6 +18,17 @@ struct RecordingView: View {
     /// moment a scroll leaves the bottom edge, resumed only once one returns to
     /// it — see ``liveTranscriptScroll``.
     @State private var isPinnedToBottom = true
+    /// The raw trigger-list blob, observed so the holding controls re-render
+    /// when Settings edits triggers while a hold is on screen — a plain
+    /// `TranscriptCallbackSettings.triggers` read in `body` is invisible to
+    /// SwiftUI's invalidation, so the toggle and picker would keep showing a
+    /// configuration that no longer exists. Never decoded here: the *value*
+    /// still comes from `TranscriptCallbackSettings`, which owns normalization
+    /// and the legacy-command migration; this property exists to be read (see
+    /// ``holdingControls``) purely as the dependency that triggers the refresh.
+    /// Settings writes the blob on every edit, including ones that only change
+    /// the mirrored legacy key's value, so observing the blob alone suffices.
+    @AppStorage(TranscriptCallbackSettings.triggersDefaultsKey) private var observedTriggersData: Data?
 
     var body: some View {
         @Bindable var session = session
@@ -183,12 +194,40 @@ struct RecordingView: View {
                 .fixedSize()
                 .labelsHidden()
 
-                // Only offered when a command exists to run — a toggle that
-                // controls nothing would read as broken, and Settings › Callback
-                // is where a command gets configured in the first place.
-                if TranscriptCallbackSettings.command != nil {
+                // Reading the observed blob is what makes a Settings edit
+                // mid-hold re-evaluate everything below — see
+                // ``observedTriggersData``.
+                let _ = observedTriggersData
+                // Only offered when a trigger exists that could run — a toggle
+                // that controls nothing would read as broken, and Settings ›
+                // Callback is where triggers get configured in the first place.
+                // `hasRunnableTrigger`, not `command != nil`: a blank default
+                // with a usable second trigger still leaves something to choose.
+                if TranscriptCallbackSettings.hasRunnableTrigger {
                     Toggle("Run callback", isOn: $session.holdRunsCallback)
                         .toggleStyle(.checkbox)
+                    // The per-meeting trigger choice (#137). Hidden with one
+                    // trigger configured, when there's nothing to choose — the
+                    // single-command experience stays exactly what it was.
+                    let triggers = TranscriptCallbackSettings.triggers
+                    if triggers.count > 1 {
+                        Picker("Trigger", selection: $session.holdTriggerID) {
+                            ForEach(triggers) { trigger in
+                                // Blank-command triggers stay visible but can't
+                                // be chosen, matching the manual-run menus:
+                                // picking one would leave "Run callback" checked
+                                // while the fire decision deterministically
+                                // no-ops on the blank command.
+                                Text(trigger.displayName)
+                                    .tag(trigger.id as UUID?)
+                                    .selectionDisabled(trigger.trimmedCommand == nil)
+                            }
+                        }
+                        .fixedSize()
+                        .labelsHidden()
+                        .accessibilityLabel("Callback trigger")
+                        .disabled(!session.holdRunsCallback)
+                    }
                     TextField(
                         "Additional prompt for the callback (CHEERIO_ADDITIONAL_PROMPT)",
                         text: $session.holdCallbackPrompt
