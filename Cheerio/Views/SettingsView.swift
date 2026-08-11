@@ -66,6 +66,10 @@ struct MCPSettingsView: View {
             } footer: {
                 Text("Cheerio doesn't edit other apps' settings — copy the one you need and paste it in yourself.")
                     .font(.caption)
+                    // Explicit, not left to the Form's own footer style: the
+                    // system's grouped-form footer gray measures 3.9:1 in light
+                    // mode, under AA (found by the #142 contrast audit).
+                    .foregroundStyle(Theme.Colors.textSecondary)
             }
         }
         .formStyle(.grouped)
@@ -189,7 +193,7 @@ struct GeneralSettingsView: View {
                 }
                 Text(holdExplanation)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.textSecondary)
             } header: {
                 Text("After a recording stops")
             }
@@ -392,6 +396,10 @@ struct TranscriptCallbackSettingsView: View {
                     "Fires your command against the most recently completed meeting, regardless of the scope above, so you can verify it works without recording something new."
                 )
                 .font(.caption)
+                // Explicit, not left to the Form's own footer style: the system's
+                // grouped-form footer gray measures 3.9:1 in light mode, under AA
+                // (found by the #142 contrast audit).
+                .foregroundStyle(Theme.Colors.textSecondary)
             }
         }
         .formStyle(.grouped)

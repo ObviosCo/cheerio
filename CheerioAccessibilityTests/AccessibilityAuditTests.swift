@@ -212,20 +212,47 @@ final class AccessibilityAuditTests: XCTestCase {
     // MARK: - Onboarding
 
     /// The walkthrough's first step, reached the way a real first run reaches it:
-    /// an empty home with the completed flag off. One step rather than all seven —
-    /// the walkthrough steps share `OnboardingScaffold`'s text styles, so the
-    /// welcome step stands in for the set until there's a reason to widen.
+    /// an empty home with the completed flag off.
     func testOnboardingWelcomeLight() throws { try auditOnboardingWelcome(appearance: .light) }
     func testOnboardingWelcomeDark() throws { try auditOnboardingWelcome(appearance: .dark) }
+
+    // The other six steps, opened directly with `-screenshotOnboardingStep` (raw
+    // values of `OnboardingCoordinator.Step`) — the steps share `OnboardingScaffold`
+    // but each carries its own captions, and the permission steps' explanatory text
+    // exists on no other screen. Against the seeded home with the completed flag
+    // on, because the step argument is applied from the *library* window's launch
+    // task, which a genuine first run never reaches; the library window is closed
+    // once the walkthrough is up, for the same overlap reason as Settings. The
+    // permission steps' granted/denied status captions have no launch-argument
+    // hook — the harness never asks macOS for anything — so those states stay
+    // unaudited here.
+
+    func testOnboardingMicrophoneLight() throws { try auditOnboardingStep(1, appearance: .light) }
+    func testOnboardingMicrophoneDark() throws { try auditOnboardingStep(1, appearance: .dark) }
+
+    func testOnboardingSystemAudioLight() throws { try auditOnboardingStep(2, appearance: .light) }
+    func testOnboardingSystemAudioDark() throws { try auditOnboardingStep(2, appearance: .dark) }
+
+    func testOnboardingCalendarLight() throws { try auditOnboardingStep(3, appearance: .light) }
+    func testOnboardingCalendarDark() throws { try auditOnboardingStep(3, appearance: .dark) }
+
+    func testOnboardingVoiceEnrollmentLight() throws { try auditOnboardingStep(4, appearance: .light) }
+    func testOnboardingVoiceEnrollmentDark() throws { try auditOnboardingStep(4, appearance: .dark) }
+
+    func testOnboardingTeammateVoicesLight() throws { try auditOnboardingStep(5, appearance: .light) }
+    func testOnboardingTeammateVoicesDark() throws { try auditOnboardingStep(5, appearance: .dark) }
+
+    func testOnboardingFinishLight() throws { try auditOnboardingStep(6, appearance: .light) }
+    func testOnboardingFinishDark() throws { try auditOnboardingStep(6, appearance: .dark) }
 
     // MARK: - Audits
 
     /// Runs the audit over everything the app currently has on screen, filtering
-    /// each finding through ``shouldSuppress(_:)`` — see the type-level comment for
-    /// the standard a suppression rule has to meet.
+    /// each finding through ``shouldSuppress(_:in:)`` — see the type-level comment
+    /// for the standard a suppression rule has to meet.
     private func audit(_ app: XCUIApplication) throws {
         try app.performAccessibilityAudit(for: Self.auditTypes) { issue in
-            self.shouldSuppress(issue)
+            self.shouldSuppress(issue, in: app)
         }
     }
 
@@ -274,6 +301,18 @@ final class AccessibilityAuditTests: XCTestCase {
         try audit(app)
     }
 
+    private func auditOnboardingStep(_ step: Int, appearance: Appearance) throws {
+        let app = try launchSeeded(
+            Self.libraryArguments + [
+                "-screenshotOnboardingStep", String(step),
+                "-screenshotCloseMainWindow", "YES",
+            ],
+            appearance: appearance
+        )
+        awaitWindow(of: app)
+        try audit(app)
+    }
+
     private func auditOnboardingWelcome(appearance: Appearance) throws {
         let app = launch(
             home: try freshHome(),
@@ -303,44 +342,63 @@ final class AccessibilityAuditTests: XCTestCase {
     /// than a color problem in the app. Everything here re-checks evidence about
     /// *this* element at *this* moment — no rule matches on name, screen, or
     /// appearance, so a genuine regression on a suppressed element's twin still
-    /// fails.
+    /// fails — and every rule resolves ambiguity toward *failing*: when the
+    /// evidence can't positively clear a finding, the check goes red and a person
+    /// decides.
     ///
-    /// Two rules, both grounded in the first run's measured findings (see the
+    /// Three rules, each grounded in the first runs' measured findings (see the
     /// type-level comment):
     ///
-    /// 1. **The element isn't where the audit sampled.** An element scrolled out of
-    ///    its viewport, or whose accessibility frame misses its rendered glyphs
-    ///    (a baseline-aligned bullet reports a frame the glyph isn't in), samples a
-    ///    slice of background — or of whatever text happens to sit next to it — and
-    ///    the resulting ratio describes pixels the element didn't draw. Not being
-    ///    hittable at its own hit point, or rendering as one flat color, is that
-    ///    case. The flat-region rule's known blind spot is text drawn in *exactly*
-    ///    its background's color — pixels can't see what was never rendered — but
-    ///    that requires equality, not just poor contrast: #141's dark-on-dark still
-    ///    renders two clusters and still fails.
+    /// 1. **The element isn't at its own hit point.** Content scrolled out of a
+    ///    viewport keeps its accessibility element; what the audit sampled there is
+    ///    whatever ended up drawn at those coordinates instead. Not hittable is
+    ///    AX's own positive statement of that.
     ///
-    /// 2. **The rendered pixels prove AA.** On the runner's 1x display the audit
-    ///    flags small text whose core glyph pixels measure well past 4.5:1 — the
-    ///    first run flagged one element at a measured 17.3:1 — because antialiased
-    ///    edge pixels dominate a small glyph's coverage. Re-measuring the element's
-    ///    own screenshot, foreground cluster against background cluster, and
-    ///    suppressing only at ≥ 4.5:1 keeps the check anchored to what WCAG
-    ///    actually asks of the colors on screen.
-    private func shouldSuppress(_ issue: XCUIAccessibilityAuditIssue) -> Bool {
+    /// 2. **The frame extends past every window the app has.** A clipped element
+    ///    at a scroll boundary reports a frame that crosses the window's edge, so
+    ///    part of the sampled region is provably not the app's rendering at all —
+    ///    one measured finding was 41% desktop wallpaper. An empty frame is the
+    ///    degenerate case: no drawable area, nothing sampled was the element.
+    ///
+    /// 3. **The rendered pixels prove AA, for plain text only.** On the runner's
+    ///    1x display the audit flags small text whose core glyph pixels measure
+    ///    well past 4.5:1 — the first run flagged one element at a measured
+    ///    17.3:1 — because antialiased edge pixels dominate a small glyph's
+    ///    coverage. ``measuredTextContrast(of:)`` re-measures the element's own
+    ///    screenshot and suppresses only when the *dominant* ink clears 4.5:1; a
+    ///    compound element (a button with an icon, a row with a border) or an
+    ///    element where the high-contrast cluster is a minority next to some
+    ///    other ink doesn't qualify and stays red.
+    private func shouldSuppress(_ issue: XCUIAccessibilityAuditIssue, in app: XCUIApplication) -> Bool {
         guard let element = issue.element, element.exists else { return false }
         if !element.isHittable { return true }
-        guard let measured = Self.measuredContrast(of: element) else { return false }
-        // Flat region: nothing distinguishable was rendered inside the frame the
-        // audit measured — rule 1's second half.
-        if measured < 1.1 { return true }
+        let frame = element.frame
+        if frame.isEmpty { return true }
+        let windows = app.windows.allElementsBoundByIndex
+        if !windows.contains(where: { $0.frame.insetBy(dx: -1, dy: -1).contains(frame) }) {
+            return true
+        }
+        guard element.elementType == .staticText else { return false }
+        guard let measured = Self.measuredTextContrast(of: element) else { return false }
         return measured >= Self.aaContrast
     }
 
-    /// The element's rendered contrast, measured from its own screenshot: the most
-    /// frequent color is the background, and the most contrasting color that still
-    /// covers a meaningful share of pixels (≥ 0.5%, floor 3 — below that it's an
-    /// antialiasing remnant, not a glyph) is the foreground.
-    private static func measuredContrast(of element: XCUIElement) -> Double? {
+    /// The rendered contrast of a text element, measured from its own screenshot,
+    /// or nil when the pixels don't look like one ink on one background — nil
+    /// means "can't be cleared", never "fine".
+    ///
+    /// The most frequent color is the background. Among the remaining colors that
+    /// cover a meaningful share of pixels (≥ 0.5%, floor 3 — below that it's an
+    /// antialiasing remnant, not a glyph), the one most contrasting with the
+    /// background is taken as the ink — for a glyph ramp that's the core stroke
+    /// color, since every antialiased midtone sits between the stroke and the
+    /// background by construction. Two guards keep that assumption honest: a
+    /// region with no candidate at all (flat — nothing legible was rendered where
+    /// the frame claims) returns nil rather than passing, and the ink must be at
+    /// least half as common as the largest candidate cluster, so a minority
+    /// high-contrast color (a second, darker ink; a stray border) can't vouch for
+    /// text that actually renders in something weaker.
+    private static func measuredTextContrast(of element: XCUIElement) -> Double? {
         let image = element.screenshot().image
         guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
         let width = cgImage.width
@@ -370,17 +428,23 @@ final class AccessibilityAuditTests: XCTestCase {
                 UInt32(pixels[offset]) << 16 | UInt32(pixels[offset + 1]) << 8 | UInt32(pixels[offset + 2])
             counts[key, default: 0] += 1
         }
-        guard let background = counts.max(by: { $0.value < $1.value })?.key else { return nil }
+        guard let background = counts.max(by: { $0.value < $1.value }) else { return nil }
         let significant = max(3, (width * height) / 200)
-        let backgroundLuminance = luminance(background)
-        var best = 1.0
-        for (color, count) in counts where count >= significant {
-            let l = luminance(color)
-            let ratio =
-                (max(l, backgroundLuminance) + 0.05) / (min(l, backgroundLuminance) + 0.05)
-            if ratio > best { best = ratio }
-        }
-        return best
+        let backgroundLuminance = luminance(background.key)
+        let candidates = counts.filter { $0.key != background.key && $0.value >= significant }
+        guard
+            let ink = candidates.max(by: {
+                contrast(luminance($0.key), backgroundLuminance) < contrast(luminance($1.key), backgroundLuminance)
+            }),
+            let commonest = candidates.values.max(),
+            ink.value * 2 >= commonest
+        else { return nil }
+        return contrast(luminance(ink.key), backgroundLuminance)
+    }
+
+    /// WCAG 2.1 contrast ratio between two relative luminances.
+    private static func contrast(_ a: Double, _ b: Double) -> Double {
+        (max(a, b) + 0.05) / (min(a, b) + 0.05)
     }
 
     /// WCAG 2.1 relative luminance of a packed sRGB pixel.

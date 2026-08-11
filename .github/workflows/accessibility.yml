@@ -21,9 +21,11 @@
 # Same rule as `screenshots.yml`, same reason: this is a `pull_request` workflow, so
 # everything it runs — `bootstrap.sh`, the seeder, the test bundle, this file — is
 # unreviewed code from the pull request. It holds `contents: read` and nothing else,
-# and it publishes nothing; its only output is the check's verdict. If a step here
-# ever needs to write anything, it belongs behind a `workflow_run` split like
-# `screenshots-publish.yml`.
+# and it publishes nothing. Its outputs are the check's verdict and one diagnostic
+# artifact (the `.xcresult`, uploaded below so a red run names its elements) — an
+# artifact upload needs no write permission and nothing downstream executes or
+# publishes it. If a step here ever needs to write anything, it belongs behind a
+# `workflow_run` split like `screenshots-publish.yml`.
 name: Accessibility audit
 
 on:

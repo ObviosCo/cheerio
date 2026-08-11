@@ -396,7 +396,7 @@ struct MeetingListView: View {
                             // tracks the deadline moving as edits extend it.
                             Text(deadline, style: .timer)
                                 .font(.caption.monospacedDigit())
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Theme.Colors.textSecondary)
                         }
                     }
                 } icon: {

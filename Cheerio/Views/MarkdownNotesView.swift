@@ -46,16 +46,17 @@ struct MarkdownNotesView: View {
                 Text(marker)
                     .foregroundStyle(Theme.Colors.textSecondary)
                     .monospacedDigit()
-                    // Decorative: the marker conveys nothing the list structure
-                    // doesn't. Leaving it in the tree also fed the contrast audit
-                    // (#142) a frame whose rendered pixels miss the glyph — a
-                    // baseline-aligned "•" reports a region the audit measures as
-                    // blank and flags — so it goes the way any purely decorative
-                    // glyph should.
-                    .accessibilityHidden(true)
                 Text(Self.inline(text))
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            // One element, "1. Ship the fix" — not so a reader loses the marker
+            // (an ordered item's number is content, not decoration), but so
+            // nothing exposes the bare marker on its own: this HStack has no list
+            // semantics for the marker to lean on, and a standalone baseline-
+            // aligned "•" also reports an accessibility frame its glyph isn't in,
+            // which the contrast audit (#142) then measures as a blank region and
+            // flags. Combined, the frame covers the whole row's rendered text.
+            .accessibilityElement(children: .combine)
         case .paragraph(let text):
             Text(Self.inline(text))
                 .frame(maxWidth: .infinity, alignment: .leading)

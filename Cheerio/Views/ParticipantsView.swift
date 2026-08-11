@@ -28,6 +28,10 @@ struct ParticipantsView: View {
                     "Save as many voices as you like. At most \(SpeakerAttributionService.maximumSpeakers) are primed for any one meeting, chosen per meeting under “Who was here” — so a voice that wasn't in the room doesn't take a slot from someone who was."
                 )
                 .font(.caption)
+                // Explicit, not left to the Form's own footer style: the system's
+                // grouped-form footer gray measures 3.9:1 in light mode, under AA
+                // (found by the #142 contrast audit).
+                .foregroundStyle(Theme.Colors.textSecondary)
             }
 
             Section("Add a voice") {
