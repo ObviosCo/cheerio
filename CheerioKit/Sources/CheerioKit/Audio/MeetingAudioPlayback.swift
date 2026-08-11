@@ -53,16 +53,26 @@ public enum MeetingAudioPlayback {
     /// channel offset to translate. What still needs handling is the edges:
     /// transcription can finalize a segment timestamped past the shorter (or
     /// only) channel's end, and a player mid-load reports a zero or non-finite
-    /// duration, so the target is clamped into `[0, duration]` rather than
-    /// handed to `AVPlayer.seek` raw — a seek past the end would fire the
-    /// played-to-end path and reset the playhead instead of landing anywhere.
+    /// duration, so the target is clamped into `[0, duration - endMargin]`
+    /// rather than handed to `AVPlayer.seek` raw. The margin matters as much
+    /// as the clamp: the caller seeks and immediately plays, and playing from
+    /// the exact end fires `AVPlayerItemDidPlayToEndTime` at once — the
+    /// played-to-end reset to zero this helper exists to avoid — so an
+    /// overshoot has to land audibly *inside* the audio, not on its edge.
     public static func seekTime(
         forSegmentStart startTime: TimeInterval,
         duration: TimeInterval
     ) -> TimeInterval {
         guard startTime.isFinite, duration.isFinite, duration > 0 else { return 0 }
-        return min(max(0, startTime), duration)
+        return min(max(0, startTime), max(0, duration - endMargin))
     }
+
+    /// How far short of the end an overshooting (or nearly-ending) segment
+    /// lands. Half a second is enough playable audio for the tap to read as
+    /// "jumped to the end" rather than as a no-op that snapped back to 0:00;
+    /// audio shorter than the margin collapses to the start, where the same
+    /// holds trivially.
+    private static let endMargin: TimeInterval = 0.5
 
     /// Merges every channel that recorded into one asset, so the meeting plays
     /// back as a single listening experience rather than a per-channel picker.

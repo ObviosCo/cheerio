@@ -22,11 +22,24 @@ struct MeetingAudioPlayerView: View {
     @State private var scrubTime: TimeInterval = 0
 
     var body: some View {
-        if model.loadError != nil {
-            StatusLabel(.error, "Couldn't load this meeting's audio")
-        } else {
-            controls
+        Group {
+            if model.loadError != nil {
+                StatusLabel(.error, "Couldn't load this meeting's audio")
+            } else {
+                controls
+            }
         }
+        // The owner's meeting-keyed `.task` handles meeting switches, but a
+        // retention purge while this meeting stays selected removes only *this*
+        // view (`hasPlayableAudio` flips false the moment Settings clears
+        // `audioDirectory`) — the detail neither disappears nor re-runs its
+        // task, so without this hook the purged audio keeps playing with the
+        // controls gone, and `isReady` keeps the transcript's seek affordances
+        // alive. Captures this renderer's own `model` so a meeting switch
+        // (which recreates this view via `.id`) can only ever tear down the
+        // instance it was showing, never the owner's replacement; teardown is
+        // idempotent, so overlapping with the owner's own calls is fine.
+        .onDisappear { model.teardown() }
     }
 
     private var displayedTime: TimeInterval {

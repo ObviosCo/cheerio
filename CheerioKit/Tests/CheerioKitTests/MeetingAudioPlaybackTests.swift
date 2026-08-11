@@ -104,9 +104,25 @@ import Testing
 
     /// A segment can finalize with a start time past the end of the audio —
     /// the shorter channel ran out, or the recorder was cut off before the
-    /// transcriber was — and the answer is the end, not a raw overshoot.
-    @Test func seekTimeClampsASegmentPastTheAudioToTheEnd() {
-        #expect(MeetingAudioPlayback.seekTime(forSegmentStart: 305, duration: 300) == 300)
+    /// transcriber was — and the answer is just *short* of the end, not the
+    /// end itself: `playFrom` seeks then plays, and playing from the exact
+    /// end fires the played-to-end reset to zero immediately, which is the
+    /// no-op-looking snap-back the clamp exists to avoid.
+    @Test func seekTimeClampsASegmentPastTheAudioShortOfTheEnd() {
+        #expect(MeetingAudioPlayback.seekTime(forSegmentStart: 305, duration: 300) == 299.5)
+    }
+
+    /// The margin applies to in-range segments too — a line whose start falls
+    /// inside the last half-second would hit the same instant end-reset as an
+    /// overshoot if it were passed through untouched.
+    @Test func seekTimePullsANearEndSegmentBackToTheMargin() {
+        #expect(MeetingAudioPlayback.seekTime(forSegmentStart: 299.8, duration: 300) == 299.5)
+    }
+
+    /// Audio shorter than the end margin can't land inside it — the clamp
+    /// collapses to the start instead of going negative.
+    @Test func seekTimeCollapsesToTheStartWhenAudioIsShorterThanTheMargin() {
+        #expect(MeetingAudioPlayback.seekTime(forSegmentStart: 5, duration: 0.3) == 0)
     }
 
     @Test func seekTimeNeverGoesNegative() {
