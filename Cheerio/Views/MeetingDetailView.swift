@@ -682,14 +682,17 @@ struct MeetingDetailView: View {
         // The menu is disabled on the same condition, but a click can be in
         // flight when the disable lands — this is the check that holds.
         guard !session.isProcessing(meeting) else { return }
-        // Resolved *now*, not at render: this view doesn't observe the trigger
-        // list, so the menu can be arbitrarily stale against a Settings window
-        // editing it — the command that runs must be the one configured at the
-        // moment of the click. A trigger that's been deleted (or blanked) since
-        // render refuses to run, on the same status line a failed run would
-        // use, rather than executing a command the user can no longer see —
-        // and deliberately *without* the fire-time fallback to the default,
-        // which here would run a different command than the one clicked.
+        // Resolved *now*, not at render: `observedTriggersData` refreshes the
+        // menu when Settings edits triggers, but a re-render is an eventual
+        // courtesy, not a guarantee at the instant of the click — an open menu
+        // built from the previous configuration can still deliver its action
+        // after an edit lands. The command that runs must be the one configured
+        // at the moment of the click, so it's read here, from the id alone. A
+        // trigger that's been deleted (or blanked) in that window refuses to
+        // run, on the same status line a failed run would use, rather than
+        // executing a command the user can no longer see — and deliberately
+        // *without* the fire-time fallback to the default, which here would run
+        // a different command than the one clicked.
         guard let command = TranscriptCallbackSettings.trigger(withID: id)?.trimmedCommand else {
             TranscriptCallbackStatus.shared.markFailedBeforeStarting(
                 title: meeting.title,

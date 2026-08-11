@@ -350,9 +350,18 @@ struct TranscriptCallbackSettingsView: View {
     /// launch recovery of a held meeting runs that same pipeline while `state`
     /// sits at `.idle`, and the meeting it's mid-way through is exactly the
     /// "most recently completed" one this would export half-processed.
+    ///
+    /// `endedCleanly`, the same readiness contract the detail view's run surface
+    /// enforces: a crash-abandoned recording gets its `endedAt` backfilled at
+    /// launch without ever running processing, and when that row is newest it
+    /// would both hand a crash-partial transcript to an agent *and* stand in
+    /// front of the most recent clean meeting someone actually wants to test
+    /// against. Filtered here rather than in the `#Predicate`, which can't call
+    /// a computed property — and keeping the one definition of "clean" in
+    /// `Meeting.endedCleanly` beats duplicating its logic into a query string.
     private var lastMeeting: Meeting? {
         guard session.state == .idle, !session.isProcessingInBackground else { return nil }
-        return completedMeetings.first
+        return completedMeetings.first(where: \.endedCleanly)
     }
 
     var body: some View {
