@@ -472,9 +472,9 @@ final class AccessibilityAuditTests: XCTestCase {
     /// cleared", never "fine".
     ///
     /// The most frequent color is the background. Every other color covering a
-    /// meaningful share of pixels (≥ 0.5%, floor 3 — below that it's a stray
-    /// remnant, not a glyph) must then be one of exactly three things, or the
-    /// whole measurement is nil:
+    /// meaningful share of the *non-background* pixels (≥ 1% of what's drawn,
+    /// floor 3 — below that it's a stray remnant, not a glyph) must then be one
+    /// of exactly three things, or the whole measurement is nil:
     ///
     /// - **a passing ink** — contrast ≥ 4.5:1 against the background;
     /// - **antialiasing of a passing ink** — geometrically a blend, lying on the
@@ -531,7 +531,13 @@ final class AccessibilityAuditTests: XCTestCase {
             counts[key, default: 0] += 1
         }
         guard let background = counts.max(by: { $0.value < $1.value }) else { return nil }
-        let significant = max(3, (width * height) / 200)
+        // Against the *drawn* pixels, not the frame's area: a two-line tip in a
+        // wide, mostly-blank frame rendered its whole ink core in under 0.5% of
+        // the region (measured: 44 core pixels under an area floor of 53), and a
+        // floor keyed on area silently demoted the ink to noise — leaving only
+        // near-background clusters, which reads as flat and fails. What the floor
+        // exists to drop is stray remnants relative to what's actually rendered.
+        let significant = max(3, (width * height - background.value) / 100)
         let backgroundLuminance = luminance(background.key)
         let candidates = counts.keys.filter { $0 != background.key && counts[$0]! >= significant }
 
