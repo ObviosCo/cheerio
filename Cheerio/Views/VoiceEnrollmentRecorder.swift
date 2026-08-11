@@ -396,7 +396,10 @@ struct VoiceEnrollmentRecorder: View {
         // has been created yet, so returning here is a plain no-op.
         guard !Task.isCancelled else { return }
 
-        let candidate = MicrophoneCapture { _ in }
+        // No silence verdict for a mic check: it runs the tap while somebody
+        // watches the meter, possibly without speaking, and the meter itself is
+        // already showing them whatever a log line would have said.
+        let candidate = MicrophoneCapture(logsSilenceVerdict: false) { _ in }
         do {
             // Same rationale as `startRecording()`: a close-mic'd single voice with
             // no far-end signal to cancel, and a mic check that altered what it
