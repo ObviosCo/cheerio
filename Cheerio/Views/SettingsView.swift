@@ -366,9 +366,19 @@ struct TranscriptCallbackSettingsView: View {
                     TextField("Command", text: soleCommand, prompt: Text("e.g. claude -p \"Handle this transcript\""))
                         .font(.system(.body, design: .monospaced))
                 }
-                Button("Add Trigger", systemImage: "plus") { addTrigger() }
-                    .buttonStyle(.borderless)
-                    .font(.caption)
+                // Hidden until there's a configured trigger to add *to*: from an
+                // empty configuration the first click used to create a blank
+                // trigger that the single-command branch rendered identically to
+                // the empty field already showing — a click that visibly did
+                // nothing, two clicks to reach the named editor. Gated like
+                // this, every click moves the count past one and lands in the
+                // editor; an unconfigured setup types its first command first,
+                // which is also the order that makes sense.
+                if triggers.count > 1 || triggers.first?.trimmedCommand != nil {
+                    Button("Add Trigger", systemImage: "plus") { addTrigger() }
+                        .buttonStyle(.borderless)
+                        .font(.caption)
+                }
                 Picker("Run for", selection: $scopeRaw) {
                     ForEach(TranscriptCallbackScope.allCases) { option in
                         Text(option.label).tag(option.rawValue)
