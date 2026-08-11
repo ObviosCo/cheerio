@@ -59,9 +59,12 @@ extension Meeting {
     /// Zero-or-negative-duration segments are dropped: a span with no width would
     /// only ever render as an invisible sliver, and `endTime < startTime` has
     /// shown up from a diarization edge case that's otherwise harmless to ignore.
+    /// Bleed segments are dropped too — the far end already paints these seconds
+    /// through its own channel's spans, so the mic's copy would double-paint them
+    /// under the wrong speaker.
     public var speakerTimeline: [SpeakerTimelineSpan] {
         segments.enumerated()
-            .filter { $0.element.endTime > $0.element.startTime }
+            .filter { $0.element.endTime > $0.element.startTime && !$0.element.isBleed }
             .sorted { $0.element.startTime < $1.element.startTime }
             .map { index, segment in
                 SpeakerTimelineSpan(

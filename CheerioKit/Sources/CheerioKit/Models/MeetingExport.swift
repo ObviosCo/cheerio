@@ -82,6 +82,11 @@ public struct MeetingExport: Codable, Sendable, Equatable {
         self.actionItems = meeting.reconciledActionItems(ownerNames: ownerNames)
         self.segments =
             meeting.segments
+            // Bleed lines stay out of the export entirely, matching what the app
+            // itself shows and summarizes: a consumer parsing the transcript would
+            // otherwise read each remote utterance twice, the second copy flagged
+            // `isOwner` — precisely the mis-attribution an agent must never act on.
+            .filter { !$0.isBleed }
             // startTime alone can't order this deterministically: the two engines run
             // independently and both start at 0, and SwiftData relationship order is
             // not stable across processes. Tie-break on everything that reaches the

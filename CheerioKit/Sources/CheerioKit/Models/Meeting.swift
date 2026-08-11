@@ -250,8 +250,15 @@ public final class Meeting {
     ///
     /// Uses diarized speaker labels when available, falling back to the capture
     /// channel for meetings recorded before diarization ran.
+    ///
+    /// Bleed lines are excluded: they're the far end's words repeated on the mic
+    /// channel (``TranscriptSegment/isBleed``), and every reader of this string —
+    /// the summarizer, the title generator, the copy-transcript action — would
+    /// otherwise see each remote utterance twice, once mis-attributed to "Me",
+    /// which is exactly the summary skew issue #5 describes.
     public var transcriptText: String {
         segments
+            .filter { !$0.isBleed }
             .sorted { $0.startTime < $1.startTime }
             .map { "[\($0.displayLabel)] \($0.text)" }
             .joined(separator: "\n")
@@ -288,6 +295,18 @@ public final class TranscriptSegment {
     /// it (see that property's doc) and cleared by ``assignSpeaker(_:)`` the moment a
     /// line is renamed or reset, so the two states never linger stale together.
     public var isSpeakerLabelConfirmed: Bool = false
+    /// Set when this mic-channel line is really the far end of a call heard through
+    /// the speakers — the same words the system tap already carries, transcribed a
+    /// second time and mis-attributed to "Me" (issue #5). Verdicts come from
+    /// ``Meeting/markBleedSegments()`` in post-processing. Marked, never deleted:
+    /// the consumers that shouldn't see bleed (``Meeting/transcriptText``, the
+    /// speaker summaries, `MeetingExport`) exclude flagged lines themselves, so a
+    /// wrong verdict stays reversible. Never true on the system channel — the tap
+    /// reads the call app's output digitally and can't hear the room, so the
+    /// duplication only ever runs one way. A primitive with a default, so existing
+    /// stores migrate additively — see ``Meeting/speakerSlotAssignerStorage``'s doc
+    /// for the composite trap this avoids (the 26.8.10 incident).
+    public var isBleed: Bool = false
     public var meeting: Meeting?
 
     public var channel: SpeakerChannel {
@@ -404,7 +423,10 @@ extension Meeting {
 
         var order: [Key] = []
         var grouped: [Key: [TranscriptSegment]] = [:]
-        for segment in segments {
+        // Bleed lines are the far end's voice on the mic channel — counting them
+        // would inflate "Me" (or whoever diarization guessed) with words someone
+        // else said, in the panel and in the talk-time math built on this.
+        for segment in segments where !segment.isBleed {
             let scoped =
                 TranscriptSegment.isDiarizerGeneratedLabel(segment.speakerLabel)
                 ? segment.channel
@@ -598,9 +620,15 @@ extension Meeting {
     }
 
     /// The time ranges to excerpt for one speaker, for building an enrollment sample.
+    ///
+    /// Bleed ranges are excluded even though ``speakerSummaries`` already hides
+    /// them from selection: during those seconds the mic CAF holds the far end's
+    /// voice, and an enrollment sample is the one place a few misfiled seconds
+    /// would keep doing damage — every future diarization pass would be primed
+    /// with the wrong person's audio under this speaker's name.
     public func ranges(for speaker: SpeakerSummary) -> [AudioExcerpt.Range] {
         segments
-            .filter { speaker.matches($0) && $0.channel == speaker.channel }
+            .filter { speaker.matches($0) && $0.channel == speaker.channel && !$0.isBleed }
             .map { AudioExcerpt.Range(start: $0.startTime, end: $0.endTime) }
     }
 

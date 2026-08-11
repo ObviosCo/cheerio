@@ -61,6 +61,12 @@ Each stream is converted (`AVAudioConverter`) to `SpeechAnalyzer.bestAvailableAu
 - Volatile results drive the live-transcript UI; final results become persisted `TranscriptSegment`s
 - First-run model install: `AssetInventory.assetInstallationRequest(supporting:)` with download progress surfaced in UI
 
+## Speaker bleed
+
+When a call plays through speakers, the mic hears the far end too, so every remote utterance transcribes twice — once cleanly on the system tap ("Them") and again on the mic, mis-attributed to "Me" (issue #5). The fix is textual, not DSP: `BleedDetector` (CheerioKit, `Processing/`) runs at the top of `CaptureSession.process()`, before diarization or summarization consume any segment, and flags mic-channel lines that are fuzzy near-duplicates of system-channel lines at overlapping time. Time overlap (±2.5s, because the two engines' timestamps disagree by 0.5–2s for the same utterance) only *gates* candidate pairs — simultaneous speech is normal conversation — and a semi-global character-level edit distance over normalized words makes the call, because bleed transcribes imperfectly ("ship the fix" heard as "shift the six"). Every constant errs toward keeping a line; the drop/keep decisions are pinned by fixtures in `BleedDetectorTests`.
+
+Flagged segments are **marked (`TranscriptSegment.isBleed`), never deleted**: `transcriptText`, the speaker summaries/timeline, enrollment excerpt ranges, diarization's labelling loop, and `MeetingExport` (and so MCP and the callback) all exclude them, and a wrong verdict stays one flag flip from undone. Only the mic channel is ever marked — the tap reads the call app's output digitally and can't hear the room, so the duplication runs one way by construction. Two things deliberately keep the bleed: the retained CAFs (this is a transcript fix, and the audio is the evidence) and the live transcript (detection needs finalized text from both channels, so bleed is visible live and cleaned at processing). Human-settled lines (renamed or confirmed) are never marked — a person's word outranks the detector, same as it outranks the diarizer.
+
 ## Diarization
 
 `SpeakerAttributionService` (actor) separates speakers *within* one recorded channel. It exists because `SpeechTranscriber` exposes no speaker information whatsoever — the channel split gives Me vs Them and nothing finer, which is useless for three people in a room or two participants on one Zoom connection.
