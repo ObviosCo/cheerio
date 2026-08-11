@@ -339,6 +339,12 @@ final class CaptureSession {
         // `RecordingMode` only ever decides the mic's echo cancellation.
         try micCapture.start(mode: .current)
         try systemTap.start()
+        // Armed only with both channels up: had `systemTap.start()` thrown,
+        // `rollbackFailedStart()` would stop a mic that ran for under a second
+        // during which nobody was asked to speak, and an unarmed watch stays
+        // quiet instead of logging a TCC diagnosis for a recording that never
+        // existed.
+        micCapture.armSilenceVerdict()
 
         // Inserted only now, not when `meeting` was created above: everything
         // since then can still throw (either engine's `start()`, either capture
