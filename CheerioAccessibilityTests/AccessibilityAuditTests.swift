@@ -131,11 +131,19 @@ final class AccessibilityAuditTests: XCTestCase {
     /// that *is* selected. The fix is `chListRowSelection`; this is what keeps it
     /// fixed.
     func testLibrarySelectedRowLight() throws {
-        try auditSeededLibrary(appearance: .light, extraArguments: ["-screenshotSelectMeeting", "1"])
+        try auditSeededLibrary(
+            appearance: .light,
+            extraArguments: ["-screenshotSelectMeeting", "1"],
+            anchoredOn: Self.selectedMeetingAnchor
+        )
     }
 
     func testLibrarySelectedRowDark() throws {
-        try auditSeededLibrary(appearance: .dark, extraArguments: ["-screenshotSelectMeeting", "1"])
+        try auditSeededLibrary(
+            appearance: .dark,
+            extraArguments: ["-screenshotSelectMeeting", "1"],
+            anchoredOn: Self.selectedMeetingAnchor
+        )
     }
 
     /// The same selected row while the window doesn't appear active —
@@ -154,14 +162,16 @@ final class AccessibilityAuditTests: XCTestCase {
     func testLibraryTranscriptLight() throws {
         try auditSeededLibrary(
             appearance: .light,
-            extraArguments: ["-screenshotSelectMeeting", "2", "-screenshotExpandTranscript", "YES"]
+            extraArguments: ["-screenshotSelectMeeting", "2", "-screenshotExpandTranscript", "YES"],
+            anchoredOn: Self.expandedTranscriptAnchor
         )
     }
 
     func testLibraryTranscriptDark() throws {
         try auditSeededLibrary(
             appearance: .dark,
-            extraArguments: ["-screenshotSelectMeeting", "2", "-screenshotExpandTranscript", "YES"]
+            extraArguments: ["-screenshotSelectMeeting", "2", "-screenshotExpandTranscript", "YES"],
+            anchoredOn: Self.expandedTranscriptAnchor
         )
     }
 
@@ -180,11 +190,11 @@ final class AccessibilityAuditTests: XCTestCase {
 
     /// Nothing selected: the empty-state dashboard (#124).
     func testLibraryEmptyStateLight() throws {
-        try auditSeededLibrary(appearance: .light)
+        try auditSeededLibrary(appearance: .light, anchoredOn: Self.dashboardAnchor)
     }
 
     func testLibraryEmptyStateDark() throws {
-        try auditSeededLibrary(appearance: .dark)
+        try auditSeededLibrary(appearance: .dark, anchoredOn: Self.dashboardAnchor)
     }
 
     /// The same dashboard with issue #125's voice-enrollment prompt on it, which
@@ -320,15 +330,61 @@ final class AccessibilityAuditTests: XCTestCase {
     /// Runs the audit over everything the app currently has on screen, filtering
     /// each finding through ``shouldSuppress(_:in:)`` — see the type-level comment
     /// for the standard a suppression rule has to meet.
-    private func audit(_ app: XCUIApplication) throws {
+    ///
+    /// `scope` limits an audit to one presented surface: with a modal sheet up,
+    /// everything behind it renders through the sheet's dimming veil —
+    /// de-emphasis macOS applies on purpose, to content that is neither
+    /// interactive nor meant to be read right now, and content every one of
+    /// those elements gets audited *undimmed* by this suite's other cases. A
+    /// finding whose element lies entirely outside the scope is that dimmed
+    /// backdrop, never the surface under audit.
+    private func audit(_ app: XCUIApplication, within scope: CGRect? = nil) throws {
         try app.performAccessibilityAudit(for: Self.auditTypes) { issue in
-            self.shouldSuppress(issue, in: app)
+            if let scope, let element = issue.element, element.exists,
+                !scope.intersects(element.frame)
+            {
+                return true
+            }
+            return self.shouldSuppress(issue, in: app)
         }
     }
 
-    private func auditSeededLibrary(appearance: Appearance, extraArguments: [String] = []) throws {
+    // The library states' anchors — one element per state that only exists once
+    // that state's launch argument took effect, so a hook that silently stops
+    // working fails the test instead of leaving it auditing the default library
+    // and passing. Same guard the Settings, sheet, and walkthrough audits carry.
+
+    /// "Rough notes" is the detail pane's own section heading — the dashboard
+    /// renders when nothing is selected, and it has no such text.
+    private static func selectedMeetingAnchor(in app: XCUIApplication) -> XCUIElement {
+        app.staticTexts["Rough notes"]
+    }
+
+    /// The transcript's first minute stamp only renders with the disclosure
+    /// *expanded* and segments in it — exactly the two things this state is for.
+    private static func expandedTranscriptAnchor(in app: XCUIApplication) -> XCUIElement {
+        app.staticTexts["0:00"]
+    }
+
+    /// The stats heading renders on the dashboard and nowhere in a meeting's
+    /// detail pane.
+    private static func dashboardAnchor(in app: XCUIApplication) -> XCUIElement {
+        app.staticTexts["This week"]
+    }
+
+    /// Issue #125's prompt — the whole point of the no-enrollment store.
+    private static func enrollmentPromptAnchor(in app: XCUIApplication) -> XCUIElement {
+        app.buttons["Enroll your voice"]
+    }
+
+    private func auditSeededLibrary(
+        appearance: Appearance,
+        extraArguments: [String] = [],
+        anchoredOn anchor: (XCUIApplication) -> XCUIElement
+    ) throws {
         let app = try launchSeeded(Self.libraryArguments + extraArguments, appearance: appearance)
         awaitWindow(of: app)
+        try requireAnchor(anchor(app))
         try audit(app)
     }
 
@@ -343,9 +399,33 @@ final class AccessibilityAuditTests: XCTestCase {
             appearance: appearance
         )
         awaitWindow(of: app)
+        try requireAnchor(Self.selectedMeetingAnchor(in: app))
         XCUIApplication(bundleIdentifier: "com.apple.finder").activate()
+        // The state assertion, not just a sleep: if Finder never actually took
+        // activation, this would re-audit `Accent/Selection` and quietly leave
+        // the inactive fill uncovered.
+        XCTAssertTrue(
+            app.wait(for: .runningBackground, timeout: Self.windowTimeout),
+            "Finder never took activation — the inactive selection fill was never on screen."
+        )
+        guard app.state == .runningBackground else { return }
+        // The redraw to the inactive fill has nothing observable; same reasoning
+        // as `settle`.
         Thread.sleep(forTimeInterval: 1)
         try audit(app)
+    }
+
+    /// A missing anchor aborts the test rather than letting it audit — and pass
+    /// against — a state it can't prove. The assertion carries the message; the
+    /// thrown error is only what stops the run.
+    private struct MissingAnchor: Error {}
+
+    private func requireAnchor(_ element: XCUIElement) throws {
+        XCTAssertTrue(
+            element.waitForExistence(timeout: Self.windowTimeout),
+            "The audited state's anchor never appeared."
+        )
+        guard element.exists else { throw MissingAnchor() }
     }
 
     private func auditEnrollSheet(appearance: Appearance) throws {
@@ -364,8 +444,15 @@ final class AccessibilityAuditTests: XCTestCase {
             heading.waitForExistence(timeout: Self.windowTimeout),
             "The enrollment sheet never appeared."
         )
+        guard heading.exists else { return }
+        let sheet = app.sheets.firstMatch
+        XCTAssertTrue(sheet.exists, "The headline rendered outside a sheet — the scope below would be wrong.")
+        guard sheet.exists else { return }
         Thread.sleep(forTimeInterval: Self.settle)
-        try audit(app)
+        // Scoped to the sheet: the library behind it renders through the modal
+        // dimming veil, and every one of those elements is audited undimmed by
+        // the other cases here — see `audit(_:within:)`.
+        try audit(app, within: sheet.frame)
     }
 
     private func auditSettings(
@@ -534,6 +621,7 @@ final class AccessibilityAuditTests: XCTestCase {
     private func auditNoEnrollmentLibrary(appearance: Appearance) throws {
         let app = try launchNoEnrollment(Self.libraryArguments, appearance: appearance)
         awaitWindow(of: app)
+        try requireAnchor(Self.enrollmentPromptAnchor(in: app))
         try audit(app)
     }
 
