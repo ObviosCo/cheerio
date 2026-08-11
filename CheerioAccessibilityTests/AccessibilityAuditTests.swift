@@ -412,6 +412,7 @@ final class AccessibilityAuditTests: XCTestCase {
         let app = try launchSeeded(Self.libraryArguments + extraArguments, appearance: appearance)
         awaitWindow(of: app)
         try requireAnchor(anchor(app))
+        try requireEffectiveAppearance(appearance, in: app)
         try audit(app)
     }
 
@@ -427,6 +428,7 @@ final class AccessibilityAuditTests: XCTestCase {
         )
         awaitWindow(of: app)
         try requireAnchor(Self.selectedMeetingAnchor(in: app))
+        try requireEffectiveAppearance(appearance, in: app)
         XCUIApplication(bundleIdentifier: "com.apple.finder").activate()
         // The state assertion, not just a sleep: if Finder never actually took
         // activation, this would re-audit `Accent/Selection` and quietly leave
@@ -455,6 +457,31 @@ final class AccessibilityAuditTests: XCTestCase {
         guard element.exists else { throw MissingAnchor() }
     }
 
+    /// The appearance anchor: each light/dark pair only halves an appearance bug
+    /// in two if the app actually rendered both — if
+    /// `ScreenshotMode.applyAppearanceOverride` regressed, every pair would
+    /// audit the runner's default twice and pass. Verified the way everything
+    /// else here is: from the rendered pixels, not the launch argument — the
+    /// frontmost window's dominant color sits far above 0.5 relative luminance
+    /// in light mode and far below it in dark, whatever surface is up.
+    private func requireEffectiveAppearance(_ appearance: Appearance, in app: XCUIApplication) throws {
+        let image = app.windows.firstMatch.screenshot().image
+        guard
+            let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
+            let dominant = ContrastEvidence.dominantLuminance(in: cgImage)
+        else {
+            XCTFail("Couldn't sample the window to verify the effective appearance.")
+            throw MissingAnchor()
+        }
+        let rendersDark = dominant < 0.5
+        XCTAssertEqual(
+            rendersDark,
+            appearance == .dark,
+            "The app rendered in the wrong appearance — `-screenshotAppearance \(appearance.rawValue)` didn't take."
+        )
+        guard rendersDark == (appearance == .dark) else { throw MissingAnchor() }
+    }
+
     private func auditEnrollSheet(appearance: Appearance) throws {
         let app = try launchSeeded(
             Self.libraryArguments + [
@@ -479,6 +506,7 @@ final class AccessibilityAuditTests: XCTestCase {
         // Scoped to the sheet: the library behind it renders through the modal
         // dimming veil, and every one of those elements is audited undimmed by
         // the other cases here — see `audit(_:withinSheet:)`.
+        try requireEffectiveAppearance(appearance, in: app)
         try audit(app, withinSheet: sheet)
     }
 
@@ -507,6 +535,7 @@ final class AccessibilityAuditTests: XCTestCase {
             "No window titled “\(title)” — the app opened \(app.windows.count) window(s)."
         )
         Thread.sleep(forTimeInterval: Self.settle)
+        try requireEffectiveAppearance(appearance, in: app)
         try audit(app)
     }
 
@@ -534,6 +563,7 @@ final class AccessibilityAuditTests: XCTestCase {
             "The library window never closed behind the walkthrough."
         )
         Thread.sleep(forTimeInterval: Self.settle)
+        try requireEffectiveAppearance(appearance, in: app)
         try audit(app)
     }
 
@@ -557,6 +587,7 @@ final class AccessibilityAuditTests: XCTestCase {
             "The library window opened but never handed off to the walkthrough."
         )
         Thread.sleep(forTimeInterval: Self.settle)
+        try requireEffectiveAppearance(appearance, in: app)
         try audit(app)
     }
 
@@ -649,6 +680,7 @@ final class AccessibilityAuditTests: XCTestCase {
         let app = try launchNoEnrollment(Self.libraryArguments, appearance: appearance)
         awaitWindow(of: app)
         try requireAnchor(Self.enrollmentPromptAnchor(in: app))
+        try requireEffectiveAppearance(appearance, in: app)
         try audit(app)
     }
 

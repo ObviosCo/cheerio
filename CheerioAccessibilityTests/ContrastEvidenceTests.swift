@@ -127,6 +127,29 @@ final class ContrastEvidenceTests: XCTestCase {
         XCTAssertEqual(measured, 5.33, accuracy: 0.05)
     }
 
+    // MARK: - Appearance reading
+
+    /// `dominantLuminance` is how the suite verifies `-screenshotAppearance`
+    /// took effect — it has to read a light surface as light and a dark one as
+    /// dark even with a full page of text on it.
+    func testDominantLuminanceReadsTheSurface() throws {
+        let lightPage = Self.glyphRamp(ink: Self.token, background: Self.white, width: 40, height: 12)
+        let light = try XCTUnwrap(
+            ContrastEvidence.dominantLuminance(width: 40, height: 12, rgbaPixels: lightPage)
+        )
+        XCTAssertGreaterThan(light, 0.5)
+
+        let darkSurface: (UInt8, UInt8, UInt8) = (28, 34, 44)
+        let darkInk: (UInt8, UInt8, UInt8) = (235, 239, 242)
+        let darkPage = Self.glyphRamp(ink: darkInk, background: darkSurface, width: 40, height: 12)
+        let dark = try XCTUnwrap(
+            ContrastEvidence.dominantLuminance(width: 40, height: 12, rgbaPixels: darkPage)
+        )
+        XCTAssertLessThan(dark, 0.5)
+
+        XCTAssertNil(ContrastEvidence.dominantLuminance(width: 0, height: 0, rgbaPixels: []))
+    }
+
     // MARK: - Fixtures
 
     /// A buffer painted per-pixel.

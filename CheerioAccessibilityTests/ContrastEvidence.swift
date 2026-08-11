@@ -55,6 +55,34 @@ enum ContrastEvidence {
 
     /// Rasterizes and measures — the entry the audit uses.
     static func measuredTextContrast(in cgImage: CGImage) -> Double? {
+        guard let pixels = rgbaPixels(of: cgImage) else { return nil }
+        return measuredTextContrast(width: cgImage.width, height: cgImage.height, rgbaPixels: pixels)
+    }
+
+    /// The relative luminance of the region's dominant color — how the audits
+    /// verify that `-screenshotAppearance` actually took effect, by reading the
+    /// rendered window rather than trusting the launch argument: every surface
+    /// token sits far above 0.5 in light mode and far below it in dark.
+    static func dominantLuminance(in cgImage: CGImage) -> Double? {
+        guard let pixels = rgbaPixels(of: cgImage) else { return nil }
+        return dominantLuminance(width: cgImage.width, height: cgImage.height, rgbaPixels: pixels)
+    }
+
+    /// The pure form of ``dominantLuminance(in:)``, for the fixture tests.
+    static func dominantLuminance(width: Int, height: Int, rgbaPixels: [UInt8]) -> Double? {
+        guard width > 0, height > 0, rgbaPixels.count >= width * height * 4 else { return nil }
+        var counts: [UInt32: Int] = [:]
+        for offset in stride(from: 0, to: width * height * 4, by: 4) {
+            let key =
+                UInt32(rgbaPixels[offset]) << 16 | UInt32(rgbaPixels[offset + 1]) << 8
+                | UInt32(rgbaPixels[offset + 2])
+            counts[key, default: 0] += 1
+        }
+        guard let dominant = counts.max(by: { $0.value < $1.value }) else { return nil }
+        return luminance(dominant.key)
+    }
+
+    private static func rgbaPixels(of cgImage: CGImage) -> [UInt8]? {
         let width = cgImage.width
         let height = cgImage.height
         guard width > 0, height > 0, let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
@@ -74,8 +102,7 @@ enum ContrastEvidence {
             context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
             return true
         }
-        guard drawn else { return nil }
-        return measuredTextContrast(width: width, height: height, rgbaPixels: pixels)
+        return drawn ? pixels : nil
     }
 
     /// The pure measurement — what `ContrastEvidenceTests` pins down.
