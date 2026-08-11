@@ -58,11 +58,20 @@ public enum AudioRetentionService {
 
     /// Call at launch and after each recording finishes.
     /// Returns the number of meetings whose audio was removed.
+    ///
+    /// - Parameter excludingMeetingIDs: meetings mid-pipeline right now
+    ///   (`CaptureSession.meetingIDsBeingProcessed`) — diarization is reading
+    ///   exactly the CAF files this would remove, and once processing has claimed
+    ///   a meeting its row carries nothing (no pending plan, `endedAt` set) that
+    ///   says the audio is still in use. Only the process doing the work knows,
+    ///   so the caller has to say. The purge each pipeline runs at its own
+    ///   conclusion sweeps whatever this pass skipped.
     @discardableResult
     public static func purge(
         retention: AudioRetention,
         context: ModelContext,
-        now: Date = .now
+        now: Date = .now,
+        excludingMeetingIDs: Set<PersistentIdentifier> = []
     ) throws -> Int {
         guard let cutoff = retention.purgeCutoff(now: now) else { return 0 }
 
@@ -72,6 +81,21 @@ public enum AudioRetentionService {
         )
         var removed = 0
         for meeting in try context.fetch(descriptor) {
+            // A meeting still carrying a pending plan is held, not finished
+            // (issue #136): capture stopped — so `endedAt` is set and the
+            // predicate above matches — but diarization hasn't consumed its
+            // audio yet, and diarization reads exactly these CAF files. With
+            // "Don't keep audio" the cutoff is *now*, so without this a hold, or
+            // a held meeting waiting for launch recovery, would lose its audio
+            // before speaker labelling ever saw it. Checked in the loop rather
+            // than the predicate because `#Predicate` can't reach into an
+            // optional composite. The pass after processing (`CaptureSession`
+            // runs one at every conclusion) picks these up once the plan clears.
+            guard meeting.pendingProcessingPlan == nil else { continue }
+            // And once the plan *has* cleared, the row alone can't show that the
+            // pipeline is still mid-flight reading these files — that's what the
+            // caller's exclusion set carries. See the parameter doc above.
+            guard !excludingMeetingIDs.contains(meeting.persistentModelID) else { continue }
             guard let endedAt = meeting.endedAt, endedAt < cutoff,
                 let relativePath = meeting.audioDirectory
             else { continue }

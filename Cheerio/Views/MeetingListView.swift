@@ -383,6 +383,37 @@ struct MeetingListView: View {
                 }
             }
 
+        case .holding:
+            Button {
+                Task { await session.confirmProcessing(context: context) }
+            } label: {
+                Label {
+                    VStack(alignment: .leading) {
+                        Text("Process now")
+                            .font(.body.weight(.medium))
+                        if let deadline = session.holdDeadline {
+                            // Counts down to the auto-process on its own, and
+                            // tracks the deadline moving as edits extend it.
+                            Text(deadline, style: .timer)
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } icon: {
+                    Image(systemName: "sparkles")
+                }
+            }
+
+            // Same escape hatch as `.recording` above: reading an earlier meeting
+            // replaces the holding view, and the notes worth adding are behind it.
+            if selection != nil {
+                Button {
+                    selection = nil
+                } label: {
+                    Label("Back to add notes", systemImage: "waveform")
+                }
+            }
+
         case .finishing:
             Label("Finishing up…", systemImage: "ellipsis.circle")
                 .foregroundStyle(.secondary)

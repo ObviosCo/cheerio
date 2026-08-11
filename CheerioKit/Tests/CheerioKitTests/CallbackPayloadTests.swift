@@ -95,6 +95,35 @@ import Testing
         #expect(first.environment["CHEERIO_MEETING_ID"] == second.environment["CHEERIO_MEETING_ID"])
     }
 
+    @Test func additionalPromptTravelsInTheEnvironmentOnly() throws {
+        let directory = Self.makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let export = Self.makeExport(uuid: "44444444-4444-4444-4444-444444444444")
+        let prepared = try CallbackPayload.prepare(
+            export: export, additionalPrompt: "focus on the budget items", in: directory)
+
+        #expect(prepared.environment["CHEERIO_ADDITIONAL_PROMPT"] == "focus on the budget items")
+        // Not in the export JSON: the file is the pinned snapshot of the meeting,
+        // and the prompt is input to this one invocation. A consumer comparing
+        // stdin against CHEERIO_EXPORT_PATH must keep seeing identical bytes
+        // whether or not a prompt rode along.
+        let withoutPrompt = try CallbackPayload.prepare(export: export, in: directory)
+        #expect(prepared.jsonData == withoutPrompt.jsonData)
+    }
+
+    @Test func noPromptMeansNoVariableAtAll() throws {
+        let directory = Self.makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let export = Self.makeExport(uuid: "55555555-5555-5555-5555-555555555555")
+        let prepared = try CallbackPayload.prepare(export: export, in: directory)
+
+        // Absent, not empty — a command tests `[ -n "$CHEERIO_ADDITIONAL_PROMPT" ]`
+        // and an empty-but-present variable would read as "a prompt was given".
+        #expect(prepared.environment["CHEERIO_ADDITIONAL_PROMPT"] == nil)
+    }
+
     // `defaultDirectoryLivesUnderApplicationSupport` lives in
     // `ContainerOverrideTests` (AudioStorageTests.swift), not here: it makes two
     // separate calls through `AudioStorage.applicationSupport()` and compares

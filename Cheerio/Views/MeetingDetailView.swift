@@ -98,7 +98,13 @@ struct MeetingDetailView: View {
                                 systemImage: "person.wave.2"
                             )
                         }
-                        .disabled(isRelabeling)
+                        // `isProcessing` too, not just this view's own flag: launch
+                        // recovery of a held meeting runs its pipeline while the
+                        // session is `.idle` — exactly when this view can be
+                        // showing that meeting — and two diarization passes
+                        // rewriting the same labels concurrently is a race no
+                        // ordering of their saves makes right.
+                        .disabled(isRelabeling || session.isProcessing(meeting))
                         Text("Uses the voices enrolled in Settings → Participants.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -605,6 +611,11 @@ struct MeetingDetailView: View {
     /// Re-runs diarization. Worth offering because labels improve as more voices get
     /// enrolled, and the audio stays on disk until retention purges it.
     private func relabel() async {
+        // The button above is disabled on the same condition, but a click can be
+        // in flight when the disable lands — this is the check that actually
+        // holds. The marks are reference-counted so an overlap wouldn't corrupt
+        // *them* anymore; it's the two concurrent diarization passes this refuses.
+        guard !session.isProcessing(meeting) else { return }
         isRelabeling = true
         // Before the first `await` below, so nothing can observe this meeting as
         // deletable between that call starting and this line running. Cleared in

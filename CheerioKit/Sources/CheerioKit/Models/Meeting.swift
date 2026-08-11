@@ -75,6 +75,21 @@ public final class Meeting {
     /// defaulting non-optionally, which would risk every migrated row landing on the
     /// same value.
     public var uuid: UUID?
+    /// Set for exactly as long as this meeting sits in the post-meeting holding
+    /// state (issue #136) — recording stopped and persisted, processing not yet
+    /// claimed — and nil at every other moment of its life. Non-nil is the
+    /// persisted marker that processing is still owed, which is what makes the
+    /// holding state safe to quit or crash out of: the next launch finds the plan
+    /// and processes the meeting with it (``awaitingProcessing(in:)``), so no
+    /// meeting is ever stranded un-summarized because a window closed.
+    ///
+    /// An *optional* composite, and the optionality is load-bearing twice over:
+    /// nil-vs-set carries the "processing owed" state itself, and — see
+    /// ``speakerSlotAssignerStorage``'s doc for the 26.8.10 incident — a
+    /// non-optional composite would fail lightweight migration for every
+    /// pre-existing store, while an optional migrates every old row as NULL,
+    /// which here is also the correct answer ("nothing pending").
+    public var pendingProcessingPlan: ProcessingPlan?
     /// Whether `title` is a placeholder Cheerio generated (the "Meeting <date,
     /// time>" / "Direction — <date, time>" pattern) rather than one a calendar event
     /// or a person supplied.

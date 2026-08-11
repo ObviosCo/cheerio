@@ -18,6 +18,15 @@ final class CaptureSession {
         case idle
         case preparingModel
         case recording
+        /// Capture has fully stopped and the transcript is saved, but processing
+        /// (diarization, enhancement, the callback) hasn't been claimed yet — the
+        /// post-meeting holding state, issue #136. The user can still edit rough
+        /// notes, the meeting kind, and the callback controls; ``confirmProcessing(context:)``
+        /// or the grace deadline (``holdDeadline``) moves on to `.finishing`.
+        /// Never entered when `ProcessingHoldDuration` is `.off` or the recording
+        /// is a directive — those go straight from `.recording` to `.finishing`,
+        /// exactly as every recording did before this state existed.
+        case holding
         case finishing
     }
 
@@ -59,11 +68,19 @@ final class CaptureSession {
     /// nil.
     private(set) var lastFinishedMeetingOccurrenceStart: Date?
 
-    /// Meetings with a background mutation in flight outside this session's own
-    /// pipeline — today, just `MeetingDetailView`'s manual "Re-identify speakers"
-    /// button. The pass this session runs itself at the end of a recording needs no
-    /// entry here: ``meeting`` stays set through `.finishing`, so ``canDelete(_:)``
-    /// already covers it.
+    /// Meetings with a mutation in flight — the processing pipeline itself (which
+    /// marks the meeting for the duration of ``process(meeting:plan:context:)``),
+    /// launch recovery's claim-to-pipeline stretch, and `MeetingDetailView`'s
+    /// manual "Re-identify speakers" button.
+    ///
+    /// Reference counts, not a set, because two of those can legitimately overlap
+    /// on one meeting — launch recovery runs while `state` is `.idle`, exactly
+    /// when the detail view's re-identify button is live — and set semantics
+    /// would let whichever pass finishes first unmark the meeting while the other
+    /// is still mutating it, re-enabling deletion, retention, and update checks
+    /// early. (The UI also refuses to *start* the overlapping pass — see
+    /// ``isProcessing(_:)`` — but the count is what keeps the marks honest even
+    /// if a new caller forgets that check.)
     ///
     /// Keyed by `persistentModelID`, not the `Meeting` itself, on purpose — this is
     /// the one piece of shared state every delete affordance consults, and holding
@@ -73,8 +90,8 @@ final class CaptureSession {
     /// This is the app's one shared `@Observable`, which is why a cross-cutting
     /// concern like "is anything mutating this meeting right now" lives here rather
     /// than on a purpose-built type — the alternative costs a new object threaded
-    /// into every scene in `CheerioApp` for one small set.
-    private var processingMeetingIDs: Set<PersistentIdentifier> = []
+    /// into every scene in `CheerioApp` for one small dictionary.
+    private var processingMeetingIDs: [PersistentIdentifier: Int] = [:]
 
     /// Marks `meeting` as having a background mutation in flight. Call before the
     /// first suspension point of whatever's about to `await` its way through
@@ -82,11 +99,48 @@ final class CaptureSession {
     /// `defer` — on the success path and the failure path alike, or a thrown error
     /// leaves the meeting permanently undeletable.
     func beginProcessing(_ meeting: Meeting) {
-        processingMeetingIDs.insert(meeting.persistentModelID)
+        processingMeetingIDs[meeting.persistentModelID, default: 0] += 1
     }
 
     func endProcessing(_ meeting: Meeting) {
-        processingMeetingIDs.remove(meeting.persistentModelID)
+        let id = meeting.persistentModelID
+        guard let count = processingMeetingIDs[id] else { return }
+        processingMeetingIDs[id] = count > 1 ? count - 1 : nil
+    }
+
+    /// Whether some pass currently has `meeting` mid-mutation. The detail view's
+    /// re-identify action checks this before starting (and disables its button on
+    /// it), so two diarization passes never rewrite the same meeting's labels
+    /// concurrently — launch recovery of a held meeting runs at `.idle`, exactly
+    /// when that button is otherwise live.
+    ///
+    /// The session's own ``meeting`` counts as busy for its whole lifetime, not
+    /// just once the pipeline populates the marks: its row is in the store (and
+    /// so in the sidebar) from recording start, but while recording its CAFs are
+    /// still being written under any pass that would read them, and while held
+    /// the grace deadline can start the pipeline at any moment — a re-identify
+    /// begun seconds earlier would then run concurrently with it over the same
+    /// segments.
+    func isProcessing(_ meeting: Meeting) -> Bool {
+        meeting == self.meeting || processingMeetingIDs[meeting.persistentModelID] != nil
+    }
+
+    /// The marked meetings, for `AudioRetentionService.purge`'s exclusion: a purge
+    /// can run mid-pipeline (Settings' "Delete audio now", the launch sweep), and
+    /// diarization is still reading exactly the CAF files it would remove.
+    var meetingIDsBeingProcessed: Set<PersistentIdentifier> {
+        Set(processingMeetingIDs.keys)
+    }
+
+    /// Whether any meeting is mid-pipeline outside the live capture flow — launch
+    /// recovery of a held meeting, or a manual re-identify pass. `UpdatePolicy`
+    /// reads this alongside ``state``: recovery runs diarization and enhancement
+    /// while `state` is still `.idle`, and an update check admitted on the
+    /// strength of `.idle` alone would overlap that processing — exactly what the
+    /// keep-updates-out-of-the-way gate exists to prevent for the ordinary
+    /// `.finishing` path.
+    var isProcessingInBackground: Bool {
+        !processingMeetingIDs.isEmpty
     }
 
     /// Whether every delete affordance should treat `meeting` as safe to remove
@@ -97,7 +151,7 @@ final class CaptureSession {
     /// A disabled button rather than cancel-and-await, for a first pass — see the
     /// call sites in `MeetingListView` and `MeetingDetailView`.
     func canDelete(_ meeting: Meeting) -> Bool {
-        meeting != self.meeting && !processingMeetingIDs.contains(meeting.persistentModelID)
+        meeting != self.meeting && processingMeetingIDs[meeting.persistentModelID] == nil
     }
 
     /// Call after successfully deleting a meeting, so this session stops holding
@@ -132,10 +186,14 @@ final class CaptureSession {
     private var systemTap: SystemAudioTap?
     private var recorder: MeetingAudioRecorder?
     private var consumerTasks: [Task<Void, Never>] = []
-    /// Flushes finalized transcript segments to disk on ``checkpointInterval``'s
-    /// cadence — see ``startCheckpointing(context:)``. Cancelled in ``stop(context:)``,
-    /// which takes over saving explicitly from that point on, and defensively in
-    /// ``rollbackFailedStart()``, which in practice never finds it running.
+    /// Flushes pending changes to disk on ``checkpointInterval``'s cadence — see
+    /// ``startCheckpointing(context:)``. Armed twice per meeting that holds:
+    /// while recording (bounding staleness for finalized transcript segments,
+    /// cancelled in ``stop(context:)``, which takes over saving explicitly) and
+    /// again while `.holding` (bounding it for hold edits, cancelled by
+    /// ``completeHold(context:)`` once the claim save supersedes it). Also
+    /// cancelled defensively in ``rollbackFailedStart()``, which in practice
+    /// never finds it running.
     private var checkpointTask: Task<Void, Never>?
     /// How often ``handle(_:context:)``'s inserts are checkpointed while recording.
     ///
@@ -157,6 +215,17 @@ final class CaptureSession {
     private static let checkpointInterval: Duration = .seconds(2)
     /// When the current recording began, for the elapsed-time readout.
     private(set) var startedAt: Date?
+
+    /// When the holding state auto-processes, for the countdown readouts. Moves
+    /// later on every ``recordHoldActivity()``; nil outside `.holding`.
+    private(set) var holdDeadline: Date?
+    /// The grace-period arithmetic behind ``holdDeadline`` — `CheerioKit` owns the
+    /// math (tested there), this session only owns the clock that acts on it.
+    private var holdWindow: ProcessingHoldWindow?
+    /// Sleeps until ``holdDeadline`` and claims processing if nothing else has —
+    /// see ``beginHolding(gracePeriod:context:)`` for why it re-checks on waking
+    /// instead of trusting one sleep.
+    private var holdTask: Task<Void, Never>?
 
     func start(
         title: String,
@@ -325,13 +394,16 @@ final class CaptureSession {
         NotificationService.shared.recordingDidStart()
     }
 
-    /// Starts the periodic save that makes ``handle(_:context:)``'s inserts visible
-    /// to a second process, on ``checkpointInterval``'s cadence for as long as this
-    /// task runs — cancelled by ``stop(context:)``, which saves explicitly from
-    /// that point on. ``rollbackFailedStart()`` also cancels it defensively, but
-    /// can never actually find it running: this is the last thing `startCapturing`
-    /// calls before nothing further can throw, so a rollback never happens once
-    /// this has.
+    /// Starts the periodic save that bounds how stale the on-disk row can be:
+    /// while recording, it makes ``handle(_:context:)``'s inserts visible to a
+    /// second process (cancelled by ``stop(context:)``, which saves explicitly
+    /// from that point on); while `.holding`, re-armed by
+    /// ``beginHolding(gracePeriod:context:)``, it does the same for
+    /// ``recordHoldActivity()``'s edits, which crash recovery reads off the row.
+    /// ``rollbackFailedStart()`` also cancels it defensively, but can never
+    /// actually find it running: in the recording case this is the last thing
+    /// `startCapturing` calls before nothing further can throw, so a rollback
+    /// never happens once this has.
     private func startCheckpointing(context: ModelContext) {
         checkpointTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -451,7 +523,10 @@ final class CaptureSession {
         }
     }
 
-    /// Stops capture, finalizes transcription, and kicks off enhancement.
+    /// Stops capture and finalizes transcription, then either processes the
+    /// meeting immediately (holding off, or a directive — the pre-#136 behavior,
+    /// unchanged) or parks it in `.holding` for the user to add rough notes and
+    /// set the processing controls first.
     func stop(context: ModelContext) async {
         guard state == .recording else { return }
         state = .finishing
@@ -460,10 +535,10 @@ final class CaptureSession {
         systemTap?.stop()
         try? await micEngine?.stop()
         try? await systemEngine?.stop()
-        // From here on this function saves explicitly at each step below — the
-        // periodic checkpoint has nothing left to do and would only race those
-        // saves, most of which need to run after work (diarization, enhancement)
-        // that a save on a two-second timer can't wait for.
+        // From here on, saves are explicit at each step — the periodic checkpoint
+        // has nothing left to do and would only race those saves, most of which
+        // need to run after work (diarization, enhancement) that a save on a
+        // two-second timer can't wait for.
         checkpointTask?.cancel()
         checkpointTask = nil
         await recorder?.finish()
@@ -473,103 +548,338 @@ final class CaptureSession {
         // Cancelling dropped them, losing the tail of the transcript that the
         // summarizer then never saw.
         await drainConsumers()
-
-        if let meeting {
-            meeting.endedAt = .now
-            meeting.roughNotes = roughNotes
-
-            // Diarize before summarizing, so the transcript the model reads carries
-            // speaker labels — and before the retention purge, which would delete
-            // the audio this reads.
-            do {
-                try await SpeakerLabeling.label(meeting: meeting, context: context)
-            } catch {
-                // Best-effort: the transcript keeps its channel labels.
-                log.error("Speaker attribution failed: \(error)")
-            }
-
-            do {
-                let engine = SummarizationEngine()
-                // After diarization, so the labels the owner names are matched against
-                // are the ones the transcript actually carries.
-                let notes = try await engine.generateEnhancedNotes(
-                    transcript: meeting.transcriptText,
-                    roughNotes: roughNotes,
-                    ownerNames: SpeakerLabeling.ownerNames(context: context)
-                )
-                meeting.enhancedNotes = notes.markdown
-                meeting.actionItems = notes.actionItems
-            } catch {
-                log.error("Enhancement failed: \(error)")
-                // Transcript-only fallback: meeting remains useful without notes.
-            }
-
-            // Same readiness point as the callback below, one step earlier: after
-            // diarization and enhancement (so the excerpt this reads carries
-            // speaker labels), before the save and the callback (so both carry
-            // whatever title comes out of this, not the timestamp it started
-            // with). Gated on `shouldAutoTitle` so a calendar title or an
-            // in-meeting rename (RecordingView) is never a candidate.
-            if meeting.shouldAutoTitle {
-                await autoTitle(meeting: meeting, context: context)
-            }
-            // Re-synced here, not just once above: the callback below builds its
-            // `MeetingExport` from `meeting` as saved by the line right after this
-            // one, and diarization and enhancement — both awaits — sit between the
-            // first copy and this point. Skipping this one would let the callback
-            // ship a `roughNotes` that's stale relative to the `enhancedNotes` next
-            // to it in the same payload, which read the live property directly a
-            // few lines up.
-            //
-            // This is the *last* copy that's needed, not just the second: from here
-            // to `meeting = nil` below, nothing in this function suspends —
-            // `fireTranscriptReadyCallback`, `notifyNotesReady`, and
-            // `AudioRetentionService.purge` are all synchronous, and `CaptureSession`
-            // is `@MainActor` — so nothing else can run a keystroke's binding setter
-            // in between. A copy repeated at the end would be dead code today. If a
-            // future `await` lands anywhere in that stretch, *that's* what needs a
-            // copy after it, not a blind one at the bottom.
-            meeting.roughNotes = roughNotes
-            try? context.save()
-
-            // The transcript is "ready" — issue #26's callback contract — right
-            // here, and nowhere else: capture has stopped, diarization has run
-            // (`catch` above notwithstanding — a failed pass still leaves the
-            // channel-only labels, which is what a callback fired any earlier
-            // would have shipped anyway), and enhancement has run or conclusively
-            // failed. Firing before this point would hand the callback worse
-            // speaker attribution than the app itself ends up showing, and labels
-            // are exactly what the owner-attributed action items depend on.
-            fireTranscriptReadyCallback(for: meeting, context: context)
-
-            // Same definition of "ready" as the callback above, and deliberately
-            // *after* it: this only enqueues a banner, and nothing about a
-            // notification may delay, gate, or fail the callback that external
-            // tooling waits on. It returns immediately — see `notifyNotesReady`,
-            // which does the posting on its own task — and suppresses itself when the
-            // app is already on screen, since by the time this returns the window has
-            // selected the finished meeting anyway.
-            //
-            // `stableID` is safe to read here: the callback above persisted it, and
-            // on the path where that save failed the id still exists in memory, so
-            // the notification is at worst pointing at a meeting whose id a crash
-            // before the next autosave would change.
-            NotificationService.shared.notifyNotesReady(title: meeting.title, meetingID: meeting.stableID)
-        }
-
-        // Applies "Don't keep audio" immediately, and sweeps anything that aged out
-        // while the app stayed open.
-        do {
-            try AudioRetentionService.purge(retention: .current, context: context)
-        } catch {
-            log.error("Audio retention purge failed: \(error)")
-        }
-
+        // Capture is over for good whichever branch below runs — releasing the
+        // engines and taps here, rather than at `.idle`, is what keeps the holding
+        // state from sitting on a dead audio stack for minutes.
         micEngine = nil
         systemEngine = nil
         micCapture = nil
         systemTap = nil
         recorder = nil
+
+        guard let meeting else {
+            concludeSession(context: context)
+            return
+        }
+        meeting.endedAt = .now
+        meeting.roughNotes = roughNotes
+
+        let holdDuration = ProcessingHoldDuration.current
+        if let gracePeriod = holdDuration.gracePeriod, holdDuration.applies(to: meeting.kind) {
+            // The plan and the finished transcript are persisted *before* the
+            // holding state is entered, because the plan on disk is the whole
+            // recovery contract: a quit or crash from here on leaves a row that
+            // `resumeInterruptedProcessing` recognizes and processes next launch.
+            meeting.pendingProcessingPlan = ProcessingPlan.makeDefault(for: meeting.kind)
+            do {
+                try context.save()
+                beginHolding(gracePeriod: gracePeriod, context: context)
+                return
+            } catch {
+                // Not best-effort like other saves on this path: the hold's
+                // crash-safety rests entirely on that marker being on disk before
+                // `.holding` is entered — held with nothing persisted, a quit
+                // would strand the meeting unprocessed forever. So no marker, no
+                // hold: fall through to processing immediately, which needs no
+                // marker to be safe. Losing the review window costs a
+                // convenience; risking the meeting would cost the meeting. The
+                // plan is cleared first so a *later* autosave can't land the
+                // marker mid-processing and set up next launch to process — and
+                // fire the callback for — this meeting a second time.
+                meeting.pendingProcessingPlan = nil
+                log.error("Couldn't persist the processing hold; processing immediately instead: \(error)")
+            }
+        }
+
+        await process(meeting: meeting, plan: nil, context: context)
+        concludeSession(context: context)
+    }
+
+    /// Enters `.holding` and starts the clock that ends it. The task sleeps to the
+    /// deadline and then *re-checks* rather than firing blind: ``recordHoldActivity()``
+    /// pushes ``holdDeadline`` while this sleeps, so waking at the original
+    /// deadline and finding a later one is the normal case for someone actively
+    /// typing — looping until the deadline it wakes at is still the real one is
+    /// what makes an extension actually extend.
+    private func beginHolding(gracePeriod: TimeInterval, context: ModelContext) {
+        let window = ProcessingHoldWindow(startedAt: .now, gracePeriod: gracePeriod)
+        holdWindow = window
+        holdDeadline = window.deadline
+        state = .holding
+        // The same periodic save that bounds staleness for transcript segments
+        // while recording bounds it for hold edits here: `recordHoldActivity()`
+        // only mutates the autosaving context, and autosave's timing carries no
+        // guarantee — a crash mid-hold recovers from the row, so notes and plan
+        // edits must reach it on a cadence, not at autosave's leisure. Cancelled
+        // by `completeHold` once the claim save (which supersedes it) lands.
+        startCheckpointing(context: context)
+        holdTask = Task { [weak self] in
+            while true {
+                guard let self, !Task.isCancelled, self.state == .holding,
+                    let deadline = self.holdDeadline
+                else { return }
+                let remaining = deadline.timeIntervalSinceNow
+                if remaining <= 0 {
+                    // `cancellingCountdown: false`, because *this task is* the
+                    // countdown: `completeHold` runs the whole pipeline before
+                    // returning here, and cancelling the current task first would
+                    // hand diarization and the language model a pre-cancelled
+                    // context — cancellation-aware work would abort *after* the
+                    // plan was already durably cleared, leaving every auto-timed
+                    // meeting transcript-only. A successful claim leaves
+                    // `.holding`, so the guard above ends the loop instead.
+                    await self.completeHold(context: context, cancellingCountdown: false)
+                    // A *failed* claim stayed held and pushed the deadline out a
+                    // full window (see `completeHold`), so looping here sleeps
+                    // toward the retry rather than spinning against a failing
+                    // save.
+                    continue
+                }
+                try? await Task.sleep(for: .seconds(remaining))
+            }
+        }
+    }
+
+    /// The user's explicit "process now" from the holding state. Also the only
+    /// public way out of `.holding` — the other exit is the grace deadline, which
+    /// takes the same path through ``completeHold(context:cancellingCountdown:)``.
+    func confirmProcessing(context: ModelContext) async {
+        await completeHold(context: context, cancellingCountdown: true)
+    }
+
+    /// An edit landed in the holding UI — rough notes, kind, callback controls —
+    /// so the grace window restarts (it measures idle time, not total time; see
+    /// ``ProcessingHoldWindow/recordActivity(at:)``) and the notes are re-synced
+    /// onto the meeting. That sync is what keeps a quit mid-hold from losing
+    /// anything typed *during* the hold: recovery reads `meeting.roughNotes` off
+    /// the row, never this session's live property, which dies with the process.
+    /// Getting the sync to *disk* is the checkpoint loop's job — re-armed for the
+    /// hold by ``beginHolding(gracePeriod:context:)``, because autosave's timing
+    /// carries no guarantee and a crash recovers only what actually landed.
+    func recordHoldActivity() {
+        guard state == .holding else { return }
+        holdWindow?.recordActivity(at: .now)
+        holdDeadline = holdWindow?.deadline
+        meeting?.roughNotes = roughNotes
+    }
+
+    /// The holding state's callback toggle, routed through the session (rather
+    /// than the view binding the meeting's plan directly) so every edit also
+    /// counts as activity for the grace window. False when nothing is held, which
+    /// no visible control ever reads — the holding UI only exists in `.holding`.
+    var holdRunsCallback: Bool {
+        get { meeting?.pendingProcessingPlan?.runCallback ?? false }
+        set {
+            guard state == .holding else { return }
+            meeting?.pendingProcessingPlan?.runCallback = newValue
+            recordHoldActivity()
+        }
+    }
+
+    /// See ``holdRunsCallback`` — same routing, for the per-meeting prompt.
+    var holdCallbackPrompt: String {
+        get { meeting?.pendingProcessingPlan?.callbackPrompt ?? "" }
+        set {
+            guard state == .holding else { return }
+            meeting?.pendingProcessingPlan?.callbackPrompt = newValue
+            recordHoldActivity()
+        }
+    }
+
+    /// See ``holdRunsCallback`` — same routing, for the meeting kind. This window
+    /// is exactly when changing kind is cheap: no notes exist yet to go stale
+    /// (the regeneration concern ``Meeting/toggleKind()`` documents), and every
+    /// downstream consumer of kind — the summarizer's future prompt seam, the
+    /// callback scope, the export — reads it after this.
+    var holdKind: MeetingKind {
+        get { meeting?.kind ?? .meeting }
+        set {
+            guard state == .holding else { return }
+            meeting?.kind = newValue
+            recordHoldActivity()
+        }
+    }
+
+    /// Claims processing for the held meeting — from the user's confirm or the
+    /// grace deadline, whichever gets here first; the `state` guard makes the
+    /// loser a no-op, and nothing before `state = .finishing` suspends (the claim
+    /// save is synchronous), so the race can't interleave.
+    ///
+    /// `cancellingCountdown` says whether ``holdTask`` is somebody *else* who
+    /// needs waking (the confirm path — its sleep should end now, not at the old
+    /// deadline) or the very task running this function (the expiry path), which
+    /// must not be cancelled: the pipeline below runs inside it, and a
+    /// self-cancel would pre-cancel diarization and the language model after the
+    /// plan was already durably cleared. Either way the countdown loop exits on
+    /// its own state guard once `.holding` is left; the flag only controls
+    /// whether a signal is sent.
+    private func completeHold(context: ModelContext, cancellingCountdown: Bool) async {
+        guard state == .holding, let meeting else { return }
+
+        // Claiming = reading the plan and clearing it off the row, *durably*,
+        // before any work runs. That ordering makes processing at-most-once: a
+        // crash mid-processing finds no plan on disk and leaves the meeting
+        // transcript-only — the same outcome a crash mid-`.finishing` has always
+        // had — never a second processing pass, and never a callback fired twice,
+        // on relaunch.
+        let plan = meeting.pendingProcessingPlan
+        meeting.pendingProcessingPlan = nil
+        meeting.roughNotes = roughNotes
+        do {
+            try context.save()
+        } catch {
+            // The claim didn't land, so processing doesn't start. A meeting that
+            // stays visibly held — the deadline retries a window from now, and
+            // "Process Now" stays clickable — beats one that processes now and
+            // may process (and fire its callback) again after a crash; and if
+            // the save never recovers, a quit still leaves the persisted plan
+            // for the next launch, so the meeting can't be stranded. Restore the
+            // plan so the row, the UI, and a later checkpoint save all agree.
+            meeting.pendingProcessingPlan = plan
+            holdWindow?.recordActivity(at: .now)
+            holdDeadline = holdWindow?.deadline
+            log.error("Couldn't claim the held meeting for processing; staying held: \(error)")
+            return
+        }
+
+        if cancellingCountdown {
+            holdTask?.cancel()
+        }
+        holdTask = nil
+        holdWindow = nil
+        holdDeadline = nil
+        checkpointTask?.cancel()
+        checkpointTask = nil
+        state = .finishing
+
+        await process(meeting: meeting, plan: plan, context: context)
+        concludeSession(context: context)
+    }
+
+    /// Diarization → enhancement → auto-title → save → callback → notification:
+    /// the one processing pipeline, shared by the zero-touch stop path, the
+    /// holding state's exit, and launch recovery of a hold a previous run left
+    /// behind. `plan` is the holding state's decisions when there was one; nil is
+    /// the zero-touch path, which defers to the global callback settings exactly
+    /// as before.
+    private func process(meeting: Meeting, plan: ProcessingPlan?, context: ModelContext) async {
+        // Marked for the whole pipeline, on every path: once the plan is cleared
+        // (or was never set — the zero-touch path), nothing on the *row* says
+        // this meeting's audio is still needed, and a retention purge is free to
+        // run during any await below — Settings' "Delete audio now", the launch
+        // sweep racing recovery. This mark is what
+        // `AudioRetentionService.purge`'s exclusion reads to keep the CAFs alive
+        // until diarization has actually consumed them. Reference-counted, so
+        // recovery's own outer mark nesting over this one is fine.
+        beginProcessing(meeting)
+        defer { endProcessing(meeting) }
+
+        // Diarize before summarizing, so the transcript the model reads carries
+        // speaker labels — and before the retention purge, which would delete
+        // the audio this reads.
+        do {
+            try await SpeakerLabeling.label(meeting: meeting, context: context)
+        } catch {
+            // Best-effort: the transcript keeps its channel labels.
+            log.error("Speaker attribution failed: \(error)")
+        }
+
+        do {
+            let engine = SummarizationEngine()
+            // After diarization, so the labels the owner names are matched against
+            // are the ones the transcript actually carries.
+            let notes = try await engine.generateEnhancedNotes(
+                transcript: meeting.transcriptText,
+                roughNotes: currentRoughNotes(for: meeting),
+                ownerNames: SpeakerLabeling.ownerNames(context: context)
+            )
+            meeting.enhancedNotes = notes.markdown
+            meeting.actionItems = notes.actionItems
+        } catch {
+            log.error("Enhancement failed: \(error)")
+            // Transcript-only fallback: meeting remains useful without notes.
+        }
+
+        // Same readiness point as the callback below, one step earlier: after
+        // diarization and enhancement (so the excerpt this reads carries
+        // speaker labels), before the save and the callback (so both carry
+        // whatever title comes out of this, not the timestamp it started
+        // with). Gated on `shouldAutoTitle` so a calendar title or an
+        // in-meeting rename (RecordingView) is never a candidate.
+        if meeting.shouldAutoTitle {
+            await autoTitle(meeting: meeting, context: context)
+        }
+        // Re-synced here, not just at the top of the stop path: the callback below
+        // builds its `MeetingExport` from `meeting` as saved by the line right
+        // after this one, and diarization and enhancement — both awaits — sit
+        // between the earlier copy and this point, during which the notes editor
+        // (live through `.finishing`) can still run a keystroke's binding setter.
+        //
+        // This is the *last* copy that's needed, not just the latest: from here
+        // to the caller's `meeting = nil`, nothing suspends —
+        // `fireTranscriptReadyCallback`, `notifyNotesReady`, and
+        // `AudioRetentionService.purge` are all synchronous, and `CaptureSession`
+        // is `@MainActor` — so nothing else can run a keystroke's binding setter
+        // in between. A copy repeated at the end would be dead code today. If a
+        // future `await` lands anywhere in that stretch, *that's* what needs a
+        // copy after it, not a blind one at the bottom.
+        if meeting == self.meeting {
+            meeting.roughNotes = roughNotes
+        }
+        try? context.save()
+
+        // The transcript is "ready" — issue #26's callback contract — right
+        // here, and nowhere else: capture has stopped, diarization has run
+        // (`catch` above notwithstanding — a failed pass still leaves the
+        // channel-only labels, which is what a callback fired any earlier
+        // would have shipped anyway), and enhancement has run or conclusively
+        // failed. Firing before this point would hand the callback worse
+        // speaker attribution than the app itself ends up showing, and labels
+        // are exactly what the owner-attributed action items depend on. The
+        // holding state moved this point later still, deliberately — see issue
+        // #136 — but never earlier.
+        fireTranscriptReadyCallback(for: meeting, plan: plan, context: context)
+
+        // Same definition of "ready" as the callback above, and deliberately
+        // *after* it: this only enqueues a banner, and nothing about a
+        // notification may delay, gate, or fail the callback that external
+        // tooling waits on. It returns immediately — see `notifyNotesReady`,
+        // which does the posting on its own task — and suppresses itself when the
+        // app is already on screen, since by the time this returns the window has
+        // selected the finished meeting anyway.
+        //
+        // `stableID` is safe to read here: the callback above persisted it, and
+        // on the path where that save failed the id still exists in memory, so
+        // the notification is at worst pointing at a meeting whose id a crash
+        // before the next autosave would change.
+        NotificationService.shared.notifyNotesReady(title: meeting.title, meetingID: meeting.stableID)
+    }
+
+    /// The rough notes ``process(meeting:plan:context:)`` should feed the
+    /// summarizer: the session's live property for the meeting this session is
+    /// actively finishing (the editor stays bound to it through `.finishing`, so
+    /// it's fresher than the row), and the persisted row for a recovered meeting,
+    /// whose editing surface died with the run that held it.
+    private func currentRoughNotes(for meeting: Meeting) -> String {
+        meeting == self.meeting ? roughNotes : meeting.roughNotes
+    }
+
+    /// The tail every processing exit shares: the retention sweep, then handing
+    /// the session back to `.idle` with ``lastFinishedMeeting`` pointing at what
+    /// just finished.
+    private func concludeSession(context: ModelContext) {
+        // Applies "Don't keep audio" immediately, and sweeps anything that aged out
+        // while the app stayed open. The meeting that just finished is *not*
+        // excluded — its pipeline is done, so this is exactly the purge that
+        // should reach it — only meetings some other pass (launch recovery) still
+        // has mid-flight are.
+        do {
+            try AudioRetentionService.purge(
+                retention: .current, context: context, excludingMeetingIDs: meetingIDsBeingProcessed)
+        } catch {
+            log.error("Audio retention purge failed: \(error)")
+        }
+
         lastFinishedMeeting = meeting
         lastFinishedMeetingOccurrenceStart = calendarEventOccurrenceStart
         meeting = nil
@@ -577,10 +887,82 @@ final class CaptureSession {
         state = .idle
     }
 
-    /// See the call site in ``stop(context:)`` for exactly which point in the
-    /// pipeline this is — this function only builds the export and hands it to
-    /// the runner, it doesn't decide when "ready" is.
-    private func fireTranscriptReadyCallback(for meeting: Meeting, context: ModelContext) {
+    /// Processes any meeting a previous run left in the holding state — a quit or
+    /// crash mid-hold. Called once, from `CheerioApp.init()`'s launch task, after
+    /// `StorageMigration.closeAbandonedRecordings` has run.
+    ///
+    /// The choice this encodes: recovery *processes*, it never re-opens the
+    /// holding window. The plan persisted at hold entry (plus whatever notes and
+    /// kind edits autosave carried to disk) is treated as the user's final word —
+    /// including their callback decision, which is honored as saved. Re-offering
+    /// the hold on launch would mean a meeting whose owner never relaunches stays
+    /// un-summarized indefinitely, which is exactly the "stuck meeting" this
+    /// state machine promises can't happen; processing with the saved inputs
+    /// loses nothing except the chance to keep editing, which the quit already
+    /// spent.
+    ///
+    /// Doesn't touch session state: this runs meetings that aren't ``meeting``,
+    /// concurrently with whatever the session might start doing, and marks each
+    /// one with ``beginProcessing(_:)`` so delete affordances stay honest.
+    func resumeInterruptedProcessing(context: ModelContext) async {
+        let pending: [Meeting]
+        do {
+            pending = try Meeting.awaitingProcessing(in: context)
+        } catch {
+            log.error("Couldn't look for interrupted processing: \(error)")
+            return
+        }
+        for meeting in pending {
+            // Can't be this session's live meeting at launch; kept as a guard
+            // because processing the meeting someone is talking into would be
+            // unrecoverable, and launch ordering is the caller's detail.
+            guard meeting != self.meeting else { continue }
+            beginProcessing(meeting)
+            // Per-iteration, not function exit: a `defer` runs when its enclosing
+            // *scope* ends, and a loop body is one — Swift, unlike Go. So each
+            // meeting's mark is already cleared (on `continue` too) by the time
+            // the post-loop sweep below reads `meetingIDsBeingProcessed`, which
+            // is what lets that sweep actually reach the meetings it exists for.
+            defer { endProcessing(meeting) }
+            // Same claim discipline as `completeHold`, for the same reason: the
+            // cleared plan must be durable before any work runs, or a crash
+            // mid-recovery would leave the plan on the row and the launch after
+            // this one would process — and fire the callback for — the same
+            // meeting again. If the claim can't be saved, the row is left intact
+            // for a future launch instead: deferred processing beats double
+            // processing.
+            let plan = meeting.pendingProcessingPlan
+            meeting.pendingProcessingPlan = nil
+            do {
+                try context.save()
+            } catch {
+                meeting.pendingProcessingPlan = plan
+                log.error("Couldn't claim a held meeting for recovery; leaving it for the next launch: \(error)")
+                continue
+            }
+            log.notice("Processing a meeting a previous run left holding")
+            await process(meeting: meeting, plan: plan, context: context)
+        }
+        guard !pending.isEmpty else { return }
+        // The sweep these meetings were shielded from while held (the pending
+        // plan) and while mid-pipeline (the processing mark): with both gone,
+        // "Don't keep audio" finally applies to them — deliberately *without*
+        // touching the recovery marker, which is exactly what must stay cleared
+        // so a crash here can't reprocess. Any meeting still marked (a second
+        // recovery pass can't exist, but the exclusion is cheap and uniform)
+        // stays skipped.
+        do {
+            try AudioRetentionService.purge(
+                retention: .current, context: context, excludingMeetingIDs: meetingIDsBeingProcessed)
+        } catch {
+            log.error("Audio retention purge after recovery failed: \(error)")
+        }
+    }
+
+    /// See the call site in ``process(meeting:plan:context:)`` for exactly which
+    /// point in the pipeline this is — this function only builds the export and
+    /// hands it to the runner, it doesn't decide when "ready" is.
+    private func fireTranscriptReadyCallback(for meeting: Meeting, plan: ProcessingPlan?, context: ModelContext) {
         // Touch `stableID` and save *before* building the export, not as part of it.
         // `Meeting.export` reads `stableID`, which backfills `uuid` on a meeting
         // recorded before that field existed — and the save above already happened,
@@ -603,7 +985,7 @@ final class CaptureSession {
         }
 
         let ownerNames = SpeakerLabeling.ownerNames(context: context)
-        TranscriptReadyRunner.fireIfNeeded(export: meeting.export(ownerNames: ownerNames))
+        TranscriptReadyRunner.fireIfNeeded(export: meeting.export(ownerNames: ownerNames), plan: plan)
     }
 
     /// Generates and applies a title for a meeting that's still on its placeholder

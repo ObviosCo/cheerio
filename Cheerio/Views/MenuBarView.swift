@@ -52,6 +52,17 @@ struct MenuBarView: View {
                     Task { await session.stop(context: context) }
                 }
 
+            case .holding:
+                if let meeting = session.meeting {
+                    Text(meeting.title)
+                }
+                // The one action the holding state needs from the menu bar: the
+                // richer controls (notes, kind, callback) live in the window,
+                // which "Open Cheerio" below already reaches.
+                Button("Process now") {
+                    Task { await session.confirmProcessing(context: context) }
+                }
+
             case .finishing:
                 Text("Finishing up…")
             }
