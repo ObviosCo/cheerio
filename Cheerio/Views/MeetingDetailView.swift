@@ -53,6 +53,12 @@ struct MeetingDetailView: View {
     /// view is reused across a sidebar selection change and one model must
     /// never outlive the meeting whose audio it was loaded from.
     @State private var playerModel = MeetingAudioPlayerModel()
+    /// Same as `RecordingView.observedTriggersData`: the raw trigger blob,
+    /// observed so ``runTriggerSection`` (its presence, and the menu's rows)
+    /// re-renders when Settings edits triggers — the click path re-resolves by
+    /// id regardless (`runTrigger(id:)`), so this is about the *list* staying
+    /// honest, not about what runs. Read in `body`, never decoded here.
+    @AppStorage(TranscriptCallbackSettings.triggersDefaultsKey) private var observedTriggersData: Data?
     /// Which transcript row's seek affordance is visible. Hover-revealed rather
     /// than always-on: a stamp on every line is exactly the column of numbers
     /// the per-minute timestamps (#130) exist to avoid, and the row's text keeps
@@ -113,10 +119,15 @@ struct MeetingDetailView: View {
 
                 // Any configured trigger, not just the default (#137) — pointing
                 // a different agent at a finished meeting is also how it gets
-                // re-processed through one. Only for meetings that actually
-                // ended: a crash-abandoned recording has nothing "ready" to hand
-                // an agent, and the live meeting reaches this view too.
-                if meeting.endedAt != nil, TranscriptCallbackSettings.hasRunnableTrigger {
+                // re-processed through one. `endedCleanly`, not `endedAt != nil`:
+                // a crash-abandoned recording gets an `endedAt` backfilled at the
+                // next launch without ever running diarization or enhancement,
+                // and offering to hand that partial capture to an agent as
+                // "ready" would ship the exact half-processed state the callback
+                // contract exists to rule out. (The live meeting reaches this
+                // view too; it has no `endedAt` at all.)
+                let _ = observedTriggersData
+                if meeting.endedCleanly, TranscriptCallbackSettings.hasRunnableTrigger {
                     Divider()
                     runTriggerSection
                 }

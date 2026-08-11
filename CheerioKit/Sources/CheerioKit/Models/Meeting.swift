@@ -90,6 +90,38 @@ public final class Meeting {
     /// pre-existing store, while an optional migrates every old row as NULL,
     /// which here is also the correct answer ("nothing pending").
     public var pendingProcessingPlan: ProcessingPlan?
+    /// Whether ``endedAt`` was backfilled by
+    /// `StorageMigration.closeAbandonedRecordings` — a crash or force-quit
+    /// mid-recording — rather than set by an actual stop. The distinction exists
+    /// because `endedAt != nil` alone can't say whether the processing pipeline
+    /// ever had its chance: an abandoned row never ran diarization or
+    /// enhancement, while every cleanly-stopped meeting did (or crashed
+    /// mid-pipeline, which the rest of the app deliberately treats as
+    /// processed-transcript-only — see `CaptureSession.completeHold`'s claim
+    /// discipline). See ``endedCleanly``, the read side.
+    ///
+    /// A primitive with a default, not a composite, so existing stores migrate
+    /// additively (the ``kindRaw`` pattern; contrast
+    /// ``speakerSlotAssignerStorage``'s trap). Old rows — including ones an
+    /// earlier build closed as abandoned — read `false`; that bias is chosen:
+    /// hiding the callback affordance on a legacy library's genuinely processed
+    /// meetings would be the worse failure, and a legacy abandoned row wrongly
+    /// offering it is both rare and harmless (the export carries whatever
+    /// exists).
+    public var wasAbandoned: Bool = false
+    /// Whether this recording reached an actual stop — ended, and not by
+    /// ``wasAbandoned``'s backfill. This is the honest stand-in for "processing
+    /// completed, successfully or conclusively not": the pipeline runs
+    /// synchronously off every clean stop (and launch recovery covers a quit
+    /// mid-hold), so a cleanly-ended meeting has had its processing chance by
+    /// definition, while an abandoned one never did. Surfaces that hand the
+    /// meeting to external tooling as "ready" gate on this rather than on
+    /// `enhancedNotes != nil`, which is also nil when enhancement conclusively
+    /// failed — a state the callback contract explicitly ships as-is.
+    public var endedCleanly: Bool {
+        endedAt != nil && !wasAbandoned
+    }
+
     /// Whether `title` is a placeholder Cheerio generated (the "Meeting <date,
     /// time>" / "Direction — <date, time>" pattern) rather than one a calendar event
     /// or a person supplied.
