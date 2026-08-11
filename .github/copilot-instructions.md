@@ -18,9 +18,11 @@ preferences.
 - **App Sandbox must stay off.** A sandboxed process tap returns silence with no error and no
   TCC prompt — if a diff re-enables the App Sandbox entitlement to "fix" a capture bug,
   that's the regression, not a fix.
-- **Both capture channels run in every recording mode.** Mic and system audio both start
-  regardless of mode; `RecordingMode` may change echo cancellation, but never whether
-  `SystemAudioTap` starts.
+- **Both capture channels run in every recording.** Mic and system audio both start
+  unconditionally — nothing may gate whether `SystemAudioTap` starts. The mic path is plain
+  capture: voice processing / acoustic echo cancellation was removed after it silenced a
+  real meeting's mic channel (#167); flag any diff that reintroduces
+  `setVoiceProcessingEnabled` or a recording-mode setting.
 - **Realtime audio callbacks do no work.** AVAudioEngine taps and the tap IOProc must hand
   buffers off immediately (e.g. via `AsyncStream`/`Task`) — flag any parsing, allocation, or
   logging added inside a callback.

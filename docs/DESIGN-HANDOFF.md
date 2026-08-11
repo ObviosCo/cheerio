@@ -147,7 +147,7 @@ The README's [Known issues](../README.md#current-status) and [Roadmap](../README
 - **First-run model download UI.** The transcription model downloads on first use; the UI for it is the words "Preparing model…" with no progress and no size estimate.
 - **System-audio and calendar permission handling.** Microphone has a real recovery path (an alert that deep-links into System Settings). The other two have nothing — and system audio is the one users won't understand.
 - **Audio playback.** Audio is recorded and retained but there's no way to hear it.
-- **Recording modes** (solo / in-person / video call), designed but unbuilt. Both channels always run today, and that's the right default — see §10, which corrects an earlier assumption about this. What modes would actually change is echo cancellation.
+- **Recording modes** — deliberately, and now permanently. A mode picker (in person / video call) shipped briefly to gate echo cancellation and was removed with the echo cancellation itself, which silenced a real meeting's mic (#167). There is one recording behavior; both channels always run — see §10, which corrects an earlier assumption about this. Don't design a mode surface back in.
 - **In-room vs. remote per participant** — see design question 3.
 
 ### The design questions that matter
@@ -306,7 +306,7 @@ These were open when this brief was drafted. They've since been settled, and the
 
 - **Recording mode is *not* about disabling the system tap.** An earlier version of this brief said the tap was pointless for solo recording. That's wrong, and it's worth understanding why: input and output can be different devices. Someone recording alone through AirPods still has system audio worth capturing, and the mic isn't picking it up out of the room. Running both channels is the right default, and it stays.
 
-  What that leaves is the narrower question — whether echo cancellation should differ by situation, and whether that's worth asking the user about at the worst possible moment (right as a meeting starts). Prefer inference or a quiet default over a modal choice.
+  The narrower question this used to leave open — whether echo cancellation should differ by situation — has since been answered by removing echo cancellation entirely (#167): it silenced a real meeting's mic, and the duplicate-transcript problem it targeted is being handled at the transcript level instead (#168). There is nothing situational left to ask the user about at recording start, and that's the point: no modal choice, no modes.
 
 - **The scratchpad should accept and render Markdown.** Plain text is what's built. Markdown is what people expect from a text box now, and rough notes want structure — bullets, headings, the occasional checkbox — precisely because they're written fast.
 

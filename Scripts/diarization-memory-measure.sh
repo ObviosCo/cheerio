@@ -28,7 +28,7 @@
 # via `DiarizationMemoryHarness`) and `.newWindowedPathPeakRSS` (calls
 # `SpeakerAttributionService.attribute` directly).
 #
-# Like aec-ab-measure.sh, this reports numbers and stops; there's no pass/fail.
+# This reports numbers and stops; there's no pass/fail.
 
 set -euo pipefail
 
