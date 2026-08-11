@@ -57,6 +57,16 @@ struct MeetingSpeakersSection: View {
                     enroll(summary, as: name)
                 }
             }
+            .onAppear {
+                // No-op without the launch argument — see `ScreenshotMode`. The
+                // sheet is otherwise only reachable through a row's menu, which
+                // the audit harness never clicks; presenting it here only sets
+                // the same state that menu item sets, and saving still takes a
+                // person committing a name.
+                if ScreenshotMode.showsEnrollFromMeetingSheet, enrolling == nil {
+                    enrolling = talkTimes.first?.summary
+                }
+            }
             .alert(saveFailure?.title ?? "Couldn't save", isPresented: $saveFailure.presented()) {
                 Button("OK") { saveFailure = nil }
             } message: {

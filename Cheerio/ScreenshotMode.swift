@@ -76,6 +76,17 @@ enum ScreenshotMode {
         UserDefaults.standard.bool(forKey: "screenshotExpandTranscript")
     }
 
+    /// Presents the speakers panel's "Use as voice sample" sheet
+    /// (`EnrollFromMeetingSheet`) for the selected meeting's first speaker.
+    ///
+    /// The sheet is otherwise only reachable through a row's ellipsis menu, which
+    /// neither harness clicks — without this the accessibility audits (#142)
+    /// could never measure its text. Same shape as every other hook here: it
+    /// pre-sets presentation state, it doesn't save a sample or touch the store.
+    static var showsEnrollFromMeetingSheet: Bool {
+        UserDefaults.standard.bool(forKey: "screenshotEnrollFromMeetingSheet")
+    }
+
     /// Shows `VoiceEnrollmentRecorder`'s post-save acknowledgment (issue #128)
     /// instead of its empty form.
     ///
