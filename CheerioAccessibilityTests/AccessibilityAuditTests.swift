@@ -80,13 +80,19 @@ final class AccessibilityAuditTests: XCTestCase {
     private static let settle: TimeInterval = 3
 
     /// Launch arguments every audit passes: no update checks, no first-run
-    /// walkthrough, and the same fixed window size the screenshots use, so the two
-    /// harnesses look at the same layout.
+    /// walkthrough, and a fixed window size.
+    ///
+    /// 960×640, deliberately *smaller* than the screenshots' 1440×900: the CI
+    /// runner's display is 1024×768, and a window bigger than the screen gets
+    /// centered at a negative origin — a third of the sidebar hanging off-screen,
+    /// with accessibility frames and rendered pixels disagreeing about where
+    /// everything is. An audit needs every frame it measures to be where the
+    /// pixels are; the screenshots keep their own size for diffable output.
     private static let libraryArguments = [
         "-SUEnableAutomaticChecks", "NO",
         "-SUAutomaticallyUpdate", "NO",
         "-onboardingHasCompleted", "YES",
-        "-screenshotWindowSize", "1440x900",
+        "-screenshotWindowSize", "960x640",
     ]
 
     /// The two appearances every surface is audited under, as the
@@ -227,23 +233,53 @@ final class AccessibilityAuditTests: XCTestCase {
     // hook — the harness never asks macOS for anything — so those states stay
     // unaudited here.
 
-    func testOnboardingMicrophoneLight() throws { try auditOnboardingStep(1, appearance: .light) }
-    func testOnboardingMicrophoneDark() throws { try auditOnboardingStep(1, appearance: .dark) }
+    func testOnboardingMicrophoneLight() throws {
+        try auditOnboardingStep(1, titled: "Hear your side of the conversation", appearance: .light)
+    }
 
-    func testOnboardingSystemAudioLight() throws { try auditOnboardingStep(2, appearance: .light) }
-    func testOnboardingSystemAudioDark() throws { try auditOnboardingStep(2, appearance: .dark) }
+    func testOnboardingMicrophoneDark() throws {
+        try auditOnboardingStep(1, titled: "Hear your side of the conversation", appearance: .dark)
+    }
 
-    func testOnboardingCalendarLight() throws { try auditOnboardingStep(3, appearance: .light) }
-    func testOnboardingCalendarDark() throws { try auditOnboardingStep(3, appearance: .dark) }
+    func testOnboardingSystemAudioLight() throws {
+        try auditOnboardingStep(2, titled: "Hear everyone else's side, too", appearance: .light)
+    }
 
-    func testOnboardingVoiceEnrollmentLight() throws { try auditOnboardingStep(4, appearance: .light) }
-    func testOnboardingVoiceEnrollmentDark() throws { try auditOnboardingStep(4, appearance: .dark) }
+    func testOnboardingSystemAudioDark() throws {
+        try auditOnboardingStep(2, titled: "Hear everyone else's side, too", appearance: .dark)
+    }
 
-    func testOnboardingTeammateVoicesLight() throws { try auditOnboardingStep(5, appearance: .light) }
-    func testOnboardingTeammateVoicesDark() throws { try auditOnboardingStep(5, appearance: .dark) }
+    func testOnboardingCalendarLight() throws {
+        try auditOnboardingStep(3, titled: "Match meetings to your calendar", appearance: .light)
+    }
 
-    func testOnboardingFinishLight() throws { try auditOnboardingStep(6, appearance: .light) }
-    func testOnboardingFinishDark() throws { try auditOnboardingStep(6, appearance: .dark) }
+    func testOnboardingCalendarDark() throws {
+        try auditOnboardingStep(3, titled: "Match meetings to your calendar", appearance: .dark)
+    }
+
+    func testOnboardingVoiceEnrollmentLight() throws {
+        try auditOnboardingStep(4, titled: "Put a name to your voice", appearance: .light)
+    }
+
+    func testOnboardingVoiceEnrollmentDark() throws {
+        try auditOnboardingStep(4, titled: "Put a name to your voice", appearance: .dark)
+    }
+
+    func testOnboardingTeammateVoicesLight() throws {
+        try auditOnboardingStep(5, titled: "Recognize everyone, not just you", appearance: .light)
+    }
+
+    func testOnboardingTeammateVoicesDark() throws {
+        try auditOnboardingStep(5, titled: "Recognize everyone, not just you", appearance: .dark)
+    }
+
+    func testOnboardingFinishLight() throws {
+        try auditOnboardingStep(6, titled: "You're all set", appearance: .light)
+    }
+
+    func testOnboardingFinishDark() throws {
+        try auditOnboardingStep(6, titled: "You're all set", appearance: .dark)
+    }
 
     // MARK: - Audits
 
@@ -301,7 +337,12 @@ final class AccessibilityAuditTests: XCTestCase {
         try audit(app)
     }
 
-    private func auditOnboardingStep(_ step: Int, appearance: Appearance) throws {
+    /// Waits on the *step's own title* and on the library window being gone, not
+    /// just on "some window exists" — if opening the walkthrough regressed, the
+    /// close hook would leave the app with no windows at all, and an audit of
+    /// nothing reports nothing, which would read as green. An audit that ran
+    /// against nothing has to fail instead.
+    private func auditOnboardingStep(_ step: Int, titled title: String, appearance: Appearance) throws {
         let app = try launchSeeded(
             Self.libraryArguments + [
                 "-screenshotOnboardingStep", String(step),
@@ -309,7 +350,17 @@ final class AccessibilityAuditTests: XCTestCase {
             ],
             appearance: appearance
         )
-        awaitWindow(of: app)
+        let heading = app.staticTexts[title]
+        XCTAssertTrue(
+            heading.waitForExistence(timeout: Self.windowTimeout),
+            "The walkthrough never showed “\(title)”."
+        )
+        guard heading.exists else { return }
+        XCTAssertTrue(
+            app.windows["Cheerio"].waitForNonExistence(timeout: Self.windowTimeout),
+            "The library window never closed behind the walkthrough."
+        )
+        Thread.sleep(forTimeInterval: Self.settle)
         try audit(app)
     }
 
@@ -365,10 +416,10 @@ final class AccessibilityAuditTests: XCTestCase {
     ///    well past 4.5:1 — the first run flagged one element at a measured
     ///    17.3:1 — because antialiased edge pixels dominate a small glyph's
     ///    coverage. ``measuredTextContrast(of:)`` re-measures the element's own
-    ///    screenshot and suppresses only when the *dominant* ink clears 4.5:1; a
-    ///    compound element (a button with an icon, a row with a border) or an
-    ///    element where the high-contrast cluster is a minority next to some
-    ///    other ink doesn't qualify and stays red.
+    ///    screenshot and suppresses only when the region reads as a single ink
+    ///    ramp whose ink clears 4.5:1; anything whose histogram doesn't fit that
+    ///    shape — an icon, a border, any color outside the ink↔background band —
+    ///    can't be cleared and stays red.
     private func shouldSuppress(_ issue: XCUIAccessibilityAuditIssue, in app: XCUIApplication) -> Bool {
         guard let element = issue.element, element.exists else { return false }
         if !element.isHittable { return true }
@@ -384,20 +435,31 @@ final class AccessibilityAuditTests: XCTestCase {
     }
 
     /// The rendered contrast of a text element, measured from its own screenshot,
-    /// or nil when the pixels don't look like one ink on one background — nil
-    /// means "can't be cleared", never "fine".
+    /// or nil when the pixels don't read as one ink on one background — nil means
+    /// "can't be cleared", never "fine".
     ///
     /// The most frequent color is the background. Among the remaining colors that
-    /// cover a meaningful share of pixels (≥ 0.5%, floor 3 — below that it's an
-    /// antialiasing remnant, not a glyph), the one most contrasting with the
-    /// background is taken as the ink — for a glyph ramp that's the core stroke
-    /// color, since every antialiased midtone sits between the stroke and the
-    /// background by construction. Two guards keep that assumption honest: a
-    /// region with no candidate at all (flat — nothing legible was rendered where
-    /// the frame claims) returns nil rather than passing, and the ink must be at
-    /// least half as common as the largest candidate cluster, so a minority
-    /// high-contrast color (a second, darker ink; a stray border) can't vouch for
-    /// text that actually renders in something weaker.
+    /// cover a meaningful share of pixels (≥ 0.5%, floor 3 — below that it's a
+    /// stray remnant, not a glyph), the one most contrasting with the background
+    /// is taken as the ink, and the measurement only counts if *every* other
+    /// candidate's luminance sits inside the ink↔background band — the shape a
+    /// glyph ramp necessarily has, since antialiasing only ever blends between
+    /// the stroke and what's behind it. A region with no candidate at all (flat —
+    /// nothing legible rendered where the frame claims) and a region with any
+    /// color outside the band (an icon, a border, a second lighter surface) both
+    /// return nil and stay red.
+    ///
+    /// Not "the ink must be the most common cluster": at 1x, a caption's
+    /// sub-pixel strokes render mostly as midtones, so the core color is
+    /// routinely a minority of a small glyph's coverage — the run that proved it
+    /// had the token color at 8 pixels under a 19-pixel midtone, in text whose
+    /// token measures 5.9:1. The band check's own blind spot is a *second, weaker
+    /// ink* lying inside the band, which pixels alone cannot tell apart from
+    /// antialiasing of the stronger one; within a static text that means a
+    /// re-colored attributed span, and the audit's own flag plus this band still
+    /// bound it to at worst the passing ink's ramp. Anything structurally mixed —
+    /// icons, borders — falls outside the band or outside `.staticText` and is
+    /// never cleared here.
     private static func measuredTextContrast(of element: XCUIElement) -> Double? {
         let image = element.screenshot().image
         guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
@@ -432,14 +494,19 @@ final class AccessibilityAuditTests: XCTestCase {
         let significant = max(3, (width * height) / 200)
         let backgroundLuminance = luminance(background.key)
         let candidates = counts.filter { $0.key != background.key && $0.value >= significant }
+        let luminances = candidates.keys.map { luminance($0) }
         guard
-            let ink = candidates.max(by: {
-                contrast(luminance($0.key), backgroundLuminance) < contrast(luminance($1.key), backgroundLuminance)
-            }),
-            let commonest = candidates.values.max(),
-            ink.value * 2 >= commonest
+            let ink = luminances.max(by: {
+                contrast($0, backgroundLuminance) < contrast($1, backgroundLuminance)
+            })
         else { return nil }
-        return contrast(luminance(ink.key), backgroundLuminance)
+        let band = min(ink, backgroundLuminance)...max(ink, backgroundLuminance)
+        // A hair of tolerance for rounding at the band's edges, nothing more.
+        let tolerance = 0.005
+        for l in luminances where l < band.lowerBound - tolerance || l > band.upperBound + tolerance {
+            return nil
+        }
+        return contrast(ink, backgroundLuminance)
     }
 
     /// WCAG 2.1 contrast ratio between two relative luminances.
