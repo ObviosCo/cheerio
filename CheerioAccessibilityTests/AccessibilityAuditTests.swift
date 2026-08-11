@@ -209,6 +209,29 @@ final class AccessibilityAuditTests: XCTestCase {
         try auditSettings(tab: 2, titled: "Participants", appearance: .dark)
     }
 
+    /// The same tab with `VoiceEnrollmentRecorder`'s post-save acknowledgment
+    /// (issue #128) forced on — a state with its own text (`StatusLabel(.success)`
+    /// over the form) that only exists after a real 30-second sample, so the
+    /// launch-argument hook is the only way an audit ever sees it. The screenshot
+    /// harness treats it as its own surface for the same reason.
+    func testSettingsParticipantsConfirmedLight() throws {
+        try auditSettings(
+            tab: 2,
+            titled: "Participants",
+            appearance: .light,
+            extraArguments: ["-screenshotVoiceEnrollmentConfirmed", "YES"]
+        )
+    }
+
+    func testSettingsParticipantsConfirmedDark() throws {
+        try auditSettings(
+            tab: 2,
+            titled: "Participants",
+            appearance: .dark,
+            extraArguments: ["-screenshotVoiceEnrollmentConfirmed", "YES"]
+        )
+    }
+
     func testSettingsUpdatesLight() throws { try auditSettings(tab: 3, titled: "Updates", appearance: .light) }
     func testSettingsUpdatesDark() throws { try auditSettings(tab: 3, titled: "Updates", appearance: .dark) }
 
@@ -317,7 +340,12 @@ final class AccessibilityAuditTests: XCTestCase {
         try audit(app)
     }
 
-    private func auditSettings(tab: Int, titled title: String, appearance: Appearance) throws {
+    private func auditSettings(
+        tab: Int,
+        titled title: String,
+        appearance: Appearance,
+        extraArguments: [String] = []
+    ) throws {
         // `-screenshotCloseMainWindow` because this audit is *of Settings*: the
         // library window can't help but sit underneath it on a small CI display,
         // and an audit walks every window — leaving the library up would re-audit
@@ -328,7 +356,7 @@ final class AccessibilityAuditTests: XCTestCase {
                 "-screenshotOpenSettings", "YES",
                 "-screenshotCloseMainWindow", "YES",
                 "-com_apple_SwiftUI_Settings_selectedTabIndex", String(tab),
-            ],
+            ] + extraArguments,
             appearance: appearance
         )
         let window = app.windows[title]

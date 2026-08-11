@@ -42,11 +42,13 @@ struct MarkdownNotesView: View {
                 // Separates a section from the one above without a blank-line hack.
                 .padding(.top, 6)
         case .listItem(let marker, let text):
+            let body = Self.inline(text)
+            let bodyHasLinks = body.runs.contains { $0.link != nil }
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(marker)
                     .foregroundStyle(Theme.Colors.textSecondary)
                     .monospacedDigit()
-                Text(Self.inline(text))
+                Text(body)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             // One element, "1. Ship the fix" — not so a reader loses the marker
@@ -56,7 +58,13 @@ struct MarkdownNotesView: View {
             // aligned "•" also reports an accessibility frame its glyph isn't in,
             // which the contrast audit (#142) then measures as a blank region and
             // flags. Combined, the frame covers the whole row's rendered text.
-            .accessibilityElement(children: .combine)
+            //
+            // Except when the body carries links: combining would swallow them
+            // into one flat label and VoiceOver couldn't focus or open them, so a
+            // linked item keeps its children — the marker stays a separate,
+            // spoken element ahead of the text, which preserves the ordering an
+            // ordered item's number carries.
+            .accessibilityElement(children: bodyHasLinks ? .contain : .combine)
         case .paragraph(let text):
             Text(Self.inline(text))
                 .frame(maxWidth: .infinity, alignment: .leading)

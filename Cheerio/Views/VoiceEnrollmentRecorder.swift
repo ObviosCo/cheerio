@@ -120,11 +120,17 @@ struct VoiceEnrollmentRecorder: View {
                         .disabled(isFinalizing)
                     }
                     ProgressView(value: min(elapsed / EnrolledSpeaker.recommendedDuration, 1))
-                    Text(recordingHint)
-                        .font(.caption)
-                        .foregroundStyle(
-                            isSampleLongEnough ? Theme.Colors.success : Theme.Colors.textSecondary
-                        )
+                    // `StatusLabel`, not a bare `Theme.Colors.success` foreground —
+                    // the semantic colors' contract (see ThemeColors.swift) is that
+                    // they're never the only signal, so "long enough" arrives as a
+                    // checkmark plus text, not as green alone.
+                    if isSampleLongEnough {
+                        StatusLabel(.success, recordingHint)
+                    } else {
+                        Text(recordingHint)
+                            .font(.caption)
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                    }
                 } else if isCheckingMic {
                     LevelMeterView(level: level)
                     HStack {
