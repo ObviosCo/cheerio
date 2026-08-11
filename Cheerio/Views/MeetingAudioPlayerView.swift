@@ -1,32 +1,20 @@
 import CheerioKit
 import SwiftUI
 
-/// The playback affordance for a meeting's retained audio.
+/// The playback controls for a meeting's retained audio.
 ///
-/// Renders nothing at all when `MeetingAudioPlayback.hasPlayableAudio` says
-/// there's nothing on disk — retention purged it, or it was never written —
-/// rather than a disabled control, which would read as "playback is broken"
-/// instead of "there's nothing to play" (see issue #14). `.id(meeting.persistentModelID)`
-/// on the inner view forces SwiftUI to tear down and rebuild its player when the
-/// sidebar selects a different meeting, instead of reusing one `@State` player
-/// across two different meetings' audio.
+/// This view renders the player; it doesn't own it. `MeetingDetailView` holds
+/// the `MeetingAudioPlayerModel` — created fresh and loaded per meeting in its
+/// meeting-keyed `.task` — because the transcript's tap-to-seek drives the same
+/// player these controls do, and the two affordances live in sibling sections.
+/// The caller only shows this at all when `MeetingAudioPlayback.hasPlayableAudio`
+/// found files on disk: purged or never-recorded audio gets nothing, not a
+/// disabled control that would read as "playback is broken" instead of "there's
+/// nothing to play" (see issue #14).
 struct MeetingAudioPlayerView: View {
-    let meeting: Meeting
-
-    var body: some View {
-        let urls = MeetingAudioPlayback.channelFileURLs(for: meeting)
-        if !urls.isEmpty {
-            MeetingAudioPlayerControls(urls: urls)
-                .id(meeting.persistentModelID)
-        }
-    }
-}
-
-private struct MeetingAudioPlayerControls: View {
-    let urls: [URL]
+    let model: MeetingAudioPlayerModel
 
     @Environment(CaptureSession.self) private var session
-    @State private var model = MeetingAudioPlayerModel()
     /// While the user is dragging the scrubber, the displayed time tracks the
     /// drag rather than the player's own periodic updates — otherwise a still-
     /// playing position observer fights the thumb the user is trying to move.
@@ -41,26 +29,31 @@ private struct MeetingAudioPlayerControls: View {
                 controls
             }
         }
-        .task { await model.load(urls: urls) }
+        // The owner's meeting-keyed `.task` handles meeting switches, but a
+        // retention purge while this meeting stays selected removes only *this*
+        // view (`hasPlayableAudio` flips false the moment Settings clears
+        // `audioDirectory`) — the detail neither disappears nor re-runs its
+        // task, so without this hook the purged audio keeps playing with the
+        // controls gone, and `isReady` keeps the transcript's seek affordances
+        // alive. Captures this renderer's own `model` so a meeting switch
+        // (which recreates this view via `.id`) can only ever tear down the
+        // instance it was showing, never the owner's replacement; teardown is
+        // idempotent, so overlapping with the owner's own calls is fine.
         .onDisappear { model.teardown() }
-        // Never both at once (see #14 and the mic-hears-your-speakers issue,
-        // #5): a recording starting must actively pause audio that was already
-        // playing, not just leave the button disabled from here on.
-        .onChange(of: session.state) { _, newState in
-            if newState != .idle { model.pause() }
-        }
     }
 
     private var displayedTime: TimeInterval {
         isScrubbing ? scrubTime : model.currentTime
     }
 
-    /// Recording in progress (see the `.onChange` above) or the asset simply
+    /// Recording in progress (`MeetingDetailView` pauses playback on that
+    /// transition — never both at once, see #14 and #5) or the asset simply
     /// hasn't finished loading yet — either way, nothing here should be
     /// interactive. `model.play()` guards against the loading window
     /// independently, but disabling the controls is the visible half of that
-    /// fix: without it, a tap in the gap between this view appearing and its
-    /// `.task` finishing looked like it did nothing, not like it was refused.
+    /// fix: without it, a tap in the gap between this view appearing and the
+    /// owner's load finishing looked like it did nothing, not like it was
+    /// refused.
     private var controlsDisabled: Bool {
         session.state != .idle || !model.isReady
     }

@@ -106,7 +106,10 @@ its context menu or detail view).
   7 days, 30 days, or keep forever. The default is 3 days.
 - **Play a meeting back.** While the audio is still on disk, the meeting detail view offers a
   merged play/pause and scrubber over both channels — the affordance is simply absent, not
-  disabled, once retention has purged it.
+  disabled, once retention has purged it. The transcript is seekable too: hover any line and a
+  play control with that line's time appears at its edge — one click starts playback from that
+  moment (VoiceOver gets the same jump as a per-line action). Same rule as the scrubber: no
+  retained audio, no control.
 
 Full scope and non-goals: [`docs/SPEC.md`](docs/SPEC.md).
 
