@@ -518,7 +518,10 @@ struct MeetingDetailView: View {
         .focusable(false)
         .opacity(isRevealed ? 1 : 0)
         .allowsHitTesting(isRevealed)
-        .accessibilityLabel(seekActionName(for: segment))
+        // Pointer-only by design: keyboard is out of the Tab loop above, and
+        // VoiceOver already has the same labeled action on the line's text —
+        // exposing this (often invisible) button too would read as a duplicate.
+        .accessibilityHidden(true)
         .help(seekActionName(for: segment))
     }
 
