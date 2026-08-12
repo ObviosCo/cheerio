@@ -100,6 +100,49 @@
        it doesn't get an entry.
      ========================================================================== -->
 
+    <article class="release" id="v26-8-15">
+      <div class="stack stack--4">
+        <header class="stack stack--2">
+          <h2 class="release-version"><a href="#v26-8-15">26.8.15</a></h2>
+          <p class="release-meta">
+            <time datetime="2026-08-11">11 August 2026</time>
+            <span aria-hidden="true">·</span>
+            <a href="https://github.com/ObviosCo/cheerio/releases/tag/v26.8.15">Download</a>
+            <span aria-hidden="true">·</span>
+            <a href="https://github.com/ObviosCo/cheerio/compare/v26.8.14...v26.8.15">Changes since 26.8.14</a>
+          </p>
+        </header>
+        <p class="release-summary">A meeting now waits for your say-so before the machines act on it, and you can steer which agent gets it.</p>
+        <section class="stack stack--2">
+          <h3>Added</h3>
+          <ul>
+            <li>An optional review window when a meeting recording ends (directives skip it, and you can turn it off): add notes you didn't get to type live, set the meeting kind, and decide whether the callback fires, with an extra prompt if it does. Confirm to process now, or let the grace period (2 minutes of no edits, configurable) run it for you. Zero-touch still works: set the window to off and nothing changes.</li>
+            <li>Multiple named callback commands with one default. Pick a different one in the review window, or run any of them against a finished meeting from its page. Your existing command carries over as the default; nothing to reconfigure.</li>
+            <li>Hover a transcript line to play the audio from that moment. Works with keyboard playback controls and VoiceOver too.</li>
+            <li>Agents on your Mac can find the bundled MCP server on their own: the app maintains a small manifest at <code>~/Library/Application Support/Cheerio/mcp-server.json</code> with the server's path and transport.</li>
+            <li>Every screen is now contrast-audited in CI, light and dark, before a UI change can merge.</li>
+          </ul>
+        </section>
+        <section class="stack stack--2">
+          <h3>Changed</h3>
+          <ul>
+            <li>Audio retention now defaults to 3 days instead of 7. If you never touched the setting, audio older than 3 days is purged on next launch; your choice is kept if you ever set one.</li>
+            <li>The selected meeting row is readable again: a lighter selection fill with text that clears WCAG AA, window focused or not.</li>
+            <li>Roughly sixty small text-contrast fixes across the app, both appearances.</li>
+            <li>If a recording ends with a silent microphone channel, the log now says so and names the likely causes, instead of failing quietly.</li>
+          </ul>
+        </section>
+        <section class="stack stack--2">
+          <h3>Known issues</h3>
+          <ul>
+            <li>The mic hears your speakers: on a call played out loud in In Person mode, the transcript says everything twice. Use headphones. Video Call mode's echo cancellation still hasn't been verified against real speaker playback.</li>
+            <li>The live transcript shows Me/Them during the meeting; names appear once it ends.</li>
+            <li>Retained audio can't be re-transcribed from inside the app.</li>
+          </ul>
+        </section>
+      </div>
+    </article>
+
     <article class="release" id="v26-8-14">
       <div class="stack stack--4">
         <header class="stack stack--2">
