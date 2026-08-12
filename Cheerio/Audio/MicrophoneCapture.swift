@@ -29,10 +29,10 @@ final class MicrophoneCapture: @unchecked Sendable {
 
     /// A quiet mic doesn't reliably fail loud. A denied TCC grant fails at
     /// `permission()` when the user answers the prompt, but a grant revoked in
-    /// System Settings, a voice-processing failure, or an input device pointed at
-    /// nothing all leave the engine running and the tap firing — every buffer just
-    /// reads (near-)zero, and issue #159's meeting loses its whole Me channel with
-    /// no error anywhere. This watches the peak across the recording — fed from
+    /// System Settings or an input device pointed at nothing both leave the
+    /// engine running and the tap firing — every buffer just reads (near-)zero,
+    /// and issue #159's meeting loses its whole Me channel with no error
+    /// anywhere. This watches the peak across the recording — fed from
     /// the same `AudioLevel` each tap buffer already computes for `levels`, so the
     /// samples are never scanned twice — and `stop()` logs the verdict, the mic's
     /// counterpart to `SystemAudioTap`'s `SilenceWatch`.
@@ -83,17 +83,16 @@ final class MicrophoneCapture: @unchecked Sendable {
         }
     }
 
-    /// `mode` decides whether to try enabling acoustic echo cancellation — never whether
-    /// capture starts. Voice processing has to be flipped before the engine starts, and it
-    /// can change what `outputFormat(forBus:)` reports, so the format is read *after* that
-    /// call, not assumed. Everything downstream (the converter feeding `SpeechAnalyzer`, the
-    /// CAF writer) already takes its format from the buffer it's handed rather than from a
-    /// fixed assumption, so whatever format voice processing settles on just flows through.
-    func start(mode: RecordingMode) throws {
+    /// Plain capture, deliberately: voice processing (acoustic echo cancellation, AGC,
+    /// ducking) used to be an option here and was removed after it silenced a real
+    /// meeting's entire Me channel with no error anywhere (issues #159, #167). The
+    /// double-transcription it targeted — the mic hearing the speakers — remains an
+    /// open, tracked problem, being addressed at the transcript level (#168) rather
+    /// than here: `start()` makes no echo guarantee. Everything downstream (the converter feeding
+    /// `SpeechAnalyzer`, the CAF writer) takes its format from the buffer it's handed
+    /// rather than from a fixed assumption.
+    func start() throws {
         let input = engine.inputNode
-        if mode.echoCancellationEnabled {
-            enableEchoCancellation(on: input)
-        }
         let format = input.outputFormat(forBus: 0)
         input.installTap(onBus: 0, bufferSize: 4096, format: format) { [onBuffer, levelsContinuation, peakWatch] buffer, _ in
             // Measured on the tap's own buffer, before the copy below — reading
@@ -111,46 +110,6 @@ final class MicrophoneCapture: @unchecked Sendable {
         }
         engine.prepare()
         try engine.start()
-    }
-
-    /// Best-effort: voice processing can reject a device or format outright, and failing the
-    /// whole recording over a nicety would be worse than the echo it's meant to remove — see
-    /// issue #5's design comment. Falls back to capturing without echo cancellation and logs
-    /// why, rather than throwing.
-    private func enableEchoCancellation(on input: AVAudioInputNode) {
-        do {
-            try input.setVoiceProcessingEnabled(true)
-            // AGC is a separate toggle from AEC and defaults to on once voice processing is
-            // enabled. Automatic gain on a meeting mic isn't obviously desirable — it can
-            // pump the level around as people vary in loudness — so it's turned off
-            // explicitly rather than left to ride along with AEC.
-            input.isVoiceProcessingAGCEnabled = false
-            // Voice processing also ducks "other" (non-voice) audio by default, at the
-            // level tuned for typical voice chat. That's the wrong default here: the
-            // "other" audio it would duck is the far-end call itself, which is both what
-            // the user is listening to and what SystemAudioTap is recording on the Them
-            // channel — ducking it would quietly attenuate the very signal the other
-            // channel needs, and confound the #5 A/B measurement into the bargain. Pin it
-            // to the minimum rather than leave the default active.
-            //
-            // `duckingLevel` and `enableAdvancedDucking` are independent per
-            // AVAudioIONode.h: the level sets the base attenuation regardless of the
-            // flag (the header documents the shipped default as *disabled* advanced
-            // ducking paired with `duckingLevel = .default`, which only makes sense if
-            // the level applies either way), and advanced ducking layers *additional*,
-            // voice-activity-driven attenuation on top. Leaving it `false` here is the
-            // right call, not a gap — turning it on would add ducking, not make `.min`
-            // "count".
-            input.voiceProcessingOtherAudioDuckingConfiguration = AVAudioVoiceProcessingOtherAudioDuckingConfiguration(
-                enableAdvancedDucking: false,
-                duckingLevel: .min
-            )
-        } catch {
-            // .notice, not .info: .info-level os_log entries never reach `log show`, and this
-            // is exactly the kind of silent failure issue #5 warned against.
-            Self.log.notice(
-                "Voice processing unavailable, continuing without echo cancellation: \(error)")
-        }
     }
 
     func stop() {
@@ -175,8 +134,8 @@ final class MicrophoneCapture: @unchecked Sendable {
                 Microphone capture stopped — captured ONLY SILENCE (peak \(verdict.peakDescription, privacy: .public)). \
                 The engine ran without error but the Me channel is empty. Most likely: microphone access is \
                 denied (System Settings → Privacy & Security → Microphone — the co.obvios.cheerio.mac \
-                bundle-identifier change reset the old grant), voice processing failed on this input device, \
-                or the selected input (System Settings → Sound → Input) isn't the device hearing the room.
+                bundle-identifier change reset the old grant), or the selected input \
+                (System Settings → Sound → Input) isn't the device hearing the room.
                 """
             )
         }

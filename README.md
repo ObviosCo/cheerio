@@ -14,9 +14,9 @@ third-party service sits between the recording and the output — the transcript
 in your library, ready to hand to whatever comes next.
 
 > **Status: works, lightly tested.** The app builds and runs, the package tests pass, and
-> speaker differentiation is verified for in-person meetings. Acoustic echo cancellation now
-> runs behind a Video Call recording mode, but it has **not** been verified against a live
-> call with real speaker playback yet — see [Current status](#current-status).
+> speaker differentiation is verified for in-person meetings. On a video call played out
+> loud, the mic still hears your speakers, so wear headphones — see
+> [Current status](#current-status).
 
 ## Why
 
@@ -368,9 +368,9 @@ macros.
   before. Samples need **at least 30 seconds** — shorter ones measurably cause the model to
   split one person across two speaker slots. "Mic check" arms a live level meter before you
   commit to a take, and saving a sample confirms it by name instead of quietly resetting the form.
-- **On a video call, switch to Video Call mode** (the picker next to Start Recording) so the
-  mic runs acoustic echo cancellation. Headphones are still the safer choice until that's
-  verified against a live call — see the echo issue below.
+- **On a video call, wear headphones.** With meeting audio playing out loud, the mic hears
+  your speakers and remote voices land in both channels — see the echo issue below. There's
+  no mode to set; every recording captures both channels the same way.
 
 ## Current status
 
@@ -383,15 +383,16 @@ Verified against this commit on macOS 27 / Xcode 26:
 | End-to-end capture | verified 2026-07-28 — both channels transcribe, notes generate, both CAFs write |
 | Speaker differentiation, in person | verified 2026-07-31 — 9/9 segments labelled correctly across 1–2s alternating turns |
 | Live video call | **not yet verified** |
-| Acoustic echo cancellation | landed behind Video Call mode; **not yet verified** with a live A/B against real speaker playback |
 
 Known issues, roughly in priority order:
 
 - **The mic hears your speakers.** With meeting audio playing out loud, system audio lands in
   *both* channels and the transcript duplicates itself, which then skews the summary.
-  Acoustic echo cancellation now runs when Video Call mode is selected, but it hasn't had a
-  live A/B against real speaker playback yet, so headphones remain the safer choice
-  meanwhile — run `Scripts/aec-ab-measure.sh` against a real before/after recording to check.
+  Acoustic echo cancellation was tried and removed ([#167](https://github.com/ObviosCo/cheerio/issues/167)):
+  with it enabled, a real video call recorded a completely silent mic channel
+  ([#159](https://github.com/ObviosCo/cheerio/issues/159)) — losing half the meeting is worse
+  than transcribing it twice. Wear headphones; deduplicating the bleed at the transcript
+  level is tracked in [#168](https://github.com/ObviosCo/cheerio/issues/168).
 - **The live transcript shows `Me` / `Them`, not names.** Diarization is a post-pass over the
   recorded files, so names appear only once the recording stops. In an in-person meeting
   everyone is on the mic, so every live line reads "Me" — this looks like a differentiation
@@ -454,18 +455,22 @@ UI, and a website: [`docs/DESIGN-HANDOFF.md`](docs/DESIGN-HANDOFF.md).
 
 ## Roadmap
 
-Near-term: a live A/B of acoustic echo cancellation against real speaker playback (the
-measurement that gates closing #5), an in-room vs. remote toggle per participant, and
-re-running transcription on retained audio (the other half of #14 — playback itself shipped).
+Near-term: deduplicating speaker bleed at the transcript level
+([#168](https://github.com/ObviosCo/cheerio/issues/168) — the successor to acoustic echo
+cancellation, which was removed after it silenced a real meeting's mic), an in-room vs.
+remote toggle per participant, and re-running transcription on retained audio (the other
+half of #14 — playback itself shipped).
 
 The actionable-transcripts work ([epic #22](https://github.com/ObviosCo/cheerio/issues/22))
 shipped in v26.8.9: owner-attributed action items, the transcript-ready callback, directive
 mode, and the bundled MCP server are all in the app today.
 
-Both capture channels stay on in every mode, including directive mode. An earlier
-plan had modes skip the system tap for solo and in-person recording, on the assumption that
-nothing worth capturing comes out of the machine — but input and output can be different
-devices, and someone recording alone through AirPods still has system audio worth keeping.
+Both capture channels stay on for every recording, directives included. An earlier
+plan had recording modes skip the system tap for solo and in-person recording, on the
+assumption that nothing worth capturing comes out of the machine — but input and output can
+be different devices, and someone recording alone through AirPods still has system audio
+worth keeping. Modes themselves are gone now too ([#167](https://github.com/ObviosCo/cheerio/issues/167)):
+every recording captures the same way, with nothing to pick before you start.
 
 Later: an iOS app for in-person meetings, pluggable summarization models via the `LanguageModel`
 protocol, semantic search, Obsidian folder auto-export, and a first-party CLI once the callback

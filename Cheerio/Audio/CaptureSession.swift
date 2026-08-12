@@ -333,11 +333,7 @@ final class CaptureSession {
         }
         self.micCapture = micCapture
         self.systemTap = systemTap
-        // Read fresh at every start, not cached on the session: a change made in the
-        // recording controls between meetings should take effect on the next one without
-        // requiring a relaunch. Both channels start regardless of what this returns —
-        // `RecordingMode` only ever decides the mic's echo cancellation.
-        try micCapture.start(mode: .current)
+        try micCapture.start()
         try systemTap.start()
         // Armed only with both channels up: had `systemTap.start()` thrown,
         // `rollbackFailedStart()` would stop a mic that ran for under a second

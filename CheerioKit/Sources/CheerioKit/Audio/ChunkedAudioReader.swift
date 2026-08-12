@@ -13,8 +13,8 @@ import Foundation
 /// `AVAudioFile.read(into:frameCount:)` throws once `framePosition` has already
 /// reached `length`, rather than returning an empty buffer — a "read until I get
 /// nothing back" loop throws on its last lap. Every reader here guards on
-/// `framePosition < length` instead, the same discipline `Scripts/aec-ab-measure.sh`'s
-/// embedded reader uses, and that `AudioExcerpt` already uses within a single range.
+/// `framePosition < length` instead, the same discipline `AudioExcerpt` already
+/// uses within a single range.
 ///
 /// It also short-reads: a single call can return fewer frames than requested well
 /// before EOF, not just at the tail end — measured, a 250,000-frame request against

@@ -45,11 +45,6 @@ struct MeetingListView: View {
     /// failed kind flip doesn't borrow Delete's wording.
     @State private var convertError: String?
 
-    /// Persisted default for every future recording, following ``AudioRetention``'s
-    /// `@AppStorage` pattern — `CaptureSession` reads `RecordingMode.current` fresh at
-    /// each start, so changing this takes effect on the very next recording.
-    @AppStorage(RecordingMode.defaultsKey) private var recordingModeRaw = RecordingMode.default.rawValue
-
     /// Matches title, rough notes, enhanced notes, and transcript text. The library
     /// is one person's meetings, so filtering in memory is cheaper than rebuilding
     /// the query on every keystroke.
@@ -270,18 +265,6 @@ struct MeetingListView: View {
     @ViewBuilder private var recordingControls: some View {
         switch session.state {
         case .idle:
-            // Small and persisted, not a modal on every start — issue #12 flags a
-            // per-recording picker as the worst possible moment to interrupt someone.
-            // This only sets the default the next recording reads; nothing here can
-            // fail a start, so it carries no confirmation of its own.
-            Picker("Recording mode", selection: $recordingModeRaw) {
-                ForEach(RecordingMode.allCases) { mode in
-                    Text(mode.label).tag(mode.rawValue)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-
             // Ad-hoc goes first: it's the common case, and burying it under a
             // calendar match is how a one-off got filed as "Connor - Chat coverage".
             Button {
