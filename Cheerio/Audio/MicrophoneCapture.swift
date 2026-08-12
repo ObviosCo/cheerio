@@ -86,8 +86,9 @@ final class MicrophoneCapture: @unchecked Sendable {
     /// Plain capture, deliberately: voice processing (acoustic echo cancellation, AGC,
     /// ducking) used to be an option here and was removed after it silenced a real
     /// meeting's entire Me channel with no error anywhere (issues #159, #167). The
-    /// double-transcription it targeted — the mic hearing the speakers — is handled at
-    /// the transcript level instead (#168). Everything downstream (the converter feeding
+    /// double-transcription it targeted — the mic hearing the speakers — remains an
+    /// open, tracked problem, being addressed at the transcript level (#168) rather
+    /// than here: `start()` makes no echo guarantee. Everything downstream (the converter feeding
     /// `SpeechAnalyzer`, the CAF writer) takes its format from the buffer it's handed
     /// rather than from a fixed assumption.
     func start() throws {
