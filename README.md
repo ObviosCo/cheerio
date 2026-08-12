@@ -368,10 +368,10 @@ macros.
   before. Samples need **at least 30 seconds** — shorter ones measurably cause the model to
   split one person across two speaker slots. "Mic check" arms a live level meter before you
   commit to a take, and saving a sample confirms it by name instead of quietly resetting the form.
-- **On a video call, switch to Video Call mode** (the picker next to Start Recording) so the
-  mic runs acoustic echo cancellation. Headphones still give the cleanest capture — with
-  speakers, the far end lands in the retained audio and the live transcript too — but either
-  way the processed transcript dedupes speaker bleed; see the known issue below.
+- **On a video call, headphones still give the cleanest capture.** With speakers, the far
+  end lands in the retained audio and the live transcript too — but either way the processed
+  transcript dedupes the mic's copy of the far end; see the known issue below. There's no
+  mode to set; every recording captures both channels the same way.
 
 ## Current status
 
@@ -384,7 +384,6 @@ Verified against this commit on macOS 27 / Xcode 26:
 | End-to-end capture | verified 2026-07-28 — both channels transcribe, notes generate, both CAFs write |
 | Speaker differentiation, in person | verified 2026-07-31 — 9/9 segments labelled correctly across 1–2s alternating turns |
 | Live video call | **not yet verified** |
-| Acoustic echo cancellation | landed behind Video Call mode; **not yet verified** with a live A/B against real speaker playback |
 | Speaker bleed (call on speakers) | deduped at the transcript level in post-processing; every drop/keep decision fixture-verified in `BleedDetectorTests` |
 
 Known issues, roughly in priority order:
@@ -392,12 +391,14 @@ Known issues, roughly in priority order:
 - **The mic hears your speakers — the transcript no longer says everything twice.** With
   meeting audio playing out loud, the far end still lands in *both* channels, but
   post-processing now detects the mic's near-duplicate of each system-tap line (fuzzy text
-  match, gated by overlapping time) and excludes it from the transcript, the summary, the
-  speakers panel, and everything handed to agents. What keeps the bleed: the retained audio
-  (this is a text-level fix, not echo cancellation) and the live transcript, which shows the
-  duplicates until the recording stops and processing runs. Matching is deliberately
-  conservative — genuine cross-talk always survives, so the rare leftover duplicate line is
-  the accepted cost.
+  match, gated by overlapping time and timing direction) and excludes it from the transcript,
+  the summary, the speakers panel, and everything handed to agents. What keeps the bleed: the
+  retained audio (this is a text-level fix, not echo cancellation — that was tried and removed
+  in [#167](https://github.com/ObviosCo/cheerio/issues/167) after it silenced a real meeting's
+  mic channel, [#159](https://github.com/ObviosCo/cheerio/issues/159)) and the live transcript,
+  which shows the duplicates until the recording stops and processing runs. Matching is
+  deliberately conservative — genuine cross-talk always survives, so the rare leftover
+  duplicate line is the accepted cost.
 - **The live transcript shows `Me` / `Them`, not names.** Diarization is a post-pass over the
   recorded files, so names appear only once the recording stops. In an in-person meeting
   everyone is on the mic, so every live line reads "Me" — this looks like a differentiation
@@ -467,10 +468,12 @@ The actionable-transcripts work ([epic #22](https://github.com/ObviosCo/cheerio/
 shipped in v26.8.9: owner-attributed action items, the transcript-ready callback, directive
 mode, and the bundled MCP server are all in the app today.
 
-Both capture channels stay on in every mode, including directive mode. An earlier
-plan had modes skip the system tap for solo and in-person recording, on the assumption that
-nothing worth capturing comes out of the machine — but input and output can be different
-devices, and someone recording alone through AirPods still has system audio worth keeping.
+Both capture channels stay on for every recording, directives included. An earlier
+plan had recording modes skip the system tap for solo and in-person recording, on the
+assumption that nothing worth capturing comes out of the machine — but input and output can
+be different devices, and someone recording alone through AirPods still has system audio
+worth keeping. Modes themselves are gone now too ([#167](https://github.com/ObviosCo/cheerio/issues/167)):
+every recording captures the same way, with nothing to pick before you start.
 
 Later: an iOS app for in-person meetings, pluggable summarization models via the `LanguageModel`
 protocol, semantic search, Obsidian folder auto-export, and a first-party CLI once the callback

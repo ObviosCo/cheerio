@@ -299,10 +299,7 @@ struct VoiceEnrollmentRecorder: View {
             pendingPath = relativePath
             self.recorder = recorder
             self.capture = capture
-            // Always in-person: this is a close-mic'd reference sample of one voice with
-            // no speaker playback to cancel, and issue #5's design comment already flags
-            // AEC as liable to alter the very characteristics enrollment depends on.
-            try capture.start(mode: .inPerson)
+            try capture.start()
             guard !Task.isCancelled else {
                 // Cancelled while the microphone was coming up: everything is
                 // published now, so the shared cleanup can unwind all of it.
@@ -413,10 +410,7 @@ struct VoiceEnrollmentRecorder: View {
         // already showing them whatever a log line would have said.
         let candidate = MicrophoneCapture { _ in }
         do {
-            // Same rationale as `startRecording()`: a close-mic'd single voice with
-            // no far-end signal to cancel, and a mic check that altered what it
-            // measured to fight an echo that isn't there would defeat the point.
-            try candidate.start(mode: .inPerson)
+            try candidate.start()
         } catch {
             errorMessage = error.localizedDescription
             return

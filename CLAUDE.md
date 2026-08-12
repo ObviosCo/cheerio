@@ -16,7 +16,7 @@ any of them exist yet, since docs describing the goal land ahead of the code tha
 
 ## State of the repo
 
-Builds and runs; the package test suite passes (`cd CheerioKit && swift test` — the count moves with every PR, so this file doesn't track it). Acoustic echo cancellation now runs behind `RecordingMode.videoCall` (#12), but it's **not yet verified against a live call** with real speaker playback — that measurement, not the code, is what still gates closing #5. Run `Scripts/aec-ab-measure.sh` against a real before/after recording to make the call.
+Builds and runs; the package test suite passes (`cd CheerioKit && swift test` — the count moves with every PR, so this file doesn't track it). Acoustic echo cancellation and `RecordingMode` are **removed** (#167): AEC silenced a real meeting's mic channel (#159) and its benefit was never verified, so there is one recording behavior and the mic runs without voice processing. The double-transcription problem AEC was meant to fix is addressed at the transcript level instead — cross-channel bleed dedup (#168), which is what now gates closing #5.
 
 Two build warnings remain, both `Binding<Optional<Wrapped>>` captured in a `@Sendable` closure in `Views/Binding+Presented.swift`.
 
@@ -71,10 +71,10 @@ because it's ~93 MB, not because the license requires it.
 list; don't add a to-do section back here.
 
 The two worth knowing before you touch the audio path: **#5** (the mic hears your
-speakers, so calls transcribe twice — the fix landed behind `RecordingMode.videoCall`,
-but closing the issue needs a live A/B against real speaker playback, which hasn't
-happened yet) and **#9** (the live transcript can only show Me/Them, which looks
-like a bug and isn't).
+speakers, so calls transcribe twice — being fixed at the transcript level by
+cross-channel bleed dedup, #168; the AEC attempt was removed in #167 after it
+silenced a real meeting's mic) and **#9** (the live transcript can only show
+Me/Them, which looks like a bug and isn't).
 
 ## Agents
 
@@ -91,7 +91,7 @@ update them alongside Build whenever the commands change.
 ## Conventions & constraints
 
 - **App Sandbox must stay off.** A sandboxed build creates the tap with `noErr` at every step and then reads pure digital silence, with no TCC prompt — it looks like a transcription bug but it's a capture-permission failure. Measured: `peak=0.0` sandboxed vs `-1.8 dBFS` unsandboxed, same code. This rules out Mac App Store distribution. `SystemAudioTap`'s `SilenceWatch` logs the verdict at `.notice`/`.error` on stop (`.info` never reaches `log show`).
-- **Both capture channels run in every recording mode.** Input and output can be different devices, so a solo recording through AirPods still has system audio worth keeping. `RecordingMode` (#12) drives echo cancellation, never whether the tap starts.
+- **Both capture channels always run.** Input and output can be different devices, so a solo recording through AirPods still has system audio worth keeping. There are no recording modes and no voice processing on the mic (#167) — one capture behavior, unconditionally.
 - **What "no third-party service" means mechanically:** nothing may need the network while recording or processing a meeting. That invariant is unchanged and still the thing to protect in review — but the app is no longer free of networking code. Sparkle fetches the appcast and, if accepted, an update zip — both assets of Cheerio's own GitHub Releases — and `UpdatePolicy` in `Cheerio/Updates/AppUpdater.swift` refuses *every* check start — scheduled or user-initiated — while `CaptureSession.state != .idle` (a download admitted while idle isn't aborted mid-cycle; documented edge, not machinery). With the sandbox off nothing enforces any of this, so review is the enforcement: capture and processing must stay free of `URLSession`, sockets, and `import Network`, and Sparkle must stay the only thing that talks to the network at all. A one-time download at install/setup (e.g. fetching a model) would also be acceptable; a network dependency during capture never is. Sparkle's system profile stays off — no analytics, no accounts. This isn't air-gapping for its own sake — it's the mechanical form of "no subscription, no third party." It doesn't rule out local surfaces for other processes on the same machine: a future MCP server speaks stdio, and a transcript-ready callback runs a local command — neither opens a network connection, so neither weakens this invariant.
 - **A `pull_request` workflow never gets a write token.** `screenshots.yml` runs unreviewed code from the PR — `bootstrap.sh`, the seeder, the test bundle, everything under `Scripts/screenshots/`, and the workflow file itself — so it has `contents: read` and nothing else, and hands its captures on as an artifact. `screenshots-publish.yml` holds the write token, and it can because `workflow_run` runs the *base branch's* scripts in the base repo's context. `ci/verify-handoff.sh` is the seam: the artifact is validated as hostile input, and the PR number and head SHA come from the `workflow_run` payload rather than from anything the artifact claims. Don't move a publishing step back across that line, and don't add permissions to the capture side.
 - Anything portable to iOS lives in `CheerioKit`; Core Audio tap code stays in the app target.

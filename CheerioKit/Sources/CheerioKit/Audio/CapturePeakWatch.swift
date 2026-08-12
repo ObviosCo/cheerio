@@ -55,8 +55,8 @@ public final class CapturePeakWatch: Sendable {
         /// treat any nonzero sample as signal because a denied process tap delivers
         /// pure digital zeroes; a microphone is the opposite — a healthy open mic
         /// almost never produces exact zeroes (analog noise floor), while a broken
-        /// one (voice processing gutting the input, an input device pointed at
-        /// nothing) can produce nonzero residue that still contains no speech. So
+        /// one (an input device pointed at nothing, a driver delivering only its
+        /// own residue) can produce nonzero samples that still contain no speech. So
         /// the mic's question is a level question, not a zero question. Ordinary
         /// close-mic'd speech peaks around −30…−3 dBFS and even far-field speech
         /// clears −50; a recording whose *peak across the entire take* never
@@ -87,8 +87,8 @@ public final class CapturePeakWatch: Sendable {
 
         /// Log-ready rendering of the peak: "-6.0 dBFS", or naming pure digital
         /// zeroes outright — an all-zero channel points at a permission or capture
-        /// failure, where a nonzero-but-negligible one points at the device or at
-        /// voice processing, and the reader should be able to tell which.
+        /// failure, where a nonzero-but-negligible one points at the input device,
+        /// and the reader should be able to tell which.
         public var peakDescription: String {
             guard let dBFS = Self.dBFS(fromLinear: peak) else {
                 return "every sample zero"
