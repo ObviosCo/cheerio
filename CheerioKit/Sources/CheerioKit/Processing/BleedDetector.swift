@@ -18,9 +18,11 @@ import Foundation
 ///
 /// Every constant errs toward keeping a line. A dropped piece of genuine cross-talk
 /// is speech the summary never sees and no one can get back; a kept piece of bleed is
-/// the status quo this exists to improve on. Time overlap only *gates* candidate
-/// pairs — simultaneous speech is normal in any real call — and the text similarity
-/// makes the call.
+/// the status quo this exists to improve on. Time only *gates* candidate pairs —
+/// simultaneous speech is normal in any real call — and the text similarity makes the
+/// call; the timing gate itself is directional, requiring a candidate to start while
+/// its source is still being spoken, because a person repeating the far end's words
+/// back waits for the phrase to end and bleed, by its physics, never does.
 public enum BleedDetector {
     /// One transcript line, as much of it as matching needs. A value type rather
     /// than `TranscriptSegment` so the matching stays pure and the tests need no
@@ -65,6 +67,14 @@ public enum BleedDetector {
     /// the status quo, not a regression.
     public static let minimumWordCount = 5
 
+    /// How much earlier than its source a Me line may start and still count as
+    /// starting inside that source's span (see ``startsInsideSpan(of:candidate:)``).
+    /// The acoustic path and second recognition pass only ever *delay* the mic's
+    /// copy, so a genuine copy can't meaningfully precede its source — this is
+    /// jitter allowance for two engines rounding the same onset differently, not a
+    /// second skew window.
+    public static let startJitterAllowance: TimeInterval = 0.5
+
     /// The offsets into `micLines` judged to be bleed from `systemLines`.
     ///
     /// Order doesn't matter to the verdicts — every Me line is judged against the
@@ -82,9 +92,22 @@ public enum BleedDetector {
             let micWords = normalizedWords(micLine.text)
             guard micWords.count >= minimumWordCount else { continue }
 
-            // The reference is everything the far end said near this line, joined:
-            // the two engines segment independently, so one Them line can cover two
-            // Me lines and vice versa, and matching pairwise would miss both splits.
+            // Bleed is *simultaneous* with its source — the mic hears the speakers
+            // while they play — so a real copy starts while some Them line is
+            // still being spoken. A person echoing a phrase back waits for it to
+            // end first, and the far end repeating *your* words starts after you
+            // did: both land outside every source's span, and no amount of text
+            // similarity may convict them. This is the gate that keeps a short
+            // verbatim clarification ("Ship the fix on Tuesday?") alive when the
+            // length gate and the similarity score both fail it.
+            guard system.contains(where: { startsInsideSpan(of: $0.line, candidate: micLine) })
+            else { continue }
+
+            // The reference is everything the far end said near this line, joined
+            // — wider than the span-containing sources on purpose: the engines
+            // segment independently, so one Me copy can run past its source into
+            // the next Them line, and the free ends of the semi-global alignment
+            // absorb whatever the extra reference says.
             let reference =
                 system
                 .filter { gap(between: micLine, and: $0.line) <= timingSkewTolerance }
@@ -96,6 +119,22 @@ public enum BleedDetector {
             }
         }
         return offsets
+    }
+
+    /// Whether `candidate` starts while `source` is being spoken — within
+    /// ``startJitterAllowance`` of its start at the early end, strictly before its
+    /// end at the late end.
+    ///
+    /// The one bleed this deliberately misses: a Them utterance so short that the
+    /// 0.5–2s recognition skew pushes the mic copy's start past the source's end.
+    /// That copy is indistinguishable *by timing* from a person echoing the phrase
+    /// back — and a verbatim echo is indistinguishable by text — so the tie goes to
+    /// keeping, per this file's ordering of harms: a duplicate line in the
+    /// transcript is the pre-detector status quo; a vanished human reply is data
+    /// loss.
+    static func startsInsideSpan(of source: Line, candidate: Line) -> Bool {
+        candidate.startTime >= source.startTime - startJitterAllowance
+            && candidate.startTime < source.endTime
     }
 
     /// Seconds between two lines' time ranges — zero when they overlap.

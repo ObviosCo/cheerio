@@ -130,6 +130,56 @@ import Testing
 
     // MARK: - The decisions the thresholds encode
 
+    @Test func verbatimEchoBackOfAWholePhraseSurvives() {
+        // The hardest genuine case there is: a short clarifying repetition with no
+        // framing words at all — five normalized words, inside the skew window,
+        // similarity 1. Text can't save it and length can't save it; the timing
+        // direction does: the human waited for the phrase to end before repeating
+        // it, and bleed never starts after its source has finished playing.
+        let them = [
+            Line(text: "We should ship the fix on Tuesday.", startTime: 10.0, endTime: 13.6)
+        ]
+        let me = [
+            Line(text: "Ship the fix on Tuesday?", startTime: 14.1, endTime: 15.8)
+        ]
+        #expect(BleedDetector.bleedOffsets(micLines: me, systemLines: them).isEmpty)
+    }
+
+    @Test func farEndRepeatingYourWordsIsNotBleed() {
+        // The mirror image: the remote person reads your request back. The Me line
+        // is the *original* here — it starts before its near-duplicate does, and a
+        // copy can't precede its source, so the direction gate keeps it.
+        let me = [
+            Line(
+                text: "Can you take the incident review this week instead of me?",
+                startTime: 10.0, endTime: 12.4)
+        ]
+        let them = [
+            Line(
+                text: "Take the incident review this week instead of you — sure, happy to.",
+                startTime: 13.0, endTime: 16.1)
+        ]
+        #expect(BleedDetector.bleedOffsets(micLines: me, systemLines: them).isEmpty)
+    }
+
+    @Test func trailingFragmentBleedIsStillCaught() {
+        // The direction gate must not reintroduce misses: the mic engine can cut
+        // its copy of a long far-end sentence so late that the fragment barely
+        // overlaps the source and runs well past its end. Starting inside the
+        // span — even just — is what makes it a copy rather than a reply.
+        let them = [
+            Line(
+                text: "The rollout pauses automatically if the crash rate moves more than half a percent in either direction.",
+                startTime: 40.0, endTime: 47.0)
+        ]
+        let me = [
+            Line(
+                text: "If the crash rate moves more than half a percent in either direction.",
+                startTime: 46.6, endTime: 49.8)
+        ]
+        #expect(BleedDetector.bleedOffsets(micLines: me, systemLines: them) == [0])
+    }
+
     @Test func quotingTheFarEndBackIsNotBleed() {
         // Repeating the far end's words back starts within the timing tolerance of
         // the line it quotes — the time gate can't save this one; the extra words
