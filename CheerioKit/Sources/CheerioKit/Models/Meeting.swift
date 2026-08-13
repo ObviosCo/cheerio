@@ -521,11 +521,22 @@ extension Meeting {
     /// channels at once — genuinely ambiguous which of the resulting identities
     /// should inherit the old colour, so neither does; both pick up a fresh slot
     /// on the next ``resolveSpeakerSlots(ownerNames:)``.
+    ///
+    /// Bleed lines are skipped, and the distinction from per-line correction is
+    /// the point: renaming a *speaker* is a statement about the speaker, made
+    /// from a panel that doesn't even show the hidden copies filed under the same
+    /// label — while `assignSpeaker(_:)` on one specific line is a deliberate
+    /// statement about that line, which rightly overrules the detector.
+    /// Settling the copies here would fix their verdict at "real speech"
+    /// (`markBleedSegments()` never marks a settled line, and clears a stale mark
+    /// on one), so a bulk rename of "Me" would quietly resurface every duplicate
+    /// the detector had hidden — under the new name, attributed to the person
+    /// who never said them.
     @discardableResult
     public func relabelSpeaker(_ speaker: SpeakerSummary, to newLabel: String?) -> Int {
         var changed = 0
         var newKeys: Set<String> = []
-        for segment in segments where speaker.matches(segment) {
+        for segment in segments where speaker.matches(segment) && !segment.isBleed {
             segment.assignSpeaker(newLabel)
             newKeys.insert(segment.speakerSlotKey)
             changed += 1
@@ -575,10 +586,17 @@ extension Meeting {
     /// the label stays), and a wrong confirm is otherwise recoverable the same way
     /// a wrong rename is, by renaming. Returns how many lines flipped, so a caller
     /// with nothing to change can skip the save.
+    ///
+    /// Bleed lines are skipped for the same reason ``relabelSpeaker(_:to:)`` skips
+    /// them: this is a bulk statement about the *speaker*, made without the hidden
+    /// copies in view, and a settled copy's verdict is fixed at "real speech" —
+    /// so confirming a speaker would resurface duplicates the person never saw,
+    /// let alone vouched for. Overruling the detector on a line stays a per-line
+    /// act.
     @discardableResult
     public func confirmSpeaker(_ speaker: SpeakerSummary) -> Int {
         var changed = 0
-        for segment in segments where speaker.matches(segment) {
+        for segment in segments where speaker.matches(segment) && !segment.isBleed {
             guard !segment.isSpeakerLabelManual,
                 !segment.isSpeakerLabelConfirmed,
                 let label = segment.speakerLabel,

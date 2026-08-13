@@ -424,6 +424,55 @@ import Testing
         #expect(!mic[2].isBleed)
     }
 
+    @Test func bulkRenameLeavesHiddenBleedCopiesHidden() throws {
+        // Renaming a *speaker* is a statement about the speaker, made from a panel
+        // that doesn't show the hidden copies filed under the same label. If the
+        // rename settled them too, the heal rule (a settled line's verdict is
+        // fixed at "not bleed") would resurface every duplicate on the next
+        // marking pass — under the new name, attributed to the person who never
+        // said them.
+        let meeting = makeSpeakerCallMeeting()
+        meeting.markBleedSegments()
+        let me = try #require(meeting.speakerSummaries.first { $0.label == "Me" })
+
+        // Only the two genuine lines are the speaker's to rename.
+        #expect(meeting.relabelSpeaker(me, to: "Jackson") == 2)
+
+        meeting.markBleedSegments()
+        #expect(micSegments(of: meeting).map(\.isBleed) == [true, false, true, true, false])
+    }
+
+    @Test func bulkConfirmLeavesHiddenBleedCopiesUnsettled() throws {
+        // The confirm variant of the rename case above. The copies carry a real
+        // label here — the shape of a meeting labelled by a build that predates
+        // the marks, then re-marked — so without the skip they'd be confirmable.
+        let meeting = makeSpeakerCallMeeting()
+        meeting.markBleedSegments()
+        for segment in micSegments(of: meeting) {
+            segment.speakerLabel = "Jackson"
+        }
+        let jackson = try #require(meeting.speakerSummaries.first { $0.label == "Jackson" })
+
+        #expect(meeting.confirmSpeaker(jackson) == 2)
+
+        meeting.markBleedSegments()
+        #expect(micSegments(of: meeting).map(\.isBleed) == [true, false, true, true, false])
+    }
+
+    @Test func perLineCorrectionStillHealsTheMarkToVisible() {
+        // The counterpart the bulk skip must not break: touching one specific line
+        // is a deliberate statement about that line, and it still overrules the
+        // detector — the next pass clears the mark and the line comes back.
+        let meeting = makeSpeakerCallMeeting()
+        meeting.markBleedSegments()
+        let copy = micSegments(of: meeting)[0]
+        #expect(copy.isBleed)
+
+        copy.assignSpeaker("Jackson")
+        meeting.markBleedSegments()
+        #expect(!copy.isBleed)
+    }
+
     @Test func searchIgnoresTextThatExistsOnlyInBleedLines() {
         let meeting = makeSpeakerCallMeeting()
         meeting.markBleedSegments()
