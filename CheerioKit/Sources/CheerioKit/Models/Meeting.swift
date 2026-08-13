@@ -240,9 +240,16 @@ public final class Meeting {
         // builds the entire transcript as one string, on every keystroke. This also
         // stops "me" from matching every meeting through the "[Me] " label prefix,
         // while still finding meetings by a diarized speaker's name.
+        //
+        // Bleed lines don't count: their words exist on the Them line they duplicate
+        // — searchably — except where the mic *misheard* them, and a hit on text that
+        // exists only in a hidden copy opens a meeting whose visible transcript
+        // doesn't contain it. This is the app's own search and MCP's
+        // `search_meetings` alike.
         return segments.contains {
-            $0.text.localizedCaseInsensitiveContains(query)
-                || $0.speakerLabel?.localizedCaseInsensitiveContains(query) == true
+            !$0.isBleed
+                && ($0.text.localizedCaseInsensitiveContains(query)
+                    || $0.speakerLabel?.localizedCaseInsensitiveContains(query) == true)
         }
     }
 

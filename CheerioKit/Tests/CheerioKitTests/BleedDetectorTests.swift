@@ -391,6 +391,40 @@ import Testing
         #expect(mic.map(\.isBleed) == [false, false, false, true, false])
     }
 
+    @Test func settlingAMarkedLineClearsTheStaleFlagOnRerun() {
+        // Human testimony must outrank an *earlier* verdict too, not just a future
+        // one: a line the detector marked and a person then renamed would
+        // otherwise stay hidden everywhere while carrying a label someone typed —
+        // skipped past on every rerun, unhealable.
+        let meeting = makeSpeakerCallMeeting()
+        meeting.markBleedSegments()
+        let mic = micSegments(of: meeting)
+        #expect(mic[0].isBleed)
+        #expect(mic[2].isBleed)
+
+        mic[0].assignSpeaker("Carter")
+        #expect(meeting.markBleedSegments() == 1)
+        #expect(!mic[0].isBleed)
+
+        // Confirming counts the same as renaming.
+        mic[2].speakerLabel = "Carter"
+        mic[2].isSpeakerLabelConfirmed = true
+        #expect(meeting.markBleedSegments() == 1)
+        #expect(!mic[2].isBleed)
+    }
+
+    @Test func searchIgnoresTextThatExistsOnlyInBleedLines() {
+        let meeting = makeSpeakerCallMeeting()
+        meeting.markBleedSegments()
+
+        // "shift the six" is the mic's mishearing, present only in a flagged copy
+        // — a hit would open a meeting whose visible transcript doesn't contain
+        // it, in the sidebar and MCP's `search_meetings` alike.
+        #expect(!meeting.matches("shift the six"))
+        // The utterance itself is still findable through its real Them line.
+        #expect(meeting.matches("ship the fix"))
+    }
+
     // MARK: - Marked segments stay out of every consumer
 
     @Test func bleedIsExcludedFromTranscriptTextAndDisplaySurfaces() {

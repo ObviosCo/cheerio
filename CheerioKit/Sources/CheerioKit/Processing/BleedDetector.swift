@@ -222,9 +222,13 @@ extension Meeting {
     /// Assigns the verdict both ways — marking and unmarking — because the inputs
     /// (text and timestamps) never change after recording, so re-running is
     /// idempotent and a re-run under improved constants heals old verdicts instead
-    /// of only ever accumulating them. Human-settled lines are the one exception:
-    /// a person who renamed or confirmed a line has said it's real speech, and that
-    /// testimony outranks the detector the same way it outranks the diarizer.
+    /// of only ever accumulating them. Human-settled lines have a fixed verdict
+    /// rather than an exempt one: a person who renamed or confirmed a line has said
+    /// it's real speech, and that testimony outranks the detector the same way it
+    /// outranks the diarizer — so a settled line is never marked, and one an
+    /// earlier pass marked has its stale flag *cleared*, not skipped past, or the
+    /// rename would leave the line vouched for by a human yet still hidden
+    /// everywhere.
     @discardableResult
     public func markBleedSegments() -> Int {
         let micSegments =
@@ -245,8 +249,8 @@ extension Meeting {
 
         var changed = 0
         for (offset, segment) in micSegments.enumerated() {
-            guard !segment.isSpeakerLabelManual, !segment.isSpeakerLabelConfirmed else { continue }
-            let verdict = bleedOffsets.contains(offset)
+            let isSettled = segment.isSpeakerLabelManual || segment.isSpeakerLabelConfirmed
+            let verdict = !isSettled && bleedOffsets.contains(offset)
             if segment.isBleed != verdict {
                 segment.isBleed = verdict
                 changed += 1
