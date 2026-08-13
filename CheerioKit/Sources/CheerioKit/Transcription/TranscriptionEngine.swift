@@ -11,22 +11,6 @@ public struct TranscriptionUpdate: Sendable {
     public let endTime: TimeInterval
 }
 
-/// Holds the single buffer an `AVAudioConverter` pass should consume, and yields
-/// it exactly once. Sound because the converter invokes its input block
-/// synchronously on the thread that called `convert`.
-private final class PendingInput: @unchecked Sendable {
-    private var buffer: AVAudioPCMBuffer?
-
-    init(buffer: sending AVAudioPCMBuffer) {
-        self.buffer = buffer
-    }
-
-    func take() -> AVAudioPCMBuffer? {
-        defer { buffer = nil }
-        return buffer
-    }
-}
-
 /// Wraps SpeechAnalyzer/SpeechTranscriber (macOS/iOS 26+) for one audio stream.
 /// Create one engine per channel (mic = .me, system audio = .them).
 public actor TranscriptionEngine {
@@ -37,7 +21,10 @@ public actor TranscriptionEngine {
     private var analyzer: SpeechAnalyzer?
     private var inputBuilder: AsyncStream<AnalyzerInput>.Continuation?
     private var analyzerFormat: AVAudioFormat?
-    private var converter: AVAudioConverter?
+    /// Owns every format decision between the capture device and the analyzer —
+    /// see `AnalyzerAudioConverter` for why the channel count is collapsed there
+    /// rather than left to `AVAudioConverter`.
+    private var converter: AnalyzerAudioConverter?
     private var resultsTask: Task<Void, Never>?
     private var audioTask: Task<Void, Never>?
 
@@ -137,42 +124,26 @@ public actor TranscriptionEngine {
         updatesContinuation.finish()
     }
 
-    /// Converts a captured buffer to the analyzer's preferred format if needed
-    /// and feeds it in.
+    /// Converts a captured buffer into the analyzer's format — whatever the device
+    /// handed us, at whatever channel count and sample rate — and feeds it in.
+    ///
+    /// Nothing here assumes the capture format: `analyzerFormat` is what the
+    /// transcriber asked for, and `AnalyzerAudioConverter` derives the whole
+    /// conversion from the buffer's own format on each buffer, rebuilding when a
+    /// device switch changes it mid-recording.
     private func process(buffer: sending AVAudioPCMBuffer) {
         guard let inputBuilder else { return }
-        guard let analyzerFormat, buffer.format != analyzerFormat else {
+        guard let analyzerFormat else {
+            // No preferred format to convert to — feed the capture format through
+            // and let the analyzer decide what it can do with it.
             inputBuilder.yield(AnalyzerInput(buffer: buffer))
             return
         }
-        if converter == nil || converter?.outputFormat != analyzerFormat {
-            converter = AVAudioConverter(from: buffer.format, to: analyzerFormat)
+        if converter == nil {
+            converter = AnalyzerAudioConverter(channel: channel, target: analyzerFormat)
         }
-        guard let converter,
-            let converted = AVAudioPCMBuffer(
-                pcmFormat: analyzerFormat,
-                frameCapacity: AVAudioFrameCount(
-                    Double(buffer.frameLength) * analyzerFormat.sampleRate / buffer.format.sampleRate
-                ) + 1
-            )
-        else { return }
-
-        // AVAudioConverterInputBlock is @Sendable, but the converter calls it
-        // synchronously before `convert` returns — the box just carries the
-        // one-shot input past that annotation.
-        let pending = PendingInput(buffer: buffer)
-        var error: NSError?
-        converter.convert(to: converted, error: &error) { _, status in
-            guard let next = pending.take() else {
-                status.pointee = .noDataNow
-                return nil
-            }
-            status.pointee = .haveData
-            return next
-        }
-        if error == nil, converted.frameLength > 0 {
-            inputBuilder.yield(AnalyzerInput(buffer: converted))
-        }
+        guard let converted = converter?.convert(buffer) else { return }
+        inputBuilder.yield(AnalyzerInput(buffer: converted))
     }
 
     public func stop() async throws {

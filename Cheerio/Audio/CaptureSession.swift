@@ -447,6 +447,48 @@ final class CaptureSession {
         watchdog.cancel()
     }
 
+    /// Says out loud, at `.error`, when a channel captured real audio and produced
+    /// no transcript from it.
+    ///
+    /// The failure issue #174 shipped in was silent in the strongest sense: the
+    /// converter feeding `SpeechAnalyzer` handed it digital silence for 58 minutes
+    /// while reporting success, so no error existed anywhere to log — and the
+    /// existing silence verdicts had nothing to say, because the microphone had in
+    /// fact heard everything. Only the *pair* of facts is the bug: signal in,
+    /// nothing out. `TranscriptionCoverage` (CheerioKit) owns the verdict and its
+    /// wording; this gathers the facts, which live in three places — the capture
+    /// sources' signal watches, their capture formats, and the meeting's segments.
+    private func auditTranscriptionCoverage() {
+        guard let meeting else { return }
+        var reports: [TranscriptionCoverage] = []
+        if let micCapture {
+            reports.append(
+                TranscriptionCoverage(
+                    channel: .me,
+                    carriedSignal: micCapture.signalVerdict.isSignal,
+                    peak: micCapture.signalVerdict.peak,
+                    format: micCapture.captureFormat,
+                    segmentCount: segmentCount(for: .me, in: meeting)))
+        }
+        if let systemTap {
+            reports.append(
+                TranscriptionCoverage(
+                    channel: .them,
+                    carriedSignal: systemTap.didCaptureSignal,
+                    format: systemTap.capturedFormat,
+                    segmentCount: segmentCount(for: .them, in: meeting)))
+        }
+        for diagnosis in reports.compactMap(\.diagnosis) {
+            log.error("\(diagnosis, privacy: .public)")
+        }
+    }
+
+    /// Counted off the meeting's own segments rather than ``liveLines``, because the
+    /// store is what a half-transcribed meeting is discovered from later.
+    private func segmentCount(for channel: SpeakerChannel, in meeting: Meeting) -> Int {
+        meeting.segments.count { $0.channel == channel }
+    }
+
     /// Returns to `.idle` from a `start` that threw partway through, leaving nothing
     /// running and no empty meeting behind.
     ///
@@ -550,6 +592,15 @@ final class CaptureSession {
         // Cancelling dropped them, losing the tail of the transcript that the
         // summarizer then never saw.
         await drainConsumers()
+        // Before the capture sources are released, while they still hold the peak,
+        // the format and the signal verdict: every finalized segment of this
+        // meeting has now been handed over, so this is the first moment a channel
+        // that heard speech and produced no text can be identified — and the last
+        // moment the facts to say so with are all still in memory. (Later stages —
+        // bleed marking, diarization, enhancement — only ever annotate segments,
+        // never add or remove them, so waiting for them would change nothing but
+        // could sit minutes behind a hold.)
+        auditTranscriptionCoverage()
         // Capture is over for good whichever branch below runs — releasing the
         // engines and taps here, rather than at `.idle`, is what keeps the holding
         // state from sitting on a dead audio stack for minutes.
