@@ -83,6 +83,14 @@ its context menu or detail view).
   evidence: anything unattributed or disputed lands as a follow-up rather than something an
   agent might act on. Long meetings are handled map-reduce style to fit the model's ~4k-token context
   window.
+- **You can see when it's working.** Identifying speakers and writing up a meeting take a
+  while, so the app says which of the two it's doing wherever you'd look for the answer: the
+  meeting's row in the library, the meeting's own page next to the controls it disables while
+  it works, and the menu-bar icon and its menu. That covers every pass that used to run with
+  nothing on screen to show for it — the one that starts when the review window ends, the one
+  that picks up a meeting a quit interrupted the next time you launch, and a re-identify pass
+  you started by hand. The indicator is driven by the pipeline itself, so it goes when the work
+  does, whether that work finished or failed.
 - **Ready for the agents already on your machine.** A bundled MCP server, a transcript-ready
   callback, and a directive-capture mode — from the menu bar or the main window, and
   convertible after the fact if you forgot to say so going in — turn a finished meeting into
@@ -442,7 +450,7 @@ cheerio/
 ├── Cheerio/          # macOS app target
 │   ├── Audio/        # Mic capture, Core Audio process tap, capture session
 │   ├── Callback/     # Runs the transcript-ready callback command
-│   ├── Design/       # Colour, type, spacing, motion + speaker/recording/status components
+│   ├── Design/       # Colour, type, spacing, motion + speaker/recording/processing/status components
 │   ├── Resources/    # Models/ — fetched, never committed
 │   ├── Updates/      # Sparkle: the app's only network access
 │   └── Views/        # SwiftUI, incl. Onboarding/ (first-run walkthrough)

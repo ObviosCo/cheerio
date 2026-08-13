@@ -66,10 +66,20 @@ struct RecordingView: View {
                     // pass at the end of the recording uses it, so getting it right now
                     // saves a re-identify later.
                     ParticipantRosterMenu(meeting: meeting)
-                    // Hidden in `.holding`: the ring means "capturing right now",
-                    // and the holding state's whole premise is that capture is
-                    // over. The holding bar below carries the state instead.
-                    if session.state != .holding, let startedAt = session.startedAt {
+                    // Processing takes the ring's place rather than sitting beside
+                    // it (issue #173): in `.finishing` the ring was still filled
+                    // and the timer still counting, so a meeting whose grace period
+                    // had just expired — or whose "Process Now" had just been
+                    // clicked — read as *recording* while it was really being
+                    // diarized and written up. One claim about what the machine is
+                    // doing, and it has to be the true one.
+                    if let phase = session.currentMeetingProcessingPhase {
+                        ProcessingIndicator(label: phase.label, prominence: .section)
+                    } else if session.state != .holding, let startedAt = session.startedAt {
+                        // Still nothing in `.holding`: the ring means "capturing
+                        // right now", and the holding state's whole premise is that
+                        // capture is over. The holding bar below carries that state.
+                        //
                         // The ring and the word travel with the timer here, not just
                         // the digits — a bare timer is exactly the drift
                         // `RecordingIndicator` exists to stop between this header,
