@@ -173,8 +173,27 @@ emit() {
     printf 'reason=%s\n' "$5"
 }
 
+# A dispatched run is how previews are asked for now that captures no longer fire on
+# every pull request. Dispatching against a pull request's branch should still comment
+# there, so ask GitHub which pull requests that head belongs to — the same question the
+# `pull_request` path falls back on, and the same answer, from GitHub rather than from
+# the artifact. Exactly one match is the ordinary case and gets the pull request's
+# prefix and a comment. None (a dispatch from `main`, say) or several (an ambiguous
+# head) publish under `manual/` with nothing to comment on, because guessing which
+# pull request a reader meant is worse than making them open the branch.
 if [ "$EVENT" = "workflow_dispatch" ]; then
-    note "A manual run: publishing under manual/${HEAD_SHA}, with no pull request to comment on."
+    dispatch_prs="$(
+        gh api "repos/${REPO}/commits/${HEAD_SHA}/pulls" \
+            --jq ".[] | select(.head.sha == \"${HEAD_SHA}\") | .number" 2>/dev/null || true
+    )"
+    dispatch_count="$(printf '%s' "$dispatch_prs" | grep -c '[0-9]' || true)"
+    if [ "$dispatch_count" = "1" ]; then
+        dispatch_pr="$(printf '%s' "$dispatch_prs" | tr -d '[:space:]')"
+        note "A requested run on the head of PR #${dispatch_pr}: publishing and commenting there."
+        emit true true "$dispatch_pr" "pr-${dispatch_pr}/${HEAD_SHA}" ""
+        exit 0
+    fi
+    note "A manual run: publishing under manual/${HEAD_SHA}, with no single pull request to comment on."
     emit true false "" "manual/${HEAD_SHA}" ""
     exit 0
 fi
