@@ -33,27 +33,45 @@ public enum ChunkedAudioReader {
     /// ~4 MB per window whether the file is a minute or an hour long.
     public static let defaultWindowFrames: AVAudioFrameCount = 1 << 20
 
+    /// Reads and returns the next window, or nil once `source` is exhausted.
+    ///
+    /// The single place this file's end-of-file and short-read discipline lives —
+    /// see the type doc for both. ``read(_:windowFrames:onWindow:)`` is this in a
+    /// loop; `TranscriptionEngine`'s file pass calls it one window at a time,
+    /// because there the *analyzer* decides when it wants the next one (issue #14).
+    ///
+    /// Returns `sending`, so the window can be handed to an actor or a task without
+    /// a second copy: it is allocated here, nothing else holds a reference, and this
+    /// function never touches it again. `read(into:)` merges it into `source`'s
+    /// region — the accounting `AVAudioPCMBuffer.detachedCopy()` documents — so the
+    /// box is what tells the compiler what is already true.
+    public static func nextWindow(
+        from source: AVAudioFile,
+        windowFrames: AVAudioFrameCount = defaultWindowFrames
+    ) throws -> sending AVAudioPCMBuffer? {
+        guard source.framePosition < source.length else { return nil }
+        let remaining = source.length - source.framePosition
+        let framesToRead = AVAudioFrameCount(min(AVAudioFramePosition(windowFrames), remaining))
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: source.processingFormat, frameCapacity: framesToRead) else {
+            throw ReaderError.bufferAllocationFailed
+        }
+        try source.read(into: buffer, frameCount: framesToRead)
+        guard buffer.frameLength > 0 else { return nil }
+        return UnsafeTransfer(value: buffer).value
+    }
+
     /// Reads `source` from its current position to the end, calling `onWindow`
     /// with each native-format window in turn.
     ///
-    /// `source.framePosition` drives the loop end, not an empty-buffer check — see
-    /// the type doc. Each window's buffer is reused by the caller as needed; this
-    /// function never retains one past the call to `onWindow`.
+    /// Each window's buffer is reused by the caller as needed; this function never
+    /// retains one past the call to `onWindow`.
     public static func read(
         _ source: AVAudioFile,
         windowFrames: AVAudioFrameCount = defaultWindowFrames,
         onWindow: (AVAudioPCMBuffer) throws -> Void
     ) throws {
-        let format = source.processingFormat
-        while source.framePosition < source.length {
-            let remaining = source.length - source.framePosition
-            let framesToRead = AVAudioFrameCount(min(AVAudioFramePosition(windowFrames), remaining))
-            guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: framesToRead) else {
-                throw ReaderError.bufferAllocationFailed
-            }
-            try source.read(into: buffer, frameCount: framesToRead)
-            guard buffer.frameLength > 0 else { break }
-            try onWindow(buffer)
+        while let window = try nextWindow(from: source, windowFrames: windowFrames) {
+            try onWindow(window)
         }
     }
 }

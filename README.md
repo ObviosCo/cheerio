@@ -137,6 +137,14 @@ its context menu or detail view).
   play control with that line's time appears at its edge — one click starts playback from that
   moment (VoiceOver gets the same jump as a per-line action). Same rule as the scrubber: no
   retained audio, no control.
+- **Transcribe it again, one channel at a time.** A transcript that came out empty or one-sided
+  used to be permanent even though the audio survived. While the recording is still on disk,
+  the meeting detail view runs transcription over it again — per channel, so recovering your
+  side of a call doesn't throw away the side that worked. Lines you renamed or confirmed are
+  kept exactly as they are, speaker identification runs over the fresh lines afterward, and the
+  meeting can't be double-processed while it's running. Cheerio also says when a channel needs
+  it: a channel that recorded real audio and produced no transcript is flagged on the meeting,
+  with how long its audio has left, because with the default retention you have three days.
 
 Full scope and non-goals: [`docs/SPEC.md`](docs/SPEC.md).
 
@@ -426,12 +434,11 @@ Known issues, roughly in priority order:
 - **Calendar is mostly read-only.** Recordings get their title and event ID from the current
   event, and a notification offers to record when a meeting starts — but "attach notes back to
   the event" isn't built.
-- **No re-running transcription on retained audio.** Playback shipped in #14; the other half of
-  that issue — re-transcribing a meeting whose first pass came out empty or wrong, using the
-  same retained CAFs — hasn't. A meeting recorded through a multi-channel input device before
-  [#174](https://github.com/ObviosCo/cheerio/issues/174) was fixed is exactly that case: its
-  audio holds both sides, its transcript holds one, and only a re-transcription can recover the
-  rest.
+- **Repair only works while the audio is there.** Re-transcription recovers a bad or one-sided
+  transcript from the retained recording, so the window to fix one is however long retention
+  keeps it — three days by default. Once the audio is purged the transcript is what you have,
+  and no re-pass can help. Re-transcribing also doesn't regenerate the summary or the action
+  items above it; those were written from the transcript as it stood.
 
 **No Mac App Store.** App Sandbox has to stay off: a sandboxed process tap is created with
 `noErr` at every step and then reads pure digital silence, with no permission prompt and no
@@ -478,8 +485,9 @@ UI, and a website: [`docs/DESIGN-HANDOFF.md`](docs/DESIGN-HANDOFF.md).
 
 ## Roadmap
 
-Near-term: an in-room vs. remote toggle per participant, and re-running transcription on
-retained audio (the other half of #14 — playback itself shipped).
+Near-term: an in-room vs. remote toggle per participant, and regenerating a meeting's summary
+after its transcript has been repaired (re-transcription itself shipped — #14 — but it leaves
+the notes above it as they were).
 
 The actionable-transcripts work ([epic #22](https://github.com/ObviosCo/cheerio/issues/22))
 shipped in v26.8.9: owner-attributed action items, the transcript-ready callback, directive

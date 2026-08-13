@@ -100,6 +100,47 @@ import Testing
         #expect(chunked == reference)
     }
 
+    /// `read` is `nextWindow` in a loop (issue #14's file transcription calls the
+    /// primitive directly, one window per pull), so the two must agree window for
+    /// window — including the partial last one.
+    @Test func pullingWindowsOneAtATimeMatchesTheLoop() throws {
+        let source = try makeSyntheticCAF(frameCount: 250_000)
+        defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
+
+        var looped: [Float] = []
+        var loopedWindows: [AVAudioFrameCount] = []
+        try ChunkedAudioReader.read(try AVAudioFile(forReading: source), windowFrames: 4_096) { window in
+            loopedWindows.append(window.frameLength)
+            let data = window.floatChannelData![0]
+            looped.append(contentsOf: UnsafeBufferPointer(start: data, count: Int(window.frameLength)))
+        }
+
+        let file = try AVAudioFile(forReading: source)
+        var pulled: [Float] = []
+        var pulledWindows: [AVAudioFrameCount] = []
+        while let window = try ChunkedAudioReader.nextWindow(from: file, windowFrames: 4_096) {
+            pulledWindows.append(window.frameLength)
+            let data = window.floatChannelData![0]
+            pulled.append(contentsOf: UnsafeBufferPointer(start: data, count: Int(window.frameLength)))
+        }
+
+        #expect(pulledWindows == loopedWindows)
+        #expect(pulled == looped)
+    }
+
+    /// Asking past the end returns nil rather than throwing — the end-of-file
+    /// discipline this type exists for, now in one place. A pull-driven consumer
+    /// asks exactly one time too many by construction: nil is how it learns to stop.
+    @Test func pullingPastTheEndReturnsNilRatherThanThrowing() throws {
+        let source = try makeSyntheticCAF(frameCount: 8_192)
+        defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
+
+        let file = try AVAudioFile(forReading: source)
+        #expect(try ChunkedAudioReader.nextWindow(from: file, windowFrames: 8_192) != nil)
+        #expect(try ChunkedAudioReader.nextWindow(from: file, windowFrames: 8_192) == nil)
+        #expect(try ChunkedAudioReader.nextWindow(from: file, windowFrames: 8_192) == nil)
+    }
+
     /// A window bigger than the whole file is the degenerate one-chunk case —
     /// still must not throw or drop samples.
     @Test func windowLargerThanFileReadsEverythingInOneGo() throws {
