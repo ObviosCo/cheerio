@@ -60,6 +60,25 @@ final class MicrophoneCapture: @unchecked Sendable {
         verdictArmed.store(true, ordering: .releasing)
     }
 
+    /// The whole-recording peak verdict, for the caller's own use — `stop()` logs
+    /// it, and `CaptureSession` also pairs it with the transcript's segment count
+    /// to catch signal that never became text (`TranscriptionCoverage`).
+    var signalVerdict: CapturePeakWatch.Verdict {
+        peakWatch.verdict
+    }
+
+    /// The format the input device is actually delivering, which is not knowable
+    /// before `start()` and is the fact a lost channel gets diagnosed by: a
+    /// virtual or aggregate input can report any channel count and rate at all.
+    ///
+    /// Behind a `Mutex` because this class is `Sendable` and this is its only
+    /// non-atomic mutable state — `start()` and the reader (`CaptureSession`, at
+    /// stop) are the same actor in practice, but nothing in the type enforces that.
+    var captureFormat: CapturedAudioFormat? {
+        capturedFormat.withLock { $0 }
+    }
+    private let capturedFormat = Mutex<CapturedAudioFormat?>(nil)
+
     enum Permission {
         case granted
         /// The user said no, or an administrator disallows it. Only System Settings
@@ -94,6 +113,12 @@ final class MicrophoneCapture: @unchecked Sendable {
     func start() throws {
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
+        capturedFormat.withLock { $0 = CapturedAudioFormat(format) }
+        // .notice so it survives to `log show`: this one line is what turns "the Me
+        // channel is empty" into a format question without a debugger attached.
+        Self.log.notice(
+            "Microphone capture started — \(format.sampleRate, privacy: .public)Hz ch=\(format.channelCount, privacy: .public)"
+        )
         input.installTap(onBus: 0, bufferSize: 4096, format: format) { [onBuffer, levelsContinuation, peakWatch] buffer, _ in
             // Measured on the tap's own buffer, before the copy below — reading
             // samples that are already resident costs nothing a level meter

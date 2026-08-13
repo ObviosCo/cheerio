@@ -85,6 +85,16 @@ public final class CapturePeakWatch: Sendable {
             }
         }
 
+        /// Whether the channel cleared its silence floor, for callers that need the
+        /// fact rather than the two-case shape — `TranscriptionCoverage` pairs it
+        /// with the transcript's segment count.
+        public var isSignal: Bool {
+            switch self {
+            case .signal: true
+            case .silence: false
+            }
+        }
+
         /// Log-ready rendering of the peak: "-6.0 dBFS", or naming pure digital
         /// zeroes outright — an all-zero channel points at a permission or capture
         /// failure, where a nonzero-but-negligible one points at the input device,

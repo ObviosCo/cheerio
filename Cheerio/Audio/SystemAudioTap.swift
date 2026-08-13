@@ -92,6 +92,21 @@ final class SystemAudioTap: @unchecked Sendable {
         self.onBuffer = onBuffer
     }
 
+    /// Whether the tap saw any nonzero sample in the opening seconds — see
+    /// `SilenceWatch`, whose window is why `false` here is weaker evidence than the
+    /// mic's peak verdict. `CaptureSession` pairs it with the transcript's segment
+    /// count (`TranscriptionCoverage`).
+    var didCaptureSignal: Bool {
+        signalWatch.didSeeSignal
+    }
+
+    /// The tap's own stream format, read from `kAudioTapPropertyFormat` at start and
+    /// kept past `stop()` so the verdict can name it. The scalars rather than the
+    /// `AVAudioFormat` for the same reason the mic's are — see `CapturedAudioFormat`.
+    var capturedFormat: CapturedAudioFormat? {
+        tapFormat.map(CapturedAudioFormat.init)
+    }
+
     func start() throws {
         // 1. Global tap: all processes' output, mixed to stereo, excluding none.
         let description = CATapDescription(stereoGlobalTapButExcludeProcesses: [])

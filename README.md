@@ -47,6 +47,12 @@ its context menu or detail view).
   Teams, or anything else that makes sound. Because it captures audio rather than joining a
   call, nothing needs a meeting bot or a per-app integration, and no app-specific API has to
   support it first.
+- **Whatever your audio hardware reports.** Input devices are not all a tidy one channel at
+  48 kHz: a virtual or aggregate device — a conferencing driver, a Bluetooth telephony path —
+  can present a single microphone as three channels at 24 kHz. Every channel is mixed down to
+  the mono the transcriber wants at the rate it wants, derived per buffer from the format the
+  device actually delivered, and re-derived if you switch devices mid-recording. The retained
+  audio keeps the device's own format, because that file is the evidence.
 - **Transcribe on-device.** Each stream gets its own `SpeechTranscriber`, which is where the
   `Me` / `Them` split comes from. Live volatile results drive the in-meeting transcript, which
   follows new lines as they arrive and lets you scroll back without losing your place; final
@@ -422,7 +428,10 @@ Known issues, roughly in priority order:
   the event" isn't built.
 - **No re-running transcription on retained audio.** Playback shipped in #14; the other half of
   that issue — re-transcribing a meeting whose first pass came out empty or wrong, using the
-  same retained CAFs — hasn't.
+  same retained CAFs — hasn't. A meeting recorded through a multi-channel input device before
+  [#174](https://github.com/ObviosCo/cheerio/issues/174) was fixed is exactly that case: its
+  audio holds both sides, its transcript holds one, and only a re-transcription can recover the
+  rest.
 
 **No Mac App Store.** App Sandbox has to stay off: a sandboxed process tap is created with
 `noErr` at every step and then reads pure digital silence, with no permission prompt and no
