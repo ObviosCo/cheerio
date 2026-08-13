@@ -652,6 +652,15 @@ extension Meeting {
     /// That includes a *manually assigned* "Speaker 1" — `isSpeakerLabelManual` is
     /// checked before the label's spelling, so hand-naming a guest with a
     /// diarizer-looking name can't quietly promote their lines to owner-attributed.
+    ///
+    /// A bleed line (``TranscriptSegment/isBleed``) never qualifies through the
+    /// mic-channel presumption: "it came in on the mic, so it's you" is exactly the
+    /// inference the flag marks as false for that line. Enforced here, not just at
+    /// the call sites that happen to pre-filter bleed today, so a future consumer
+    /// can't accidentally count the far end's words as the owner's. An explicit
+    /// owner-name label still wins — that's a human's (or the diarizer's primed)
+    /// testimony about the voice, which outranks the detector the same way it
+    /// outranks the channel.
     public static func isOwnerAttributed(_ segment: TranscriptSegment, ownerNames: Set<String>) -> Bool {
         if let label = segment.speakerLabel {
             if ownerNames.contains(label) { return true }
@@ -659,8 +668,8 @@ extension Meeting {
             // case returned above), no matter what the label looks like.
             guard !segment.isSpeakerLabelManual else { return false }
             guard TranscriptSegment.isDiarizerGeneratedLabel(label) else { return false }
-            return segment.channel == .me
+            return segment.channel == .me && !segment.isBleed
         }
-        return segment.channel == .me
+        return segment.channel == .me && !segment.isBleed
     }
 }

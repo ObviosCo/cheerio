@@ -145,6 +145,25 @@ import Testing
         #expect(BleedDetector.bleedOffsets(micLines: me, systemLines: them).isEmpty)
     }
 
+    @Test func echoBackDuringTheFarEndsNextSentenceSurvives() {
+        // The gate and the evidence must agree about which line convicts. Here the
+        // echo starts while Them's *second*, unrelated sentence is playing — so
+        // the directional gate passes on that line — but the text it matches is
+        // the first sentence, which had already ended before the echo began. A
+        // line that wasn't playing into the mic during the candidate can't be its
+        // source, so it can't be evidence against it either.
+        let them = [
+            Line(text: "We should ship the fix on Tuesday.", startTime: 10.0, endTime: 13.6),
+            Line(
+                text: "Anyway — about the offsite, we still owe the team an agenda.",
+                startTime: 14.0, endTime: 18.2),
+        ]
+        let me = [
+            Line(text: "Ship the fix on Tuesday?", startTime: 14.4, endTime: 16.0)
+        ]
+        #expect(BleedDetector.bleedOffsets(micLines: me, systemLines: them).isEmpty)
+    }
+
     @Test func farEndRepeatingYourWordsIsNotBleed() {
         // The mirror image: the remote person reads your request back. The Me line
         // is the *original* here — it starts before its near-duplicate does, and a
@@ -212,9 +231,10 @@ import Testing
         #expect(BleedDetector.bleedOffsets(micLines: me, systemLines: them).isEmpty)
     }
 
-    @Test func matchingTextOutsideTheTimingToleranceIsNotBleed() {
+    @Test func matchingTextLongAfterTheSourceIsNotBleed() {
         // The same sentence a minute later is someone circling back to the topic,
-        // not playback: bleed arrives within seconds, so time gates the candidates.
+        // not playback: a copy starts while its source is still being spoken, so
+        // neither the gate nor the evidence reaches this far.
         let them = [
             Line(
                 text: "We should ship the fix on Tuesday and watch the crash rate for a couple of days.",
@@ -242,6 +262,41 @@ import Testing
                 startTime: 10.0, endTime: 12.5)
         ]
         #expect(BleedDetector.bleedOffsets(micLines: me, systemLines: them) == [0])
+    }
+
+    @Test func bleedInUnspacedScriptsIsStillCaught() {
+        // Japanese has no word separators, so `normalizedWords` returns a couple
+        // of long runs and the word-count gate alone would read every line as too
+        // short — switching the detector off for the locale. The character-count
+        // fallback is what lets these lines be judged; the per-character
+        // similarity already works on them unchanged (看視 for 監視 is the same
+        // near-homophone mishearing as "shift the six").
+        let them = [
+            Line(
+                text: "修正は火曜日に出荷して、その後数日間クラッシュ率を監視しましょう。",
+                startTime: 10.0, endTime: 15.0)
+        ]
+        let me = [
+            // The mic's copy: skewed, one character misheard.
+            Line(
+                text: "修正は火曜日に出荷して、その後数日間クラッシュ率を看視しましょう。",
+                startTime: 11.4, endTime: 16.3),
+            // A genuine backchannel spoken over the far end — short, so the
+            // length gate refuses to judge it, same as an English "yeah exactly".
+            Line(text: "はい、そうですね。", startTime: 12.0, endTime: 13.0),
+        ]
+        #expect(BleedDetector.bleedOffsets(micLines: me, systemLines: them) == [0])
+    }
+
+    @Test func lengthGateCountsCharactersWhenWordsDoNotSplit() {
+        // Spaced scripts hit the word minimum first; unspaced ones fall back to
+        // characters. The two thresholds must not undercut each other: the short
+        // English acknowledgements the word gate protects stay under the
+        // character fallback too.
+        #expect(BleedDetector.isLongEnough(BleedDetector.normalizedWords("その後数日間クラッシュ率を監視しましょう")))
+        #expect(!BleedDetector.isLongEnough(BleedDetector.normalizedWords("はい、そうですね。")))
+        #expect(!BleedDetector.isLongEnough(BleedDetector.normalizedWords("Okay, thanks — bye!")))
+        #expect(!BleedDetector.isLongEnough(BleedDetector.normalizedWords("sounds good, talk soon")))
     }
 
     @Test func normalizationIgnoresCaseAndPunctuation() {
@@ -364,6 +419,22 @@ import Testing
                 micSegments(of: meeting).filter(\.isBleed).map(\.startTime))
             #expect(meeting.ranges(for: me).allSatisfy { !bleedStarts.contains($0.start) })
         }
+    }
+
+    @Test func bleedIsNeverOwnerAttributedThroughTheMicPresumption() {
+        // "It came in on the mic, so it's you" is the exact inference the flag
+        // marks false — enforced in `isOwnerAttributed` itself, not just at the
+        // call sites that happen to pre-filter, so no future consumer can count
+        // the far end's words as the owner's.
+        let copy = TranscriptSegment(
+            channel: .me, text: "I'll send the contract tomorrow.", startTime: 10, endTime: 12)
+        copy.isBleed = true
+        #expect(!Meeting.isOwnerAttributed(copy, ownerNames: []))
+
+        // An explicit owner-name label still wins: that's testimony about the
+        // voice, which outranks the detector the same way it outranks the channel.
+        copy.speakerLabel = "Jackson"
+        #expect(Meeting.isOwnerAttributed(copy, ownerNames: ["Jackson"]))
     }
 
     @Test func bleedIsExcludedFromExport() {

@@ -74,6 +74,31 @@ import Testing
         #expect(!meeting.reconcileActionItems(ownerNames: ["Jackson"]))
     }
 
+    @Test func allBleedMicChannelStopsVouchingForOwnerItems() {
+        // A speaker-played call where the user never spoke: every mic line is a
+        // flagged copy of the far end. The mic-channel presumption ("it came in on
+        // the mic, so it's you") is exactly what the flag marks false, so nothing
+        // here is owner evidence — a persisted actionable item must demote rather
+        // than authorize an agent to act on a remote speaker's commitment.
+        let meeting = Meeting(title: "Speaker call")
+        let source = TranscriptSegment(
+            channel: .them, text: "I'll send the contract over tomorrow morning.",
+            startTime: 10, endTime: 13)
+        let copy = TranscriptSegment(
+            channel: .me, text: "I'll send the contract over tomorrow morning.",
+            startTime: 11.2, endTime: 14.1)
+        copy.isBleed = true
+        meeting.segments = [source, copy]
+        meeting.actionItems = [
+            ActionItem(text: "Send the contract", isOwner: true, disposition: .actionable)
+        ]
+
+        let reconciled = meeting.reconciledActionItems(ownerNames: [])
+        #expect(reconciled.map(\.isOwner) == [false])
+        #expect(reconciled.map(\.disposition) == [.followUp])
+        #expect(meeting.export(ownerNames: []).actionItems.map(\.disposition) == [.followUp])
+    }
+
     @Test func exportSerializesReconciledItemsWithoutMutatingTheMeeting() {
         let meeting = Meeting(title: "Standup")
         let line = TranscriptSegment(channel: .me, text: "I'll draft it", startTime: 0, endTime: 5)

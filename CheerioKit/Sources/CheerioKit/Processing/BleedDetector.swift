@@ -40,14 +40,6 @@ public enum BleedDetector {
         }
     }
 
-    /// How far apart in time a Me line and a Them line can sit and still be the same
-    /// utterance. The two channels run independent transcription engines, and the
-    /// mic's copy arrives through air and a second recognition pass, so its
-    /// timestamps land 0.5–2s off the tap's for the same words. Measured skew tops
-    /// out around 2s; the extra half second is slack, and is safe to grant because
-    /// this gate only nominates candidates — text similarity still has to convict.
-    public static let timingSkewTolerance: TimeInterval = 2.5
-
     /// Minimum similarity (see ``similarity(of:toReferenceOf:)``) for a Me line to
     /// be called bleed. Bleed transcribes imperfectly — muffled words come back as
     /// near-homophones — so exact matching would miss most of it. Measured against
@@ -67,6 +59,17 @@ public enum BleedDetector {
     /// the status quo, not a regression.
     public static let minimumWordCount = 5
 
+    /// The length gate's fallback for scripts that don't separate words with
+    /// spaces: ``normalizedWords(_:)`` returns one long run per CJK phrase, so a
+    /// word count alone would read every such line as too short and switch the
+    /// detector off for those locales entirely. A line whose normalized characters
+    /// total at least this many passes the gate regardless of how few "words" they
+    /// split into. Set above what the word gate protects in spaced scripts — the
+    /// four-word English acknowledgements it exists to keep ("sounds good talk
+    /// soon", 18 characters joined) stay under it, while 20 ideographs is a full
+    /// sentence, exactly the continuous speech bleed produces.
+    public static let minimumCharacterCount = 20
+
     /// How much earlier than its source a Me line may start and still count as
     /// starting inside that source's span (see ``startsInsideSpan(of:candidate:)``).
     /// The acoustic path and second recognition pass only ever *delay* the mic's
@@ -78,8 +81,8 @@ public enum BleedDetector {
     /// The offsets into `micLines` judged to be bleed from `systemLines`.
     ///
     /// Order doesn't matter to the verdicts — every Me line is judged against the
-    /// union of Them lines near it in time — but offsets are only meaningful against
-    /// the exact array passed in.
+    /// union of Them lines that were playing while it was spoken — but offsets are
+    /// only meaningful against the exact array passed in.
     public static func bleedOffsets(micLines: [Line], systemLines: [Line]) -> Set<Int> {
         guard !systemLines.isEmpty else { return [] }
         let system =
@@ -90,7 +93,7 @@ public enum BleedDetector {
         var offsets: Set<Int> = []
         for (offset, micLine) in micLines.enumerated() {
             let micWords = normalizedWords(micLine.text)
-            guard micWords.count >= minimumWordCount else { continue }
+            guard isLongEnough(micWords) else { continue }
 
             // Bleed is *simultaneous* with its source — the mic hears the speakers
             // while they play — so a real copy starts while some Them line is
@@ -103,14 +106,20 @@ public enum BleedDetector {
             guard system.contains(where: { startsInsideSpan(of: $0.line, candidate: micLine) })
             else { continue }
 
-            // The reference is everything the far end said near this line, joined
-            // — wider than the span-containing sources on purpose: the engines
-            // segment independently, so one Me copy can run past its source into
-            // the next Them line, and the free ends of the semi-global alignment
-            // absorb whatever the extra reference says.
+            // The evidence is what the far end said *while this line was being
+            // spoken*, joined — every Them line whose playback the candidate's own
+            // span overlaps, so one Me copy that runs past its source into the
+            // next Them line still finds both in the reference (the free ends of
+            // the semi-global alignment absorb whatever else those lines say).
+            // Overlap is required of evidence for the same physics as the gate: a
+            // Them line that had already ended when this line began, or hadn't
+            // started when it finished, cannot have been playing into the mic
+            // during it — matching *that* text is how a genuine echo-back spoken
+            // over the far end's next sentence used to get convicted by the
+            // previous sentence.
             let reference =
                 system
-                .filter { gap(between: micLine, and: $0.line) <= timingSkewTolerance }
+                .filter { concurrent($0.line, with: micLine) }
                 .flatMap(\.words)
             guard !reference.isEmpty else { continue }
 
@@ -119,6 +128,14 @@ public enum BleedDetector {
             }
         }
         return offsets
+    }
+
+    /// Whether this many normalized words carry enough content to be judged at all
+    /// — ``minimumWordCount`` for scripts that space-separate words,
+    /// ``minimumCharacterCount`` as the fallback for those that don't.
+    static func isLongEnough(_ words: [String]) -> Bool {
+        words.count >= minimumWordCount
+            || words.reduce(0) { $0 + $1.count } >= minimumCharacterCount
     }
 
     /// Whether `candidate` starts while `source` is being spoken — within
@@ -137,9 +154,14 @@ public enum BleedDetector {
             && candidate.startTime < source.endTime
     }
 
-    /// Seconds between two lines' time ranges — zero when they overlap.
-    static func gap(between a: Line, and b: Line) -> TimeInterval {
-        max(0, max(a.startTime, b.startTime) - min(a.endTime, b.endTime))
+    /// Whether the two lines' spans overlap at all — the admissibility test for
+    /// evidence. Deliberately no jitter allowance, unlike
+    /// ``startsInsideSpan(of:candidate:)``: widening evidence re-admits the
+    /// adjacent line whose text a genuine echo-back matches, and a copy losing a
+    /// marginal word or two of reference only lowers its similarity — a keep,
+    /// which is the failure this file always prefers.
+    static func concurrent(_ a: Line, with b: Line) -> Bool {
+        a.startTime < b.endTime && a.endTime > b.startTime
     }
 
     /// Lowercased words with punctuation stripped, because the two recognition
