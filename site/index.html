@@ -55,8 +55,8 @@
       <h1 class="claim">Free meeting notes that know who said what.</h1>
       <p class="lede">No bot joins the call. Cheerio records the meeting straight off your Mac's audio, transcribes it, names the people talking, and writes it up against the rough notes you typed. There's no pipeline. Nothing to upload, no queue, no service that has to be up. All of it runs on the machine in front of you.</p>
       <div class="stack stack--3">
-        <p class="button-row"><a class="button button--primary" id="download-primary" href="https://github.com/ObviosCo/cheerio/releases/download/v26.8.15/Cheerio-26.8.15.dmg">Download for macOS</a><a class="button button--secondary" href="download.html">What you'll need</a></p>
-        <p class="caption">Free and MIT-licensed. No account, no subscription, no tier above this one. <span id="download-version">Version 26.8.15</span>, for macOS 26 or later on Apple&nbsp;Silicon.</p>
+        <p class="button-row"><a class="button button--primary" id="download-primary" href="https://github.com/ObviosCo/cheerio/releases/download/v26.8.16/Cheerio-26.8.16.dmg">Download for macOS</a><a class="button button--secondary" href="download.html">What you'll need</a></p>
+        <p class="caption">Free and MIT-licensed. No account, no subscription, no tier above this one. <span id="download-version">Version 26.8.16</span>, for macOS 26 or later on Apple&nbsp;Silicon.</p>
       </div>
     </div>
   </section>
@@ -141,7 +141,7 @@
     <div class="wrap stack stack--8">
       <div class="stack stack--3">
         <p class="label">Getting started</p>
-        <h2 class="section-title">A walkthrough, a voice sample, and headphones.</h2>
+        <h2 class="section-title">A walkthrough and a voice sample.</h2>
         <p class="muted" style="max-width:60ch">A walkthrough runs the first time you open Cheerio: it explains each permission before asking for it, and about thirty seconds of you talking is what turns “Speaker&nbsp;1” into your name in every meeting afterwards. Every screen in it is skippable. Every screenshot on this page is a capture of the current build, against invented meetings.</p>
       </div>
 
@@ -162,8 +162,8 @@
       </figure>
 
       <div class="notice notice--attention" id="headphones">
-        <strong class="notice-label">Setup step · wear headphones</strong>
-        <p>Cheerio records your microphone and your Mac's output as two separate streams. If the meeting is playing out of your speakers, the microphone hears it as well, both streams end up with the same words, and you get a transcript that says everything twice and a summary skewed by the repetition. Headphones remove the problem completely. There's now a Video Call recording mode with echo cancellation on the mic input, but until it's proven against real speaker playback, headphones are the step.</p>
+        <strong class="notice-label">Worth knowing · speakers versus headphones</strong>
+        <p>Cheerio records your microphone and your Mac's output as two separate streams. If the meeting plays out of your speakers, the microphone hears it as well, so the same words land on both. Processing sorts that out: the microphone's copy of the far end is detected and left out of the transcript, the summary, and anything handed to an agent. Nothing to switch on, and no recording mode to pick. Headphones are still the cleanest capture, since the copy never gets recorded in the first place, and the live transcript shows the duplicates until processing runs.</p>
       </div>
 
       <div class="notice notice--info">
@@ -284,7 +284,7 @@
       <div class="stack stack--3">
         <p class="label">Known limits</p>
         <h2 class="section-title">Things worth knowing before you install it.</h2>
-        <p class="muted" style="max-width:60ch">Beyond the headphones, which is <a href="#headphones">a setup step above</a>, these are the ones you'd notice.</p>
+        <p class="muted" style="max-width:60ch">Beyond speakers versus headphones, covered <a href="#headphones">above</a>, these are the ones you'd notice.</p>
       </div>
 
       <ul class="stack stack--4" style="padding-left:var(--ch-space-5);max-width:64ch">
@@ -332,7 +332,7 @@
         <p class="muted">No account to make. No subscription to cancel. No copy on a server to ask someone to delete. Your meetings are files in one folder on your Mac. Take any of them out as Markdown whenever you like, and if you drag the app to the trash, that folder holds everything worth deleting after it: every recording, transcript, and note. (macOS keeps the usual few kilobytes of app preferences in its own preferences store, like it does for any app. Settings, never your meetings.) Nothing of yours is anywhere else, because Cheerio never sent it anywhere else. The one place a copy can exist is wherever you pointed the callback, and that copy answers to the service you chose, not to us.</p>
         <p class="muted">If Cheerio is ever monetized, the rule is that monetization can't add a hoop. No sign-in for a paid tier, no sync that quietly becomes the default path, no team feature that needs an account, no telemetry you can't switch off, no format that only this app can read.</p>
         <div class="stack stack--3">
-          <p class="button-row"><a class="button button--primary" id="download-closing" href="https://github.com/ObviosCo/cheerio/releases/download/v26.8.15/Cheerio-26.8.15.dmg">Download for macOS</a><a class="button button--secondary" href="faq.html">Read the FAQ first</a></p>
+          <p class="button-row"><a class="button button--primary" id="download-closing" href="https://github.com/ObviosCo/cheerio/releases/download/v26.8.16/Cheerio-26.8.16.dmg">Download for macOS</a><a class="button button--secondary" href="faq.html">Read the FAQ first</a></p>
           <p class="caption">Free, MIT-licensed, and it works before the next meeting. macOS 26 or later on Apple&nbsp;Silicon.</p>
         </div>
       </div>
