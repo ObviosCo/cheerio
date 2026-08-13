@@ -11,27 +11,43 @@ import Foundation
 /// ``channelFileURLs(for:resolve:)`` rather than checking `audioDirectory` alone,
 /// so all three of those collapse into the same answer: nothing to play.
 public enum MeetingAudioPlayback {
-    /// Every capture channel that actually wrote a file for this meeting, in a
-    /// fixed order (``SpeakerChannel/me`` before ``SpeakerChannel/them``) —
-    /// deliberately not a `Set`, so a caller building a composition always
-    /// layers the mic track first regardless of which channel happened to
-    /// finish writing first.
+    /// Every capture channel that actually wrote a file for this meeting, paired
+    /// with the file, in a fixed order (``SpeakerChannel/me`` before
+    /// ``SpeakerChannel/them``) — deliberately not a `Set`, so a caller building
+    /// a composition always layers the mic track first regardless of which
+    /// channel happened to finish writing first.
+    ///
+    /// Which channel a file belongs to matters to anything that acts on one
+    /// channel at a time — re-transcription (issue #14) repairs a single
+    /// channel's transcript — while playback mixes them and only needs the URLs;
+    /// ``channelFileURLs(for:resolve:)`` is that narrower view of this same
+    /// answer.
     ///
     /// `resolve` defaults to `AudioStorage.url(forRelativePath:)` and exists as a
     /// parameter for the same reason `AudioOrphanSweep.sweep`'s directory
     /// parameter does: tests need this off the real Application Support
     /// container.
-    public static func channelFileURLs(
+    public static func channelFiles(
         for meeting: Meeting,
         resolve: (String) throws -> URL = AudioStorage.url(forRelativePath:)
-    ) -> [URL] {
+    ) -> [(channel: SpeakerChannel, url: URL)] {
         guard let relativePath = meeting.audioDirectory,
             let directory = try? resolve(relativePath)
         else { return [] }
         return [SpeakerChannel.me, .them].compactMap { channel in
             let url = directory.appending(path: "\(channel.rawValue).caf")
-            return FileManager.default.fileExists(atPath: url.path) ? url : nil
+            guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+            return (channel, url)
         }
+    }
+
+    /// The files ``channelFiles(for:resolve:)`` found, for callers that mix the
+    /// channels rather than treating them separately.
+    public static func channelFileURLs(
+        for meeting: Meeting,
+        resolve: (String) throws -> URL = AudioStorage.url(forRelativePath:)
+    ) -> [URL] {
+        channelFiles(for: meeting, resolve: resolve).map(\.url)
     }
 
     /// Whether the meeting detail view should show a playback affordance at all.

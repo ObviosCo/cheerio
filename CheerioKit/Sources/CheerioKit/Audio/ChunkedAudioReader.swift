@@ -56,4 +56,47 @@ public enum ChunkedAudioReader {
             try onWindow(buffer)
         }
     }
+
+    /// Reads `source` the same way, but hands each window to an *async* consumer
+    /// and waits for it before reading the next.
+    ///
+    /// The waiting is the whole point. Re-transcription (issue #14) drives
+    /// `TranscriptionEngine` from a file instead of from a microphone, and a file
+    /// reads orders of magnitude faster than real time: yielding every window into
+    /// the engine's queue as fast as the disk delivers them would hold the entire
+    /// recording in memory at once — around 670 MB for the 58-minute,
+    /// 3 ch / 24 kHz meeting issue #174 left behind, before the analyzer's own
+    /// state. One window per consumer turn caps that at one window, however far
+    /// behind the consumer runs.
+    ///
+    /// The loop is otherwise identical to ``read(_:windowFrames:onWindow:)`` —
+    /// same `framePosition` end test, same tolerance for a short read.
+    ///
+    /// Its own name rather than an overload of `read`: a trailing closure carries no
+    /// argument label, so an overload pair would let a *synchronous* closure written
+    /// at an `await` call site silently resolve to the other function — which is
+    /// exactly the unbounded read this exists to prevent, chosen by accident.
+    public static func readAwaitingEachWindow(
+        _ source: AVAudioFile,
+        windowFrames: AVAudioFrameCount = defaultWindowFrames,
+        onWindow: (sending AVAudioPCMBuffer) async throws -> Void
+    ) async throws {
+        let format = source.processingFormat
+        while source.framePosition < source.length {
+            let remaining = source.length - source.framePosition
+            let framesToRead = AVAudioFrameCount(min(AVAudioFramePosition(windowFrames), remaining))
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: framesToRead) else {
+                throw ReaderError.bufferAllocationFailed
+            }
+            try source.read(into: buffer, frameCount: framesToRead)
+            guard buffer.frameLength > 0 else { break }
+            // `read(into:)` merges the fresh buffer into `source`'s region, which
+            // leaves it task-isolated and so unsendable — the same accounting
+            // `AVAudioPCMBuffer.detachedCopy()` documents. The box launders it
+            // without a second copy, which is sound for the same reason: this
+            // buffer was allocated one line ago, nothing else holds a reference,
+            // and this loop never touches it again after handing it over.
+            try await onWindow(UnsafeTransfer(value: buffer).value)
+        }
+    }
 }

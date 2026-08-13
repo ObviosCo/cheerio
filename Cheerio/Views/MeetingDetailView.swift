@@ -58,6 +58,21 @@ struct MeetingDetailView: View {
     /// id regardless (`runTrigger(id:)`), so this is about the *list* staying
     /// honest, not about what runs. Read in `body`, never decoded here.
     @AppStorage(TranscriptCallbackSettings.triggersDefaultsKey) private var observedTriggersData: Data?
+    /// The channels this meeting could be transcribed again from (#14), refreshed
+    /// by the meeting-keyed `.task` below and after a repair. Empty is the common
+    /// case: retention purges audio after three days by default, and the
+    /// affordance goes with it — same rule as playback and "use as a voice sample".
+    @State private var repairProbes: [TranscriptRepair.ChannelProbe] = []
+    /// The channels that captured audio and produced no transcript from it — the
+    /// prompt, rather than leaving someone to guess which half of their meeting is
+    /// missing. Measured off the main actor from the CAF itself, since the capture
+    /// source that knew this live is long gone.
+    @State private var repairAdvice: [TranscriptionCoverage] = []
+    /// What the last repair did, shown until the meeting is switched. Kept separate
+    /// from the transcript's own segment count because "37 lines recovered, 2 of
+    /// yours kept" is the part that isn't visible by reading the result.
+    @State private var repairSummary: String?
+    @State private var repairError: String?
     /// Which transcript row's seek affordance is visible. Hover-revealed rather
     /// than always-on: a stamp on every line is exactly the column of numbers
     /// the per-minute timestamps (#130) exist to avoid, and the row's text keeps
@@ -126,6 +141,11 @@ struct MeetingDetailView: View {
                     }
                 }
 
+                if !repairProbes.isEmpty {
+                    Divider()
+                    retranscribeSection
+                }
+
                 // Any configured trigger, not just the default (#137) — pointing
                 // a different agent at a finished meeting is also how it gets
                 // re-processed through one. `endedCleanly`, not `endedAt != nil`:
@@ -161,6 +181,11 @@ struct MeetingDetailView: View {
             // rather than trusting the property initializer to have covered it.
             isTranscriptExpanded = ScreenshotMode.expandsTranscript
             isEditingRoughNotes = false
+            // Same reuse story: a repair's result line belongs to the meeting it ran
+            // on, so switching meetings has to clear it rather than carry it over.
+            repairSummary = nil
+            repairProbes = []
+            repairAdvice = []
             meeting.resolveSpeakerSlots(ownerNames: SpeakerLabeling.ownerNames(context: context))
             try? context.save()
             // Same reuse story as the state resets above: the previous
@@ -174,6 +199,9 @@ struct MeetingDetailView: View {
             if !urls.isEmpty {
                 await playerModel.load(urls: urls)
             }
+            // Last, because it reads the CAFs to decide whether a channel looks
+            // repairable, and everything above is what the meeting needs to render.
+            await refreshRepairState()
         }
         .onDisappear { playerModel.teardown() }
         // Never both at once (see #14 and the mic-hears-your-speakers issue,
@@ -186,6 +214,11 @@ struct MeetingDetailView: View {
             Button("OK") { relabelError = nil }
         } message: {
             Text(relabelError ?? "")
+        }
+        .alert("Couldn't transcribe that channel again", isPresented: $repairError.presented()) {
+            Button("OK") { repairError = nil }
+        } message: {
+            Text(repairError ?? "")
         }
         .confirmationDialog(
             DeleteMeetingConfirmation.title(for: meeting.title),
@@ -693,6 +726,165 @@ struct MeetingDetailView: View {
             // reports may well have been started right here.
             CallbackStatusLabel()
         }
+    }
+
+    /// "Transcribe this meeting's retained audio again" (#14) — the recovery path
+    /// for a transcript that came out empty or one-sided, per channel rather than
+    /// per meeting, because the case it exists for is one channel missing and the
+    /// other fine.
+    ///
+    /// The attention line above the control is the whole reason this is findable:
+    /// `TranscriptionCoverage` (#176) can tell that a channel captured real audio
+    /// and produced no text, so the app says which half is missing and how long the
+    /// audio has left, instead of leaving someone to notice on their own before
+    /// retention takes the only copy.
+    private var retranscribeSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.x1) {
+            ForEach(repairAdvice, id: \.channel) { coverage in
+                // Wraps rather than truncates, like the other long attention lines
+                // on this page (see `MeetingSpeakersSection`) — the retention window
+                // is the end of the sentence and the part with a deadline in it.
+                StatusLabel(.attention, advisory(for: coverage))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(spacing: Theme.Space.x2) {
+                // One channel on disk gets a plain button, several get a menu — the
+                // same shape `runTriggerSection` uses, for the same reason: naming
+                // the one thing that can happen beats a menu of one.
+                if repairProbes.count == 1, let only = repairProbes.first {
+                    Button {
+                        retranscribe(only.channel)
+                    } label: {
+                        Label(retranscribeActionName(only.channel), systemImage: "waveform.badge.magnifyingglass")
+                    }
+                    .disabled(isRepairBusy)
+                } else {
+                    Menu {
+                        ForEach(repairProbes, id: \.channel) { probe in
+                            Button(retranscribeActionName(probe.channel)) { retranscribe(probe.channel) }
+                        }
+                    } label: {
+                        Label("Transcribe again", systemImage: "waveform.badge.magnifyingglass")
+                    }
+                    .fixedSize()
+                    .disabled(isRepairBusy)
+                }
+                Text(
+                    "Reads the retained audio through transcription again, one channel at a time. Lines you renamed or confirmed are kept; the notes above aren't regenerated."
+                )
+                .font(.caption)
+                .foregroundStyle(Theme.Colors.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            if let repairSummary {
+                Text(repairSummary)
+                    .font(.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+            }
+        }
+    }
+
+    /// Disabled while *any* recording runs, not just while this meeting is being
+    /// mutated — see `TranscriptRepair.audioFile(for:in:isBusy:)`: this pass starts
+    /// a third transcription engine and reads a file as fast as the disk allows,
+    /// which is not something to put next to a live meeting.
+    private var isRepairBusy: Bool {
+        ChannelRetranscription.isBusy(meeting, session: session)
+    }
+
+    /// Channels named the way the transcript names them, with the hardware said out
+    /// loud once — "Me" alone doesn't tell you which recording is about to be read.
+    private func channelName(_ channel: SpeakerChannel) -> String {
+        channel == .me ? "Me (your microphone)" : "Them (system audio)"
+    }
+
+    private func retranscribeActionName(_ channel: SpeakerChannel) -> String {
+        "Transcribe \(channelName(channel)) again"
+    }
+
+    private func advisory(for coverage: TranscriptionCoverage) -> String {
+        let missing =
+            coverage.channel == .me
+            ? "This meeting's microphone recording has audio in it but produced no transcript, so your side of the conversation is missing."
+            : "This meeting's system-audio recording has audio in it but produced no transcript, so the other side of the conversation is missing."
+        return "\(missing) \(retentionWarning)"
+    }
+
+    /// How long there is to repair this meeting. Worth saying next to the prompt:
+    /// the default retention is three days, so a transcript that came out wrong
+    /// loses the only evidence it could be fixed from that quickly.
+    private var retentionWarning: String {
+        switch AudioRetention.current {
+        case .forever:
+            "The audio is kept until you change Settings → Privacy."
+        case .none:
+            "Audio isn't being kept, so this recording won't survive the next purge."
+        case .day, .threeDays, .week, .month:
+            "The audio is deleted \(AudioRetention.current.label) after a meeting ends, so that's how long there is to repair it."
+        }
+    }
+
+    private func retranscribe(_ channel: SpeakerChannel) {
+        Task { await runRepair(channel) }
+    }
+
+    /// Re-transcribes one channel. Everything about the pass itself — the engine,
+    /// the merge rule, the diarization after — belongs to `ChannelRetranscription`;
+    /// this is the click and the wording that follows it.
+    private func runRepair(_ channel: SpeakerChannel) async {
+        // The control is disabled on the same condition, but a click can be in
+        // flight when the disable lands — this is the check that holds. (The run
+        // re-checks it a third time before taking its mark, since that's the only
+        // one both entry points share.)
+        guard !isRepairBusy else { return }
+        repairSummary = nil
+        do {
+            let outcome = try await ChannelRetranscription.run(
+                channel: channel, meeting: meeting, session: session, context: context)
+            repairSummary = repairSummaryText(outcome, channel: channel)
+        } catch {
+            repairError = error.localizedDescription
+        }
+        // Either way: a successful pass changes the segment counts the prompt is
+        // derived from, and a failed one may have changed nothing at all — both
+        // want the state re-read rather than guessed at.
+        await refreshRepairState()
+    }
+
+    private func repairSummaryText(_ outcome: TranscriptRepair.Outcome, channel: SpeakerChannel) -> String {
+        guard outcome.inserted > 0 else {
+            return "No speech was found in the \(channelName(channel)) recording."
+        }
+        var parts = ["Transcribed \(lineCount(outcome.inserted)) from the \(channelName(channel)) recording"]
+        if outcome.replaced > 0 { parts.append("replacing \(lineCount(outcome.replaced))") }
+        if outcome.kept > 0 { parts.append("keeping \(lineCount(outcome.kept)) you’d settled") }
+        if outcome.skipped > 0 { parts.append("skipping \(lineCount(outcome.skipped)) that overlapped those") }
+        return parts.joined(separator: ", ") + "."
+    }
+
+    private func lineCount(_ count: Int) -> String {
+        "\(count) line\(count == 1 ? "" : "s")"
+    }
+
+    /// Re-reads what can be repaired and what wants repairing.
+    ///
+    /// Nothing is offered until the recording has actually ended: mid-call the CAF
+    /// is still being written, and a channel that hasn't finalized a line yet would
+    /// otherwise be diagnosed as a failure — the one moment "audio but no
+    /// transcript" is normal. `endedAt`, not `endedCleanly`, because a crash-
+    /// abandoned recording is exactly the kind of half-transcript this repairs.
+    private func refreshRepairState() async {
+        guard meeting.endedAt != nil else {
+            repairProbes = []
+            repairAdvice = []
+            return
+        }
+        let probes = TranscriptRepair.probes(in: meeting)
+        repairProbes = probes
+        // `channelsWantingRepair` is nonisolated and async, so the file reading it
+        // does lands off the main actor by construction. It only measures a channel
+        // with no segments at all, so an intact meeting costs nothing here.
+        repairAdvice = await TranscriptRepair.channelsWantingRepair(probes)
     }
 
     /// Same discipline as Settings' "Run now on last meeting": the export reads

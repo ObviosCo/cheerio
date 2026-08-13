@@ -81,6 +81,11 @@ final class CaptureSession {
         /// claim-to-pipeline stretch, and the tail of `.finishing` where capture
         /// is stopping before ``process(meeting:plan:context:)`` is entered.
         case preparing
+        /// Reading a retained recording back through the transcriber — the repair
+        /// pass in `ChannelRetranscription` (issue #14). Ahead of speaker
+        /// identification because that's the order the repair runs them in, for
+        /// the same reason the recording pipeline does: fresh lines need labelling.
+        case transcribing
         case identifyingSpeakers
         case writingUp
 
@@ -88,6 +93,7 @@ final class CaptureSession {
         var label: String {
             switch self {
             case .preparing: "Processing…"
+            case .transcribing: "Transcribing audio…"
             case .identifyingSpeakers: "Identifying speakers…"
             case .writingUp: "Writing up…"
             }

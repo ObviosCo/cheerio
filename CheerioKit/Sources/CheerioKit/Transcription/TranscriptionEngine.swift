@@ -57,6 +57,22 @@ public actor TranscriptionEngine {
         capturedAudioContinuation.yield(UnsafeTransfer(value: buffer))
     }
 
+    /// Hands a buffer to the engine and returns once it has reached the analyzer.
+    ///
+    /// The blocking counterpart of ``submit(_:)``, for the one caller that isn't a
+    /// realtime audio callback: re-transcribing a retained recording (issue #14),
+    /// which reads a file far faster than the analyzer consumes it. `submit`'s
+    /// queue is unbounded because a microphone can't outrun it; a file can, and
+    /// awaiting each buffer's conversion is what keeps an hour of audio from
+    /// piling up in memory. See `AudioFileTranscription`.
+    ///
+    /// Same conversion, same analyzer, same everything downstream — a file pass
+    /// benefits from every fix the live path gets (`AnalyzerAudioConverter`, issue
+    /// #174) because it *is* the live path from here on.
+    public func feed(_ buffer: sending AVAudioPCMBuffer) {
+        process(buffer: buffer)
+    }
+
     /// Ensures the on-device model for `locale` is installed. Call before `start()`.
     /// First run downloads the model; surface progress in UI.
     public static func ensureModel(for locale: Locale = .current) async throws {

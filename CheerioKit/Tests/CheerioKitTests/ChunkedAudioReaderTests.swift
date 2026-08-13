@@ -100,6 +100,33 @@ import Testing
         #expect(chunked == reference)
     }
 
+    /// The awaiting variant (issue #14 feeds a `TranscriptionEngine` from a file
+    /// with it) must be the same read, not a second one: same samples, same window
+    /// boundaries, including the partial last window.
+    @Test func awaitingReadMatchesTheSynchronousOne() async throws {
+        let source = try makeSyntheticCAF(frameCount: 250_000)
+        defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
+
+        var synchronous: [Float] = []
+        var synchronousWindows: [AVAudioFrameCount] = []
+        try ChunkedAudioReader.read(try AVAudioFile(forReading: source), windowFrames: 4_096) { window in
+            synchronousWindows.append(window.frameLength)
+            let data = window.floatChannelData![0]
+            synchronous.append(contentsOf: UnsafeBufferPointer(start: data, count: Int(window.frameLength)))
+        }
+
+        var awaited: [Float] = []
+        var awaitedWindows: [AVAudioFrameCount] = []
+        try await ChunkedAudioReader.readAwaitingEachWindow(try AVAudioFile(forReading: source), windowFrames: 4_096) { window in
+            awaitedWindows.append(window.frameLength)
+            let data = window.floatChannelData![0]
+            awaited.append(contentsOf: UnsafeBufferPointer(start: data, count: Int(window.frameLength)))
+        }
+
+        #expect(awaitedWindows == synchronousWindows)
+        #expect(awaited == synchronous)
+    }
+
     /// A window bigger than the whole file is the degenerate one-chunk case —
     /// still must not throw or drop samples.
     @Test func windowLargerThanFileReadsEverythingInOneGo() throws {
