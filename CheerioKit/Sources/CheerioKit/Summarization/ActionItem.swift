@@ -263,8 +263,16 @@ extension Meeting {
     /// Whether any transcript line still resolves to the owner — the evidence
     /// ``ActionItem/reconciled(ownerNames:meetingHasOwnerLines:)`` uses for items
     /// that carry no name.
+    ///
+    /// Bleed lines can't be evidence: an unlabelled mic line reads as the owner's
+    /// only because the mic is presumed to be them, and a line flagged as the far
+    /// end heard through the speakers is precisely where that presumption is known
+    /// false. Without this filter, a meeting whose only mic lines are bleed copies
+    /// would keep vouching for `isOwner` items — authorizing an agent to act on a
+    /// remote speaker's commitment, the exact failure the trust rule exists to
+    /// prevent.
     private func hasOwnerLines(ownerNames: Set<String>) -> Bool {
-        segments.contains { Meeting.isOwnerAttributed($0, ownerNames: ownerNames) }
+        segments.contains { !$0.isBleed && Meeting.isOwnerAttributed($0, ownerNames: ownerNames) }
     }
 
     /// The persisted action items, re-checked against current speaker identity —

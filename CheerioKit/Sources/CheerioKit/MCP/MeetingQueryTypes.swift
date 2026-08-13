@@ -46,7 +46,10 @@ public struct MeetingSummary: Codable, Sendable, Equatable {
         self.endedAt = meeting.endedAt
         self.participantNames = meeting.participantNames
         self.isInProgress = meeting.endedAt == nil
-        self.segmentCount = meeting.segments.count
+        // Counted the way `get_transcript` counts: bleed lines never reach the
+        // export's segments, so a summary advertising them would promise lines the
+        // fetch doesn't deliver.
+        self.segmentCount = meeting.segments.count(where: { !$0.isBleed })
         self.hasEnhancedNotes = meeting.enhancedNotes?.isEmpty == false
         self.actionItemCount = meeting.reconciledActionItems(ownerNames: ownerNames).count
         self.unavailable =

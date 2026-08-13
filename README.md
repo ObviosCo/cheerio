@@ -14,9 +14,9 @@ third-party service sits between the recording and the output — the transcript
 in your library, ready to hand to whatever comes next.
 
 > **Status: works, lightly tested.** The app builds and runs, the package tests pass, and
-> speaker differentiation is verified for in-person meetings. On a video call played out
-> loud, the mic still hears your speakers, so wear headphones — see
-> [Current status](#current-status).
+> speaker differentiation is verified for in-person meetings. A call played through speakers
+> no longer transcribes twice: post-processing detects the mic's duplicate of the far end
+> and keeps it out of the transcript — see [Current status](#current-status).
 
 ## Why
 
@@ -368,9 +368,10 @@ macros.
   before. Samples need **at least 30 seconds** — shorter ones measurably cause the model to
   split one person across two speaker slots. "Mic check" arms a live level meter before you
   commit to a take, and saving a sample confirms it by name instead of quietly resetting the form.
-- **On a video call, wear headphones.** With meeting audio playing out loud, the mic hears
-  your speakers and remote voices land in both channels — see the echo issue below. There's
-  no mode to set; every recording captures both channels the same way.
+- **On a video call, headphones still give the cleanest capture.** With speakers, the far
+  end lands in the retained audio and the live transcript too — but either way the processed
+  transcript dedupes the mic's copy of the far end; see the known issue below. There's no
+  mode to set; every recording captures both channels the same way.
 
 ## Current status
 
@@ -383,16 +384,21 @@ Verified against this commit on macOS 27 / Xcode 26:
 | End-to-end capture | verified 2026-07-28 — both channels transcribe, notes generate, both CAFs write |
 | Speaker differentiation, in person | verified 2026-07-31 — 9/9 segments labelled correctly across 1–2s alternating turns |
 | Live video call | **not yet verified** |
+| Speaker bleed (call on speakers) | deduped at the transcript level in post-processing; every drop/keep decision fixture-verified in `BleedDetectorTests` |
 
 Known issues, roughly in priority order:
 
-- **The mic hears your speakers.** With meeting audio playing out loud, system audio lands in
-  *both* channels and the transcript duplicates itself, which then skews the summary.
-  Acoustic echo cancellation was tried and removed ([#167](https://github.com/ObviosCo/cheerio/issues/167)):
-  with it enabled, a real video call recorded a completely silent mic channel
-  ([#159](https://github.com/ObviosCo/cheerio/issues/159)) — losing half the meeting is worse
-  than transcribing it twice. Wear headphones; deduplicating the bleed at the transcript
-  level is tracked in [#168](https://github.com/ObviosCo/cheerio/issues/168).
+- **The mic hears your speakers — the transcript no longer says everything twice.** With
+  meeting audio playing out loud, the far end still lands in *both* channels, but
+  post-processing now detects the mic's near-duplicate of each system-tap line (fuzzy text
+  match, gated by overlapping time and timing direction) and excludes it from the transcript,
+  the summary, the speakers panel, and everything handed to agents. What keeps the bleed: the
+  retained audio (this is a text-level fix, not echo cancellation — that was tried and removed
+  in [#167](https://github.com/ObviosCo/cheerio/issues/167) after it silenced a real meeting's
+  mic channel, [#159](https://github.com/ObviosCo/cheerio/issues/159)) and the live transcript,
+  which shows the duplicates until the recording stops and processing runs. Matching is
+  deliberately conservative — genuine cross-talk always survives, so the rare leftover
+  duplicate line is the accepted cost.
 - **The live transcript shows `Me` / `Them`, not names.** Diarization is a post-pass over the
   recorded files, so names appear only once the recording stops. In an in-person meeting
   everyone is on the mic, so every live line reads "Me" — this looks like a differentiation
@@ -455,11 +461,8 @@ UI, and a website: [`docs/DESIGN-HANDOFF.md`](docs/DESIGN-HANDOFF.md).
 
 ## Roadmap
 
-Near-term: deduplicating speaker bleed at the transcript level
-([#168](https://github.com/ObviosCo/cheerio/issues/168) — the successor to acoustic echo
-cancellation, which was removed after it silenced a real meeting's mic), an in-room vs.
-remote toggle per participant, and re-running transcription on retained audio (the other
-half of #14 — playback itself shipped).
+Near-term: an in-room vs. remote toggle per participant, and re-running transcription on
+retained audio (the other half of #14 — playback itself shipped).
 
 The actionable-transcripts work ([epic #22](https://github.com/ObviosCo/cheerio/issues/22))
 shipped in v26.8.9: owner-attributed action items, the transcript-ready callback, directive

@@ -66,8 +66,13 @@ struct MeetingDetailView: View {
     /// beside the text, not the line itself.
     @State private var hoveredSegmentID: PersistentIdentifier?
 
+    /// Bleed lines stay persisted but never render: showing the far end's words a
+    /// second time under "Me" is the duplication the post-processing marks exist
+    /// to remove — see `TranscriptSegment.isBleed`.
     private var sortedSegments: [TranscriptSegment] {
-        meeting.segments.sorted { $0.startTime < $1.startTime }
+        meeting.segments
+            .filter { !$0.isBleed }
+            .sorted { $0.startTime < $1.startTime }
     }
 
     var body: some View {
@@ -496,7 +501,7 @@ struct MeetingDetailView: View {
                 .padding(.top, 6)
             }
         } label: {
-            Text("Transcript (\(meeting.segments.count) segments)")
+            Text("Transcript (\(sortedSegments.count) segments)")
                 .font(.headline)
         }
     }

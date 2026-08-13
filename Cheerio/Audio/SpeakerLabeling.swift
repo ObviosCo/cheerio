@@ -88,10 +88,13 @@ enum SpeakerLabeling {
             // Settled lines are left alone: a person's word outranks the model whether
             // they retyped the label (isSpeakerLabelManual) or vouched for the model's
             // guess as-is (isSpeakerLabelConfirmed) — clobbering either would make
-            // correcting or confirming anything pointless.
+            // correcting or confirming anything pointless. Bleed lines are skipped
+            // too: they're the far end's voice on the mic channel, so any label the
+            // diarizer picked for those seconds names the wrong person — and nothing
+            // displays them anyway.
             for segment in meeting.segments
             where segment.channel == channel && !segment.isSpeakerLabelManual
-                && !segment.isSpeakerLabelConfirmed
+                && !segment.isSpeakerLabelConfirmed && !segment.isBleed
             {
                 segment.speakerLabel =
                     informative

@@ -795,6 +795,14 @@ final class CaptureSession {
         beginProcessing(meeting)
         defer { endProcessing(meeting) }
 
+        // First, before anything consumes segments: mark mic-channel lines that
+        // are really the far end heard through the speakers (issue #5), so
+        // diarization doesn't label them, the summarizer's transcript doesn't
+        // repeat them, and the export doesn't ship them mis-attributed. Text-only
+        // and synchronous — no audio is read and nothing here can fail; the marks
+        // ride along on the pipeline's later saves.
+        meeting.markBleedSegments()
+
         // Diarize before summarizing, so the transcript the model reads carries
         // speaker labels — and before the retention purge, which would delete
         // the audio this reads.
