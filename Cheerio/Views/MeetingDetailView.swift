@@ -12,7 +12,6 @@ struct MeetingDetailView: View {
     @Environment(\.modelContext) private var context
     @Environment(CaptureSession.self) private var session
     @Query(sort: \EnrolledSpeaker.enrolledAt) private var enrolled: [EnrolledSpeaker]
-    @State private var isRelabeling = false
     @State private var relabelError: String?
     @State private var isDeleteConfirming = false
     @State private var deleteError: String?
@@ -104,18 +103,23 @@ struct MeetingDetailView: View {
                         Button {
                             Task { await relabel() }
                         } label: {
-                            Label(
-                                isRelabeling ? "Identifying speakers…" : "Re-identify speakers",
-                                systemImage: "person.wave.2"
-                            )
+                            // A button, not a status readout: this used to flip to
+                            // "Identifying speakers…" for the pass it started
+                            // itself, which said nothing about the same pass
+                            // arriving from launch recovery or the end of a
+                            // recording. The header's indicator answers all three
+                            // now (issue #173), so the label can stay the action.
+                            Label("Re-identify speakers", systemImage: "person.wave.2")
                         }
-                        // `isProcessing` too, not just this view's own flag: launch
-                        // recovery of a held meeting runs its pipeline while the
-                        // session is `.idle` — exactly when this view can be
-                        // showing that meeting — and two diarization passes
-                        // rewriting the same labels concurrently is a race no
-                        // ordering of their saves makes right.
-                        .disabled(isRelabeling || session.isProcessing(meeting))
+                        // The session's marks, with no `isRelabeling` beside them:
+                        // `relabel()` marks the meeting before its first await, so
+                        // this covers its own pass as well as the ones it always
+                        // had to — launch recovery of a held meeting runs its
+                        // pipeline while the session is `.idle`, exactly when this
+                        // view can be showing that meeting, and two diarization
+                        // passes rewriting the same labels concurrently is a race
+                        // no ordering of their saves makes right.
+                        .disabled(session.isProcessing(meeting))
                         Text("Uses the voices enrolled in Settings → Participants.")
                             .font(.caption)
                             .foregroundStyle(Theme.Colors.textSecondary)
@@ -256,6 +260,14 @@ struct MeetingDetailView: View {
     /// context-menu-only affordance reads as "there is no edit button" rather
     /// than "right-click to rename." Both drive the identical alert; see
     /// `renameMeetingAlert`.
+    ///
+    /// The processing line (issue #173) sits here, once, rather than beside each
+    /// control it explains. Every affordance this view disables while a pipeline
+    /// runs — Convert and Delete in the toolbar, Re-identify and Run callback
+    /// further down the scroll — is disabled for the same single reason, and one
+    /// statement of it directly under the title is both the first thing on screen
+    /// when the meeting opens and adjacent to the toolbar. Repeating it per
+    /// control would say the same sentence up to four times in one window.
     private var header: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: Theme.Space.x1) {
@@ -279,6 +291,10 @@ struct MeetingDetailView: View {
             Text(subtitle)
                 .font(.caption)
                 .foregroundStyle(Theme.Colors.textSecondary)
+            if let phase = session.processingPhase(for: meeting) {
+                ProcessingIndicator(label: phase.label, prominence: .section)
+                    .padding(.top, Theme.Space.x1)
+            }
         }
     }
 
@@ -727,15 +743,13 @@ struct MeetingDetailView: View {
         // holds. The marks are reference-counted so an overlap wouldn't corrupt
         // *them* anymore; it's the two concurrent diarization passes this refuses.
         guard !session.isProcessing(meeting) else { return }
-        isRelabeling = true
         // Before the first `await` below, so nothing can observe this meeting as
         // deletable between that call starting and this line running. Cleared in
         // the `defer`, which runs on the error path too — see `CaptureSession`.
-        session.beginProcessing(meeting)
-        defer {
-            isRelabeling = false
-            session.endProcessing(meeting)
-        }
+        // The phase is named here because this pass has exactly one stage; the
+        // full pipeline reports each of its own as it reaches them.
+        session.beginProcessing(meeting, phase: .identifyingSpeakers)
+        defer { session.endProcessing(meeting) }
         do {
             try await SpeakerLabeling.label(meeting: meeting, context: context)
             let ownerNames = SpeakerLabeling.ownerNames(context: context)

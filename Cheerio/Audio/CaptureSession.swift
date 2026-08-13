@@ -68,6 +68,49 @@ final class CaptureSession {
     /// nil.
     private(set) var lastFinishedMeetingOccurrenceStart: Date?
 
+    /// How far a marked meeting's pipeline has got, for the surfaces that render
+    /// it — the sidebar row, the meeting detail view, the menu bar (issue #173).
+    ///
+    /// Ordered earliest to latest, and `Comparable` on that order, so
+    /// ``backgroundProcessingPhase`` can report the least-advanced of several at
+    /// once. A phase is only ever *reported* from the pipeline as it reaches each
+    /// stage — nothing predicts or schedules one — so a stage that's skipped or
+    /// throws is never claimed.
+    enum ProcessingPhase: Comparable {
+        /// Marked, but not inside a stage that names itself: recovery's
+        /// claim-to-pipeline stretch, and the tail of `.finishing` where capture
+        /// is stopping before ``process(meeting:plan:context:)`` is entered.
+        case preparing
+        case identifyingSpeakers
+        case writingUp
+
+        /// Present tense and elided, because it's read while it's still true.
+        var label: String {
+            switch self {
+            case .preparing: "Processing…"
+            case .identifyingSpeakers: "Identifying speakers…"
+            case .writingUp: "Writing up…"
+            }
+        }
+    }
+
+    /// One meeting's entry in ``processingMeetings``: how many passes hold it, and
+    /// what the innermost one last said it was doing.
+    ///
+    /// The phase rides *inside* the reference count rather than in a dictionary of
+    /// its own, so the fact a meeting is busy and the words describing why are the
+    /// same piece of state — one that's cleared by the same `endProcessing(_:)`
+    /// that makes the meeting deletable again. A separate phase map could outlive
+    /// the count and strand a meeting looking permanently busy, which is exactly
+    /// what issue #173's "never strand" requirement rules out.
+    private struct ProcessingMark {
+        var count: Int
+        /// Nil until a stage reports one — a mark taken by a caller that doesn't
+        /// stage its work has no phase to claim, and ``processingPhase(for:)``
+        /// answers `.preparing` for it.
+        var phase: ProcessingPhase?
+    }
+
     /// Meetings with a mutation in flight — the processing pipeline itself (which
     /// marks the meeting for the duration of ``process(meeting:plan:context:)``),
     /// launch recovery's claim-to-pipeline stretch, and `MeetingDetailView`'s
@@ -91,21 +134,71 @@ final class CaptureSession {
     /// concern like "is anything mutating this meeting right now" lives here rather
     /// than on a purpose-built type — the alternative costs a new object threaded
     /// into every scene in `CheerioApp` for one small dictionary.
-    private var processingMeetingIDs: [PersistentIdentifier: Int] = [:]
+    private var processingMeetings: [PersistentIdentifier: ProcessingMark] = [:]
 
     /// Marks `meeting` as having a background mutation in flight. Call before the
     /// first suspension point of whatever's about to `await` its way through
     /// changing it, and unconditionally clear with ``endProcessing(_:)`` in a
     /// `defer` — on the success path and the failure path alike, or a thrown error
     /// leaves the meeting permanently undeletable.
-    func beginProcessing(_ meeting: Meeting) {
-        processingMeetingIDs[meeting.persistentModelID, default: 0] += 1
+    ///
+    /// - Parameter phase: what this pass is starting on, when it knows. A pass
+    ///   that runs several stages reports each one with ``reportPhase(_:for:)``
+    ///   instead of naming one here.
+    func beginProcessing(_ meeting: Meeting, phase: ProcessingPhase? = nil) {
+        let id = meeting.persistentModelID
+        processingMeetings[id, default: ProcessingMark(count: 0, phase: nil)].count += 1
+        if let phase { processingMeetings[id]?.phase = phase }
     }
 
     func endProcessing(_ meeting: Meeting) {
         let id = meeting.persistentModelID
-        guard let count = processingMeetingIDs[id] else { return }
-        processingMeetingIDs[id] = count > 1 ? count - 1 : nil
+        guard let mark = processingMeetings[id] else { return }
+        // The whole entry goes when the last holder lets go — phase included, so
+        // no indicator can outlive the mark that justifies it.
+        processingMeetings[id] = mark.count > 1 ? ProcessingMark(count: mark.count - 1, phase: mark.phase) : nil
+    }
+
+    /// Records where a pass has got to, for the indicators. A no-op for an
+    /// unmarked meeting — the optional chain, not an oversight: the mark is what
+    /// says any of this is happening, and a phase without one would be a claim
+    /// nothing can retract.
+    func reportPhase(_ phase: ProcessingPhase, for meeting: Meeting) {
+        processingMeetings[meeting.persistentModelID]?.phase = phase
+    }
+
+    /// What to show for `meeting` right now, or nil when nothing is working on it.
+    ///
+    /// Deliberately narrower than ``isProcessing(_:)``, which also covers this
+    /// session's meeting while it records or waits in `.holding` — neither is
+    /// processing, and an indicator that said so would be wrong for the whole
+    /// length of a call. What it adds instead is `.finishing`: capture is over and
+    /// the pipeline is what's left, so this session's own meeting reads as busy
+    /// from the moment ``stop(context:)`` starts winding capture down, not only
+    /// once ``process(meeting:plan:context:)`` takes its mark a few awaits later.
+    func processingPhase(for meeting: Meeting) -> ProcessingPhase? {
+        if let mark = processingMeetings[meeting.persistentModelID] {
+            return mark.phase ?? .preparing
+        }
+        return meeting == self.meeting && state == .finishing ? .preparing : nil
+    }
+
+    /// ``processingPhase(for:)`` for this session's own meeting — what the live
+    /// view and the sidebar's `.finishing` line both show, without either of them
+    /// unwrapping ``meeting`` for itself. Nil while recording and while `.holding`:
+    /// nothing is processing the meeting in either state, and `.holding` has its
+    /// own countdown to say what it's waiting for.
+    var currentMeetingProcessingPhase: ProcessingPhase? {
+        meeting.flatMap { processingPhase(for: $0) }
+    }
+
+    /// One phase for the surfaces that speak for the whole app rather than for a
+    /// meeting — the menu bar. The least-advanced of whatever is marked, because
+    /// that's the work still outstanding; in practice there's exactly one, since
+    /// recovery processes meetings one at a time and a re-identify pass refuses to
+    /// start on a meeting that's already marked.
+    var backgroundProcessingPhase: ProcessingPhase? {
+        processingMeetings.values.map { $0.phase ?? .preparing }.min()
     }
 
     /// Whether some pass currently has `meeting` mid-mutation. The detail view's
@@ -122,14 +215,14 @@ final class CaptureSession {
     /// begun seconds earlier would then run concurrently with it over the same
     /// segments.
     func isProcessing(_ meeting: Meeting) -> Bool {
-        meeting == self.meeting || processingMeetingIDs[meeting.persistentModelID] != nil
+        meeting == self.meeting || processingMeetings[meeting.persistentModelID] != nil
     }
 
     /// The marked meetings, for `AudioRetentionService.purge`'s exclusion: a purge
     /// can run mid-pipeline (Settings' "Delete audio now", the launch sweep), and
     /// diarization is still reading exactly the CAF files it would remove.
     var meetingIDsBeingProcessed: Set<PersistentIdentifier> {
-        Set(processingMeetingIDs.keys)
+        Set(processingMeetings.keys)
     }
 
     /// Whether any meeting is mid-pipeline outside the live capture flow — launch
@@ -140,7 +233,7 @@ final class CaptureSession {
     /// keep-updates-out-of-the-way gate exists to prevent for the ordinary
     /// `.finishing` path.
     var isProcessingInBackground: Bool {
-        !processingMeetingIDs.isEmpty
+        !processingMeetings.isEmpty
     }
 
     /// Whether every delete affordance should treat `meeting` as safe to remove
@@ -151,7 +244,7 @@ final class CaptureSession {
     /// A disabled button rather than cancel-and-await, for a first pass — see the
     /// call sites in `MeetingListView` and `MeetingDetailView`.
     func canDelete(_ meeting: Meeting) -> Bool {
-        meeting != self.meeting && processingMeetingIDs[meeting.persistentModelID] == nil
+        meeting != self.meeting && processingMeetings[meeting.persistentModelID] == nil
     }
 
     /// Call after successfully deleting a meeting, so this session stops holding
@@ -806,6 +899,12 @@ final class CaptureSession {
         // Diarize before summarizing, so the transcript the model reads carries
         // speaker labels — and before the retention purge, which would delete
         // the audio this reads.
+        //
+        // Each stage says so as it starts, rather than a table anywhere
+        // predicting the order: the indicators show where the pipeline actually
+        // is, so reordering these stages can't leave a label lying about which
+        // one is running.
+        reportPhase(.identifyingSpeakers, for: meeting)
         do {
             try await SpeakerLabeling.label(meeting: meeting, context: context)
         } catch {
@@ -813,6 +912,10 @@ final class CaptureSession {
             log.error("Speaker attribution failed: \(error)")
         }
 
+        // Covers the auto-title pass below too, not just the summary: both are
+        // model calls over the finished transcript, and "Writing up…" is what
+        // either of them looks like from outside.
+        reportPhase(.writingUp, for: meeting)
         do {
             let engine = SummarizationEngine()
             // After diarization, so the labels the owner names are matched against

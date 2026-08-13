@@ -15,6 +15,7 @@ Cheerio/
       SpeakerChip.swift            the chip and the rail label
       SpeakerTimelineBar.swift     who spoke when, across the whole meeting
       RecordingIndicator.swift     the three-signal rule, enforced
+      ProcessingIndicator.swift    a pipeline running, with its phase in words
       StatusLabel.swift            semantic state + symbol + label
       LevelMeterView.swift         live mic-level bar, pre-recording and during
   Resources/

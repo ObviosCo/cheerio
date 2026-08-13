@@ -211,11 +211,11 @@ struct CheerioApp: App {
                 .environment(updater)
                 .tint(Theme.Colors.accent)
         } label: {
-            Image(nsImage: captureSession.state.menuBarIcon)
+            Image(nsImage: captureSession.menuBarIcon)
                 // `NSImage.accessibilityDescription` doesn't propagate through
                 // SwiftUI's `Image(nsImage:)` — VoiceOver needs the label on the
                 // SwiftUI view itself, and it must track the state.
-                .accessibilityLabel(captureSession.state.menuBarAccessibilityLabel)
+                .accessibilityLabel(captureSession.menuBarStatus.menuBarAccessibilityLabel)
         }
         .modelContainer(container)
 

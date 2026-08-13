@@ -3,7 +3,8 @@ import CheerioKit
 
 /// The menu-bar glyph: a monochrome, template-rendered treatment of the app
 /// icon's copper ring (`Scripts/render-appicon.swift`), one variant per
-/// `CaptureSession.State` so "is it recording" reads at a glance (issue #49).
+/// ``MenuBarIcon/Status`` so "is it recording" reads at a glance (issue #49) —
+/// and, since #173, so does "is it still working on the last one".
 ///
 /// **Generated at runtime, not as committed PNGs.** `render-appicon.swift`
 /// generates because ten sizes of a two-color gradient are worth a script and
@@ -19,6 +20,21 @@ import CheerioKit
 /// it a template image: only the alpha channel matters, and macOS tints the
 /// result for light/dark menu bars and Control Center.
 enum MenuBarIcon {
+    /// What the glyph is depicting.
+    ///
+    /// `CaptureSession.State` can't be the whole story: a meeting being diarized
+    /// and written up by launch recovery, or by a re-identify pass, runs while the
+    /// session sits at `.idle` (issue #173), so a menu bar reading the state alone
+    /// shows the plain idle ring through the whole of it. Capture still wins
+    /// whenever there is any — a recording in progress is the one thing this glyph
+    /// must never fail to report — so background processing only claims the glyph
+    /// at `.idle`; see `CaptureSession.menuBarStatus`.
+    enum Status: Equatable {
+        case session(CaptureSession.State)
+        /// Nothing is being captured, but a meeting's pipeline is running.
+        case processingInBackground
+    }
+
     /// Menu-bar template images live on an 18×18pt grid
     /// (docs/DESIGN-HANDOFF.md §2) — the same constant `RecordingRing` uses,
     /// so the app's own recording ring and this monochrome one never drift apart.
@@ -29,22 +45,22 @@ enum MenuBarIcon {
     /// for its smallest slots (`radius: 27.0` on a 100-unit grid).
     private static let radiusFraction: CGFloat = 0.27
 
-    /// Renders the template image for one session state. Cheap enough to call
-    /// on every state change — a handful of ellipses on an 18pt canvas — so
-    /// there's no cache to invalidate.
-    static func image(for state: CaptureSession.State) -> NSImage {
+    /// Renders the template image for one status. Cheap enough to call on every
+    /// state change — a handful of ellipses on an 18pt canvas — so there's no
+    /// cache to invalidate.
+    static func image(for status: Status) -> NSImage {
         let size = NSSize(width: pointSize, height: pointSize)
         let image = NSImage(size: size, flipped: false) { rect in
             guard let context = NSGraphicsContext.current?.cgContext else { return false }
-            draw(state, in: rect, context: context)
+            draw(status, in: rect, context: context)
             return true
         }
         image.isTemplate = true
-        image.accessibilityDescription = state.menuBarAccessibilityLabel
+        image.accessibilityDescription = status.menuBarAccessibilityLabel
         return image
     }
 
-    private static func draw(_ state: CaptureSession.State, in rect: CGRect, context ctx: CGContext) {
+    private static func draw(_ status: Status, in rect: CGRect, context ctx: CGContext) {
         let side = min(rect.width, rect.height)
         let center = CGPoint(x: rect.midX, y: rect.midY)
         let radius = side * radiusFraction
@@ -78,13 +94,13 @@ enum MenuBarIcon {
 
         ctx.setFillColor(NSColor.black.cgColor)  // Color is ignored under isTemplate; alpha is what draws.
 
-        switch state {
-        case .idle:
+        switch status {
+        case .session(.idle):
             // Plain ring: not recording, nothing more to say.
             ctx.addPath(ringPath())
             ctx.fillPath(using: .evenOdd)
 
-        case .preparingModel:
+        case .session(.preparingModel):
             // Half ring: visibly incomplete, the same idea as a half-drawn
             // progress ring — getting ready, not ready yet.
             ctx.saveGState()
@@ -93,7 +109,7 @@ enum MenuBarIcon {
             ctx.fill(CGRect(x: rect.minX, y: center.y, width: rect.width, height: rect.maxY - center.y))
             ctx.restoreGState()
 
-        case .recording:
+        case .session(.recording):
             // Full ring plus a solid center dot. This is the one state that
             // must never be mistaken for another, so it gets the heaviest
             // treatment — the whole shape, not a variation on it.
@@ -103,7 +119,7 @@ enum MenuBarIcon {
             ctx.addPath(path)
             ctx.fillPath(using: .evenOdd)
 
-        case .holding:
+        case .session(.holding):
             // Ring plus a *hollow* center dot — the recording state's solid dot
             // with its middle waiting to be filled in: captured, not yet
             // processed. Distinct at a glance from `.recording` (solid) and
@@ -123,10 +139,20 @@ enum MenuBarIcon {
             ctx.addPath(path)
             ctx.fillPath(using: .evenOdd)
 
-        case .finishing:
+        case .session(.finishing), .processingInBackground:
             // Ring plus a small ellipsis, echoing the `ellipsis.circle` SF
             // Symbol this replaces so the "still working" meaning carries
             // over rather than being invented from scratch.
+            //
+            // One glyph for both, deliberately: to the person reading the menu
+            // bar, a meeting being processed at the end of a recording and one
+            // being processed by launch recovery are the same fact — the machine
+            // is working through a meeting — and inventing a sixth shape to
+            // separate them would spend the 18pt canvas's last legible
+            // distinction on which code path started it. Which meeting, and how
+            // far along, is what the panel below and the library row say; the
+            // two do get their own VoiceOver wording (see
+            // ``Status/menuBarAccessibilityLabel``).
             let path = ringPath()
             let dotRadius = innerRadius * 0.16
             let spacing = dotRadius * 3.4
@@ -139,17 +165,21 @@ enum MenuBarIcon {
     }
 }
 
-extension CaptureSession.State {
+extension MenuBarIcon.Status {
     /// VoiceOver text for the menu-bar glyph — the icon alone can't be the only
     /// signal (docs/DESIGN-HANDOFF.md §4's "no state communicated by color
     /// alone" bar extends to shape-alone for assistive tech).
+    ///
+    /// The one place the shared `.finishing` glyph is spelled out as two
+    /// different things: shape has to be economical at 18pt, words don't.
     var menuBarAccessibilityLabel: String {
         switch self {
-        case .idle: "Cheerio: not recording"
-        case .preparingModel: "Cheerio: preparing to record"
-        case .recording: "Cheerio: recording"
-        case .holding: "Cheerio: waiting to process"
-        case .finishing: "Cheerio: finishing up"
+        case .session(.idle): "Cheerio: not recording"
+        case .session(.preparingModel): "Cheerio: preparing to record"
+        case .session(.recording): "Cheerio: recording"
+        case .session(.holding): "Cheerio: waiting to process"
+        case .session(.finishing): "Cheerio: finishing up"
+        case .processingInBackground: "Cheerio: processing a meeting"
         }
     }
 }

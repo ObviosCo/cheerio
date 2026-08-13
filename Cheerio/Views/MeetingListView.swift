@@ -190,6 +190,14 @@ struct MeetingListView: View {
     /// scan a library for. The time of day answers neither, which is why it isn't a
     /// fallback here: a meeting with no roster shows no subtitle at all rather than
     /// something less interesting than the title above it.
+    ///
+    /// While something is processing the meeting, the phase takes that second line
+    /// instead of the roster (issue #173) — this is the first place someone looks
+    /// to find out whether the app is working, and it's the only line in the row
+    /// that can carry the answer without making the row a third line taller and
+    /// reflowing the whole list every time a pass starts or ends. The roster is
+    /// static and a click away in the detail view; which stage a pipeline is in is
+    /// true for a minute and then gone.
     @ViewBuilder private func row(for meeting: Meeting) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 4) {
@@ -205,7 +213,9 @@ struct MeetingListView: View {
                         .background(.tint.opacity(0.15), in: .capsule)
                 }
             }
-            if let participants = participantsSubtitle(for: meeting) {
+            if let phase = session.processingPhase(for: meeting) {
+                ProcessingIndicator(label: phase.label, prominence: .row)
+            } else if let participants = participantsSubtitle(for: meeting) {
                 Text(participants)
                     .chText(.meetingSubtitle)
                     .lineLimit(1)
@@ -398,9 +408,18 @@ struct MeetingListView: View {
             }
 
         case .finishing:
-            Label("Finishing up…", systemImage: "ellipsis.circle")
-                .foregroundStyle(Theme.Colors.textSecondary)
+            // The phase rather than a bare "Finishing up…": the same pipeline the
+            // row indicators report on is what this state *is*, and a stage name
+            // is the difference between "it's busy" and "it's stuck".
+            ProcessingIndicator(label: finishingLabel, prominence: .section)
         }
+    }
+
+    /// What the `.finishing` control line says. Falls back to wording of its own
+    /// only for the case `CaptureSession.stop(context:)` handles with no meeting at
+    /// all — a recording whose meeting went away, which has no phase to report.
+    private var finishingLabel: String {
+        session.currentMeetingProcessingPhase?.label ?? "Finishing up…"
     }
 
     private var microphoneDenied: Binding<Bool> {

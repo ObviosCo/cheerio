@@ -17,6 +17,15 @@ struct MenuBarView: View {
         Group {
             switch session.state {
             case .idle:
+                // Idle capture is not an idle app: launch recovery and a
+                // re-identify pass both run a pipeline from here (issue #173).
+                // Plain `Text`, like "Preparing model…" below — a menu renders
+                // menu items, so the design system's spinner has no place in one;
+                // the glyph above is what carries the motion here.
+                if let phase = session.backgroundProcessingPhase {
+                    Text(phase.label)
+                    Divider()
+                }
                 Button("Start recording") { start(event: nil, kind: .meeting) }
                 if let currentEvent {
                     Button("Record “\(currentEvent.title)”") { start(event: currentEvent, kind: .meeting) }
@@ -50,7 +59,10 @@ struct MenuBarView: View {
                 }
 
             case .finishing:
-                Text("Finishing up…")
+                // Which stage, when the pipeline has reached one — the same
+                // reading the sidebar and the live view give, so the three can't
+                // disagree about what's happening to the meeting that just ended.
+                Text(session.currentMeetingProcessingPhase?.label ?? "Finishing up…")
             }
 
             Divider()
@@ -114,12 +126,22 @@ struct MenuBarView: View {
     }
 }
 
-extension CaptureSession.State {
-    /// Menu-bar icon: the copper-ring brand mark (see `MenuBarIcon.swift`),
-    /// not a stock SF Symbol — this is the one place the four session states
-    /// map to their glyph, so `CheerioApp` just reads this property rather
-    /// than switching on state itself.
+extension CaptureSession {
+    /// What the menu bar depicts right now: the session's own state whenever
+    /// there's capture to report, and otherwise whether a pipeline is running
+    /// with nothing being captured — launch recovery or a re-identify pass, both
+    /// of which run at `.idle` (issue #173). Capture wins the tie because a
+    /// recording in progress is the one thing this glyph must never fail to show.
+    ///
+    /// This is the one place that decision is made, so `CheerioApp` reads a
+    /// property rather than combining two pieces of session state itself.
+    var menuBarStatus: MenuBarIcon.Status {
+        state == .idle && isProcessingInBackground ? .processingInBackground : .session(state)
+    }
+
+    /// Menu-bar icon: the copper-ring brand mark (see `MenuBarIcon.swift`), not a
+    /// stock SF Symbol.
     var menuBarIcon: NSImage {
-        MenuBarIcon.image(for: self)
+        MenuBarIcon.image(for: menuBarStatus)
     }
 }
