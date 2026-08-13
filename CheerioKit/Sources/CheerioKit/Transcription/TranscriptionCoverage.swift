@@ -3,7 +3,8 @@ import Foundation
 /// One channel's answer to the only question a finished recording can be checked
 /// against for free: did the audio it captured become text?
 ///
-/// Signal in and nothing out is always a bug. Issue #174 is what that failure looks
+/// Signal in and nothing out is usually a bug, and always worth a look. Issue #174
+/// is what that failure looks
 /// like when nobody asks: a 58-minute meeting whose mic channel sat at −3.3 dBFS on
 /// disk, produced zero transcript segments, and logged not one line about it — the
 /// conversion feeding the analyzer had been handing it silence all along. The
@@ -77,10 +78,11 @@ public struct TranscriptionCoverage: Sendable, Equatable {
         guard verdict == .signalWithoutTranscript else { return nil }
         return """
             The \(channel.rawValue) channel captured audio (\(peakDescription)) at \(formatDescription) \
-            and produced no transcript at all. Signal without text is always a bug in the transcription \
-            path, never a quiet room — check the conversion feeding SpeechAnalyzer for this format first \
-            (issue #174 was a channel count the converter silently mapped to nothing). Whatever audio \
-            retention still keeps is the only copy of this half of the meeting.
+            and produced no transcript at all. That is most often a transcription-path failure for this \
+            format — check the conversion feeding SpeechAnalyzer first (issue #174 was a channel count \
+            the converter silently mapped to nothing). It can also be honest: a room above the silence \
+            floor where nobody said anything the model recognized, or speech in a locale it doesn't \
+            cover. Whatever audio retention still keeps is the only copy of this half of the meeting.
             """
     }
 
