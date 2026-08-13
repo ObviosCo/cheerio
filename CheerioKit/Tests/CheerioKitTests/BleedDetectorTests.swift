@@ -288,15 +288,26 @@ import Testing
         #expect(BleedDetector.bleedOffsets(micLines: me, systemLines: them) == [0])
     }
 
-    @Test func lengthGateCountsCharactersWhenWordsDoNotSplit() {
-        // Spaced scripts hit the word minimum first; unspaced ones fall back to
-        // characters. The two thresholds must not undercut each other: the short
-        // English acknowledgements the word gate protects stay under the
-        // character fallback too.
+    @Test func simultaneousSpacedSignOffSurvives() {
+        // Four words but 21 normalized characters: if the character fallback
+        // reached spaced text, an ordinary sign-off both sides say at once —
+        // verbatim, overlapping, gate-passing — would hide the genuine Me line.
+        // Spaced text stands on the word count alone.
+        let them = [Line(text: "Have a wonderful weekend!", startTime: 50.0, endTime: 51.6)]
+        let me = [Line(text: "Have a wonderful weekend.", startTime: 50.2, endTime: 51.9)]
+        #expect(BleedDetector.bleedOffsets(micLines: me, systemLines: them).isEmpty)
+    }
+
+    @Test func lengthGateCountsCharactersOnlyForUnspacedScripts() {
+        // Unspaced scripts fall back to characters because word counting
+        // under-reports them; spaced text must never reach that fallback, or
+        // every four-word English line over twenty characters would bypass the
+        // word minimum the short-line protection rests on.
         #expect(BleedDetector.isLongEnough(BleedDetector.normalizedWords("その後数日間クラッシュ率を監視しましょう")))
         #expect(!BleedDetector.isLongEnough(BleedDetector.normalizedWords("はい、そうですね。")))
         #expect(!BleedDetector.isLongEnough(BleedDetector.normalizedWords("Okay, thanks — bye!")))
         #expect(!BleedDetector.isLongEnough(BleedDetector.normalizedWords("sounds good, talk soon")))
+        #expect(!BleedDetector.isLongEnough(BleedDetector.normalizedWords("Have a wonderful weekend")))
     }
 
     @Test func normalizationIgnoresCaseAndPunctuation() {

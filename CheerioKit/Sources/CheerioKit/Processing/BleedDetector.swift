@@ -62,12 +62,15 @@ public enum BleedDetector {
     /// The length gate's fallback for scripts that don't separate words with
     /// spaces: ``normalizedWords(_:)`` returns one long run per CJK phrase, so a
     /// word count alone would read every such line as too short and switch the
-    /// detector off for those locales entirely. A line whose normalized characters
+    /// detector off for those locales entirely. A line containing unspaced-script
+    /// characters (see ``containsUnspacedScript(_:)``) whose normalized characters
     /// total at least this many passes the gate regardless of how few "words" they
-    /// split into. Set above what the word gate protects in spaced scripts — the
-    /// four-word English acknowledgements it exists to keep ("sounds good talk
-    /// soon", 18 characters joined) stay under it, while 20 ideographs is a full
-    /// sentence, exactly the continuous speech bleed produces.
+    /// split into — 20 ideographs is a full sentence, exactly the continuous
+    /// speech bleed produces. Purely spaced text never reaches this fallback:
+    /// character counts don't measure spaced-script content ("Have a wonderful
+    /// weekend" is 21 characters and exactly the simultaneous sign-off the word
+    /// gate exists to keep), so a spaced line stands on ``minimumWordCount``
+    /// alone.
     public static let minimumCharacterCount = 20
 
     /// How much earlier than its source a Me line may start and still count as
@@ -130,12 +133,34 @@ public enum BleedDetector {
         return offsets
     }
 
-    /// Whether this many normalized words carry enough content to be judged at all
-    /// — ``minimumWordCount`` for scripts that space-separate words,
-    /// ``minimumCharacterCount`` as the fallback for those that don't.
+    /// Whether these normalized words carry enough content to be judged at all —
+    /// ``minimumWordCount`` for scripts that space-separate words, with
+    /// ``minimumCharacterCount`` as the fallback for lines carrying unspaced-script
+    /// content, where word counting under-reports.
     static func isLongEnough(_ words: [String]) -> Bool {
-        words.count >= minimumWordCount
-            || words.reduce(0) { $0 + $1.count } >= minimumCharacterCount
+        if words.count >= minimumWordCount { return true }
+        return containsUnspacedScript(words)
+            && words.reduce(0) { $0 + $1.count } >= minimumCharacterCount
+    }
+
+    /// Whether any of these words is written, at least partly, in a script that
+    /// doesn't separate words with spaces — Han ideographs and kana, the writing
+    /// systems of the unspaced locales `SpeechTranscriber` supports (Chinese,
+    /// Japanese, Cantonese). Korean spaces its words, so Hangul is deliberately
+    /// not here.
+    ///
+    /// Any unspaced content qualifies the whole line, which is the honest reading
+    /// of mixed text: one run of ideographs in an otherwise spaced sentence means
+    /// the word count already under-reports what was said, so the character
+    /// fallback is measuring something real. A fully spaced line never qualifies —
+    /// its character count says nothing its word count didn't.
+    static func containsUnspacedScript(_ words: [String]) -> Bool {
+        words.contains { word in
+            word.unicodeScalars.contains { scalar in
+                scalar.properties.isIdeographic
+                    || (0x3040...0x30FF).contains(scalar.value)  // hiragana + katakana
+            }
+        }
     }
 
     /// Whether `candidate` starts while `source` is being spoken — within
