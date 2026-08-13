@@ -511,7 +511,9 @@ tests, and an app build on every PR. Two heavier jobs run **on request** instead
 accessibility audit — every covered screen, light and dark, contrast first, where a finding is
 a red check like failing lint — and screenshot previews, which comment the app's screens on a
 PR. Dispatch the audit before merging anything that moves a colour, a token or a layout.
-Format locally before pushing:
+Previews are the one exception: they still run automatically when the harness itself changes
+(`CheerioScreenshotTests/**`, `Scripts/screenshots/**`), so it can't quietly break and turn up
+broken on a release day. Format locally before pushing:
 
 ```sh
 swift format --in-place --recursive Cheerio CheerioMCP CheerioScreenshotTests CheerioAccessibilityTests CheerioKit/Sources CheerioKit/Tests
