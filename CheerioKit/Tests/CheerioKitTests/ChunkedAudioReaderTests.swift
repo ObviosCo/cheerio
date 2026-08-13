@@ -100,31 +100,45 @@ import Testing
         #expect(chunked == reference)
     }
 
-    /// The awaiting variant (issue #14 feeds a `TranscriptionEngine` from a file
-    /// with it) must be the same read, not a second one: same samples, same window
-    /// boundaries, including the partial last window.
-    @Test func awaitingReadMatchesTheSynchronousOne() async throws {
+    /// `read` is `nextWindow` in a loop (issue #14's file transcription calls the
+    /// primitive directly, one window per pull), so the two must agree window for
+    /// window — including the partial last one.
+    @Test func pullingWindowsOneAtATimeMatchesTheLoop() throws {
         let source = try makeSyntheticCAF(frameCount: 250_000)
         defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
 
-        var synchronous: [Float] = []
-        var synchronousWindows: [AVAudioFrameCount] = []
+        var looped: [Float] = []
+        var loopedWindows: [AVAudioFrameCount] = []
         try ChunkedAudioReader.read(try AVAudioFile(forReading: source), windowFrames: 4_096) { window in
-            synchronousWindows.append(window.frameLength)
+            loopedWindows.append(window.frameLength)
             let data = window.floatChannelData![0]
-            synchronous.append(contentsOf: UnsafeBufferPointer(start: data, count: Int(window.frameLength)))
+            looped.append(contentsOf: UnsafeBufferPointer(start: data, count: Int(window.frameLength)))
         }
 
-        var awaited: [Float] = []
-        var awaitedWindows: [AVAudioFrameCount] = []
-        try await ChunkedAudioReader.readAwaitingEachWindow(try AVAudioFile(forReading: source), windowFrames: 4_096) { window in
-            awaitedWindows.append(window.frameLength)
+        let file = try AVAudioFile(forReading: source)
+        var pulled: [Float] = []
+        var pulledWindows: [AVAudioFrameCount] = []
+        while let window = try ChunkedAudioReader.nextWindow(from: file, windowFrames: 4_096) {
+            pulledWindows.append(window.frameLength)
             let data = window.floatChannelData![0]
-            awaited.append(contentsOf: UnsafeBufferPointer(start: data, count: Int(window.frameLength)))
+            pulled.append(contentsOf: UnsafeBufferPointer(start: data, count: Int(window.frameLength)))
         }
 
-        #expect(awaitedWindows == synchronousWindows)
-        #expect(awaited == synchronous)
+        #expect(pulledWindows == loopedWindows)
+        #expect(pulled == looped)
+    }
+
+    /// Asking past the end returns nil rather than throwing — the end-of-file
+    /// discipline this type exists for, now in one place. A pull-driven consumer
+    /// asks exactly one time too many by construction: nil is how it learns to stop.
+    @Test func pullingPastTheEndReturnsNilRatherThanThrowing() throws {
+        let source = try makeSyntheticCAF(frameCount: 8_192)
+        defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
+
+        let file = try AVAudioFile(forReading: source)
+        #expect(try ChunkedAudioReader.nextWindow(from: file, windowFrames: 8_192) != nil)
+        #expect(try ChunkedAudioReader.nextWindow(from: file, windowFrames: 8_192) == nil)
+        #expect(try ChunkedAudioReader.nextWindow(from: file, windowFrames: 8_192) == nil)
     }
 
     /// A window bigger than the whole file is the degenerate one-chunk case —

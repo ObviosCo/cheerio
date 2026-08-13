@@ -881,9 +881,11 @@ struct MeetingDetailView: View {
         }
         let probes = TranscriptRepair.probes(in: meeting)
         repairProbes = probes
-        // `channelsWantingRepair` is nonisolated and async, so the file reading it
-        // does lands off the main actor by construction. It only measures a channel
-        // with no segments at all, so an intact meeting costs nothing here.
+        // The measurement reads and decodes audio *synchronously*, so it must not
+        // run here: `channelsWantingRepair` is `@concurrent`, which is what takes it
+        // off the main actor — being `async` alone wouldn't, since a nonisolated
+        // async function can run on its caller's executor. It also only measures a
+        // channel with no segments at all, so an intact meeting reads nothing.
         repairAdvice = await TranscriptRepair.channelsWantingRepair(probes)
     }
 

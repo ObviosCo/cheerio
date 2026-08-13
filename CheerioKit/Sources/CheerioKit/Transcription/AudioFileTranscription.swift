@@ -11,9 +11,11 @@ import OSLog
 /// makes an unusual capture format transcribable at all (issue #174 — a 3 ch /
 /// 24 kHz mic whose audio the converter's default channel map silently mapped to
 /// nothing), and a second, separately-maintained file path would be free to
-/// regress that fix on its own. So this owns exactly two things the live path
-/// doesn't have: where the buffers come from, and the fact that a file outruns the
-/// analyzer.
+/// regress that fix on its own. So this owns exactly one thing the live path
+/// doesn't: where the audio comes from. How it gets in — the analyzer pulling one
+/// window at a time, rather than a reader pushing into a queue that can't refuse —
+/// belongs to `TranscriptionEngine.transcribe(file:)`, which is where the buffers
+/// and the conversion already live.
 ///
 /// What it deliberately doesn't own: what to *do* with the result. Merging lines
 /// into a meeting is `TranscriptRepair`'s decision, because it turns on human
@@ -34,25 +36,32 @@ public enum AudioFileTranscription {
     /// Volatile results are dropped: they exist to animate a live transcript, and
     /// there's nothing live here.
     ///
-    /// `ensureModel` is called for the same reason the live path calls it, and it
-    /// is not a network dependency in practice: a meeting that transcribed at all
-    /// has the locale's asset installed already, so this returns without asking
-    /// for anything. A locale that was never installed is the one case where it
-    /// would download, exactly as starting a recording in that locale would.
+    /// `ensureModel` is called for the same reason, and at the same point, that the
+    /// live path calls it (`CaptureSession.startCapturing`, before capture starts).
+    /// It is not a network dependency: a meeting that transcribed at all has the
+    /// locale's asset installed already, so this returns having asked for nothing. A
+    /// locale that was never installed is the one case where it would install one,
+    /// which is the setup-time download CLAUDE.md's network invariant explicitly
+    /// allows ("a one-time download at install/setup … would also be acceptable; a
+    /// network dependency during capture never is"). What the invariant forbids is
+    /// *needing* the network to record or process a meeting, and nothing here does.
     public static func transcribe(
         audioFile: URL,
         channel: SpeakerChannel,
-        locale: Locale = .current,
-        windowFrames: AVAudioFrameCount = ChunkedAudioReader.defaultWindowFrames
+        locale: Locale = .current
     ) async throws -> [TranscriptionUpdate] {
+        // Opened here, and handed to the engine: a path that isn't a readable audio
+        // file fails before a `SpeechAnalyzer` is ever built, and the duration for
+        // the log below is read while this side still owns the handle. After the
+        // `sending` handoff the file belongs to the engine, which is what keeps two
+        // positions from being advanced against one handle.
         let file = try AVAudioFile(forReading: audioFile)
+        let seconds = Int(file.durationSeconds)
         try await TranscriptionEngine.ensureModel(for: locale)
 
         let engine = TranscriptionEngine(channel: channel, locale: locale)
-        try await engine.start()
-
-        // Started before the first buffer goes in: the engine's result stream is
-        // live from `start()`, and a consumer attached later would miss whatever
+        // Attached before the pass starts: the engine's result stream is live from
+        // its first setup, and a consumer attached later would miss whatever
         // finalized in between.
         let lines = Task {
             var collected: [TranscriptionUpdate] = []
@@ -62,18 +71,16 @@ public enum AudioFileTranscription {
             return collected
         }
 
-        var readError: Error?
+        var passError: Error?
         do {
-            try await ChunkedAudioReader.readAwaitingEachWindow(file, windowFrames: windowFrames) { window in
-                await engine.feed(window)
-            }
+            try await engine.transcribe(file: file)
         } catch {
-            readError = error
+            passError = error
         }
 
         // Stopped on both paths, and awaited either way: `stop()` finalizes the
         // analyzer and ends the result stream, so it's also what lets the
-        // collector above finish. Skipping it after a read failure would leave
+        // collector above finish. Skipping it after a failed pass would leave
         // that task — and the analyzer it holds — running for the life of the
         // process.
         var stopError: Error?
@@ -84,7 +91,7 @@ public enum AudioFileTranscription {
         }
         let collected = await lines.value
 
-        if let error = readError ?? stopError {
+        if let error = passError ?? stopError {
             log.error(
                 "Re-transcribing the \(channel.rawValue, privacy: .public) channel failed: \(error)"
             )
@@ -93,7 +100,7 @@ public enum AudioFileTranscription {
         log.notice(
             """
             Re-transcribed the \(channel.rawValue, privacy: .public) channel from \
-            \(Int(file.durationSeconds), privacy: .public)s of audio into \
+            \(seconds, privacy: .public)s of audio into \
             \(collected.count, privacy: .public) lines
             """
         )

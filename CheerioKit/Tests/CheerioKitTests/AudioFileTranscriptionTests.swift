@@ -104,7 +104,7 @@ import Testing
     /// minutes with no error anywhere — a 3-channel discrete layout maps to `[-1]`,
     /// "this output channel has no source". A silent result here would be that bug,
     /// reachable again through the file path.
-    @Test func aThreeChannelRecordingReadsBackAsAudioTheAnalyzerCanHear() async throws {
+    @Test func aThreeChannelRecordingReadsBackAsAudioTheAnalyzerCanHear() throws {
         let url = try writeRetainedRecording(
             channels: 3, sampleRate: 24_000, seconds: 2, activeChannels: [0])
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
@@ -114,14 +114,15 @@ import Testing
         let file = try AVAudioFile(forReading: url)
         var convertedFrames: AVAudioFrameCount = 0
         var loudest: Float = 0
-        // 4,096-frame windows so this runs the multi-window loop the real 58-minute
-        // file runs, rather than the degenerate single-window case.
-        try await ChunkedAudioReader.readAwaitingEachWindow(file, windowFrames: 4_096) { window in
+        // Pull one window, convert it, repeat — the same two steps
+        // `TranscriptionEngine.nextFileInput()` performs each time the analyzer asks
+        // for the next element. 4,096-frame windows so this runs the multi-window
+        // case the real 58-minute file runs, not the degenerate single-window one.
+        while let window = try ChunkedAudioReader.nextWindow(from: file, windowFrames: 4_096) {
             let converted = try #require(converter.convert(window))
             #expect(converted.format == target)
             convertedFrames += converted.frameLength
-            let windowPeak = try peak(ofInt16: converted)
-            loudest = max(loudest, windowPeak)
+            loudest = max(loudest, try peak(ofInt16: converted))
         }
 
         // Two seconds at 24 kHz becomes two seconds at 16 kHz, give or take the
@@ -132,33 +133,31 @@ import Testing
         #expect(loudest > 0.1)
     }
 
-    /// The feeding half: a file is read in bounded windows and each one is *awaited*,
-    /// so the whole recording is never resident at once. Pinned by holding the
-    /// consumer back — a reader that ignored the await would have read the file to
-    /// the end before the first window was released.
-    @Test func windowsAreReadOneAtATimeAsTheConsumerTakesThem() async throws {
+    /// Backpressure, at the level a unit test can see it. The analyzer pulls: each
+    /// `next()` on the input sequence reads exactly one window and converts it
+    /// (`TranscriptionEngine.nextFileInput()`), so the file is never ahead of what
+    /// the consumer has been handed — one window in flight, whatever the recording's
+    /// length. There is no queue in this design to overflow, which is the point:
+    /// pushing into an unbounded `AsyncStream` as fast as a disk reads is what
+    /// piled up an hour of audio (the same shape issue #117 fixed for diarization).
+    @Test func theFileIsNeverReadAheadOfTheConsumer() throws {
         let url = try writeRetainedRecording(
             channels: 1, sampleRate: 16_000, seconds: 4, activeChannels: [0])
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 
         let file = try AVAudioFile(forReading: url)
         let length = file.length
-        var windows = 0
+        var pulls = 0
         var handedOver: AVAudioFramePosition = 0
         var framesReadAhead: AVAudioFramePosition = 0
-        try await ChunkedAudioReader.readAwaitingEachWindow(file, windowFrames: 8_000) { window in
-            windows += 1
-            // Yielding is enough: a reader that didn't wait would have run the file
-            // to its end while this consumer was suspended here.
-            await Task.yield()
+        while let window = try ChunkedAudioReader.nextWindow(from: file, windowFrames: 8_000) {
+            pulls += 1
             handedOver += AVAudioFramePosition(window.frameLength)
             framesReadAhead = max(framesReadAhead, file.framePosition - handedOver)
         }
 
-        #expect(windows > 1)
+        #expect(pulls > 1)
         #expect(handedOver == length)
-        // Nothing was ever read that the consumer hadn't been handed — one window in
-        // flight at a time, whatever the recording's length.
         #expect(framesReadAhead == 0)
     }
 

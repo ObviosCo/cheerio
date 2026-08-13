@@ -152,7 +152,13 @@ public enum TranscriptRepair {
     /// any-nonzero test: reading a finished file, "did it ever get louder than
     /// −60 dBFS" is answerable for real, so there's no reason to keep the weaker
     /// live-only test that existed because the tap has no meter.
-    public static func coverage(for probe: ChannelProbe) throws -> TranscriptionCoverage? {
+    ///
+    /// Deliberately *not* public, unlike everything else here: it reads audio
+    /// synchronously, so the only way in from outside this file is
+    /// ``channelsWantingRepair(_:)``, which is `@concurrent` and therefore can't run
+    /// on a caller's actor. An internal-only synchronous door can't be opened from a
+    /// view by accident.
+    static func coverage(for probe: ChannelProbe) throws -> TranscriptionCoverage? {
         guard probe.segmentCount == 0 else { return nil }
         let signal = try AudioFileSignal.measuring(
             probe.audioFile, scanning: promptScanBudget, stoppingAtFirstSignal: true)
@@ -168,10 +174,18 @@ public enum TranscriptRepair {
     /// Every channel that captured audio and produced no transcript from it — the
     /// ones worth prompting about.
     ///
-    /// `nonisolated` and `async`, so a main-actor caller hands the file reading to
-    /// the concurrent executor by construction rather than by remembering to.
+    /// `@concurrent`, and that attribute is load-bearing rather than decoration:
+    /// ``coverage(for:)`` reads and decodes audio *synchronously*, so this function
+    /// body has no suspension point of its own, and a plain `nonisolated async`
+    /// function is free to run on its caller's executor — under Swift 6.2's
+    /// caller-inheriting default it does exactly that. Called from a view, that
+    /// would scan a meeting's audio on the main thread and stall rendering. This
+    /// attribute is what actually leaves the main actor; the `Sendable` value types
+    /// in and out are what let it.
+    ///
     /// A channel whose measurement throws is dropped: a prompt is a courtesy, and a
     /// file that can't be read is a problem the repair itself will report properly.
+    @concurrent
     public static func channelsWantingRepair(_ probes: [ChannelProbe]) async -> [TranscriptionCoverage] {
         probes
             .compactMap { try? coverage(for: $0) }
