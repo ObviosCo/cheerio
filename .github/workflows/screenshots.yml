@@ -31,15 +31,23 @@
 name: Screen previews
 
 on:
+  # Deliberately NOT every pull request that touches the UI. A capture run costs
+  # about six minutes of runner time, and its only product is the preview comment —
+  # it cannot produce the site's imagery, because `site/index.html` wants `-1x`/`-2x`
+  # pairs and a runner's display is 1x (the local harness refuses to publish under 2x
+  # for exactly that reason). So the automatic trigger is narrowed to the harness
+  # itself: if the seeder, the test bundle, or the scripts change, prove they still
+  # shoot. Everything else is on request.
   pull_request:
     paths:
-      - "Cheerio/Views/**"
-      - "Cheerio/*.swift"
-      - "site/**"
       - "CheerioScreenshotTests/**"
       - "Scripts/screenshots/**"
       - ".github/workflows/screenshots.yml"
-  # For refreshing the site's imagery from main without opening a PR to do it.
+  # Previews on request. Dispatch this against a pull request's branch and the publish
+  # half will find the pull request that branch heads and comment on it, the same way
+  # it does for an automatic run — the association comes from GitHub, never from the
+  # artifact. Dispatched from a branch that heads no pull request, the captures land on
+  # the `screenshots` branch under `manual/<sha>` with nothing to comment on.
   workflow_dispatch:
 
 # Read-only, deliberately, and the reason is the trust boundary above rather than

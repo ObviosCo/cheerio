@@ -53,7 +53,7 @@ objects behind old commits are what deleting the branch is for.
 
 Capturing and publishing are deliberately separate:
 
-- **`screenshots.yml`** runs on `pull_request` and holds **`contents: read` and
+- **`screenshots.yml`** runs on request (`workflow_dispatch`, plus a narrow `pull_request` trigger for changes to the harness itself) and holds **`contents: read` and
   nothing else**. Everything it executes — `bootstrap.sh`, the seeder, the test
   bundle, every script in `ci/`, and that workflow file itself — is code from the pull
   request, which by definition nobody has reviewed yet. A write token here would be a

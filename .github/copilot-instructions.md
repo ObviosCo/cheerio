@@ -44,7 +44,7 @@ If the diff changes what the user sees (views, copy, icons, first-run flow):
 
 - Do NOT ask for `site/img` screenshot regeneration on a PR. The convention: site imagery
   documents the *released* build and is regenerated once per release by the release
-  checklist, never per-PR; the CI capture previews posted on the PR are the review-time
+  checklist, never per-PR; the CI capture previews — now produced on request rather than automatically, so a PR may legitimately have none — are the review-time
   evidence for visual changes. Flag site *copy* (`site/*.html`) that a PR makes factually
   wrong, but the images are release-day work by design.
 - Ask whether the first-run walkthrough (#30) needs to teach the change.

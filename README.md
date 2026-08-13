@@ -508,7 +508,7 @@ logic in `CheerioKit`, do no work on realtime audio callbacks, and leave strict 
 CI runs `swift format lint --strict` (config in [`.swift-format`](.swift-format)), the package
 tests, and an app build on every PR. A PR that touches the UI also gets automated
 accessibility audits — every covered screen, light and dark, contrast first — and screenshot
-previews; an audit finding is a red check, same as failing lint. Format locally before
+previews and the accessibility audit both run on request now, not on every PR; an audit finding is still a red check, same as failing lint. Format locally before
 pushing:
 
 ```sh

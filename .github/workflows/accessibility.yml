@@ -1,5 +1,14 @@
-# Audits the app's screens for accessibility regressions — contrast first — on a PR
-# that changes them (issue #142). A finding is a red check, treated like failing lint.
+# Audits the app's screens for accessibility regressions — contrast first (issue #142).
+# A finding is a red check, treated like failing lint.
+#
+# ## On request, not on every pull request
+#
+# A full audit is ~12 minutes of runner time — 42 audits, every screen in light and
+# dark — which made it the most expensive thing in CI when it ran on every UI change.
+# It is now `workflow_dispatch` only. Dispatch it against a branch before merging
+# anything that moves a colour, a token, or a layout, and before cutting a release.
+# The cost of that choice, stated plainly: between dispatches, a contrast regression
+# can merge unnoticed. #162 is an example of a finding the audit already knows about.
 #
 # ## Relationship to the screenshot workflows
 #
@@ -18,9 +27,9 @@
 #
 # ## The trust boundary — read this before adding a permission here
 #
-# Same rule as `screenshots.yml`, same reason: this is a `pull_request` workflow, so
-# everything it runs — `bootstrap.sh`, the seeder, the test bundle, this file — is
-# unreviewed code from the pull request. It holds `contents: read` and nothing else,
+# Same rule as `screenshots.yml`, same reason: dispatched against a branch, everything
+# it runs — `bootstrap.sh`, the seeder, the test bundle, this file — is code from that
+# branch, which a dispatch does not make reviewed. It holds `contents: read` and nothing else,
 # and it publishes nothing. Its outputs are the check's verdict and, on a red run
 # only, one diagnostic artifact (the `.xcresult`, uploaded below so the failure
 # names its elements) — an artifact upload needs no write permission and nothing
@@ -30,22 +39,13 @@
 name: Accessibility audit
 
 on:
-  pull_request:
-    paths:
-      - "Cheerio/Views/**"
-      - "Cheerio/Design/**"
-      - "Cheerio/*.swift"
-      # The audited colors are Color Sets in the catalog — an asset-only edit to
-      # `Accent/Selection` or `Text/Secondary` can regress contrast without
-      # touching a single .swift file.
-      - "Cheerio/Resources/Assets.xcassets/**"
-      # Source of the audit target and scheme — a target or scheme regression
-      # should re-run the check that depends on them.
-      - "project.yml"
-      - "CheerioAccessibilityTests/**"
-      - "Scripts/screenshots/seed-store.sh"
-      - "Scripts/screenshots/SeedDemoStore/**"
-      - ".github/workflows/accessibility.yml"
+  # Dispatch only — see "On request" above. The paths that used to trigger this
+  # automatically are still the ones worth dispatching for: anything under
+  # `Cheerio/Views/**` or `Cheerio/Design/**`, the Color Sets in
+  # `Cheerio/Resources/Assets.xcassets/**` (an asset-only edit to `Accent/Selection`
+  # or `Text/Secondary` regresses contrast without touching a .swift file),
+  # `project.yml` (source of the audit target and scheme), and the audit bundle or
+  # seeder themselves.
   workflow_dispatch:
 
 # Read-only, deliberately — see the trust boundary above.
