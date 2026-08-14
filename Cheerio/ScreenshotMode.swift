@@ -120,10 +120,17 @@ enum ScreenshotMode {
     ///
     /// Presentation only, like everything else here: this supplies digits to draw.
     /// It doesn't write the store, and nothing downstream of the dashboard reads it.
+    /// Parsed strictly, like ``dashboardTip``: every component has to be a
+    /// non-negative integer and there have to be exactly three. `compactMap` would
+    /// have dropped an unparseable component instead, so `3,62,8,x` — or a stray
+    /// shell word — would have pinned successfully and hidden the typo, which is the
+    /// silent failure #184 was.
     static var activityStats: MeetingActivityStats? {
         guard let raw = UserDefaults.standard.string(forKey: "screenshotActivityStats") else { return nil }
-        let parts = raw.split(separator: ",").compactMap { Int($0) }
-        guard parts.count == 3 else { return nil }
+        let components = raw.split(separator: ",", omittingEmptySubsequences: false)
+        guard components.count == 3 else { return nil }
+        let parts = components.compactMap { Int($0) }
+        guard parts.count == 3, parts.allSatisfy({ $0 >= 0 }) else { return nil }
         return MeetingActivityStats(
             meetingsThisWeek: parts[0],
             minutesTranscribedThisWeek: parts[1],
