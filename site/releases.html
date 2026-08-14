@@ -114,17 +114,17 @@
         </header>
         <p class="release-summary">Some microphones were being recorded and then transcribed as silence: fixed, and the meetings it already cost you can be transcribed again.</p>
         <section class="stack stack--2">
-          <h3>Fixed</h3>
+          <h3>Added</h3>
           <ul>
-            <li>If your microphone wasn't a plain single channel — a stereo interface, or a video-call app's virtual mic — your side of the conversation could go missing from the transcript while recording perfectly to disk. Stereo inputs were being read as their left channel only; a three-channel device was read as nothing at all. Every channel is now mixed down to what the transcriber wants, whatever the device reports. If you record through anything other than your Mac's built-in mic, this is the release that matters.</li>
+            <li>Transcribe a meeting again from its retained audio, one channel at a time, from the meeting's page. This is how a transcript the microphone bug below already spoiled gets recovered, so long as retention hasn't purged the audio yet. Corrections you typed by hand survive the second pass.</li>
+            <li>Cheerio now says when a meeting needs that: a channel that recorded real audio and produced no transcript is flagged, instead of leaving you to notice a one-sided transcript yourself.</li>
+            <li>A meeting being worked on says so. Re-identifying speakers, re-transcribing, or processing after a crash now shows on the meeting, in the list, and in the menu bar, with the stage it's on.</li>
           </ul>
         </section>
         <section class="stack stack--2">
-          <h3>Added</h3>
+          <h3>Fixed</h3>
           <ul>
-            <li>Transcribe a meeting again from its retained audio, one channel at a time, from the meeting's page. This is how a transcript the bug above already spoiled gets recovered, so long as retention hasn't purged the audio yet. Corrections you typed by hand survive the second pass.</li>
-            <li>Cheerio now says when a meeting needs that: a channel that recorded real audio and produced no transcript is flagged, instead of leaving you to notice a one-sided transcript yourself.</li>
-            <li>A meeting being worked on says so. Re-identifying speakers, re-transcribing, or processing after a crash now shows on the meeting, in the list, and in the menu bar, with the stage it's on.</li>
+            <li>If your microphone wasn't a plain single channel — a stereo interface, or a video-call app's virtual mic — your side of the conversation could go missing from the transcript while recording perfectly to disk. Stereo inputs were being read as their left channel only; a three-channel device was read as nothing at all. Every channel is now mixed down to what the transcriber wants, whatever the device reports. If you record through anything other than your Mac's built-in mic, this is the release that matters.</li>
           </ul>
         </section>
         <section class="stack stack--2">
