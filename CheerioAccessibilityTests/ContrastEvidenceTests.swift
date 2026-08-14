@@ -154,7 +154,7 @@ final class ContrastEvidenceTests: XCTestCase {
     /// the significance floor and not one of them fully inked. The ink is only ever
     /// implied by the ramp — and it's implied at 17.3:1, which is what this has to
     /// come back with rather than nil.
-    func testThinAntialiasedTextWithNoFullyInkedPixelClears() throws {
+    func testThinAntialiasedTextWithNoSignificantInkClusterClears() throws {
         let pixels = Self.thinGlyph(ink: (23, 27, 31), background: Self.white, width: 9, height: 17)
         let measured = try XCTUnwrap(
             ContrastEvidence.measuredTextContrast(width: 9, height: 17, rgbaPixels: pixels)
@@ -243,9 +243,10 @@ final class ContrastEvidenceTests: XCTestCase {
         }
     }
 
-    /// A glyph too thin to ink a single pixel fully: every drawn pixel a different
-    /// coverage of one ink, no color repeated, and the deepest of them still short
-    /// of a plateau. What the classifier reads is a histogram rather than a shape,
+    /// A glyph too thin to leave a *cluster*: every drawn pixel a different coverage
+    /// of one ink, so no single color repeats often enough to reach the significance
+    /// floor. (The deepest pixel is fully inked — one pixel, which is exactly the
+    /// point: a lone sample is not a plateau the classifier can measure from.) What the classifier reads is a histogram rather than a shape,
     /// so this reproduces the population measured off #184's failing run — 47 drawn
     /// pixels in a 9×17 element, 43 distinct colors, none appearing more than twice
     /// — rather than the outline of a numeral.
