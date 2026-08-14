@@ -52,6 +52,47 @@ final class ContrastEvidenceTests: XCTestCase {
         XCTAssertNil(ContrastEvidence.measuredTextContrast(width: 40, height: 12, rgbaPixels: pixels))
     }
 
+    /// The same thin glyph the positive control below clears, drawn in a failing
+    /// ink (#949494, 2.98:1 — 3:1 in round numbers). Nothing about a ramp excuses
+    /// the ink it ramps *to*: the deepest pixel is the whole claim, and this one
+    /// doesn't clear AA.
+    func testThinAntialiasedTextInAFailingInkIsNotClearable() {
+        let ink: (UInt8, UInt8, UInt8) = (148, 148, 148)
+        let pixels = Self.thinGlyph(ink: ink, background: Self.white, width: 9, height: 17)
+        XCTAssertNil(ContrastEvidence.measuredTextContrast(width: 9, height: 17, rgbaPixels: pixels))
+    }
+
+    /// The hazard the ink-core condition exists for: a plateau of genuinely
+    /// failing gray text with one near-black pixel in it. The speck is on the same
+    /// blend line as the gray — every neutral gray is — so without a core it would
+    /// pass as "a thin black glyph whose ramp is that gray," clearing at 17:1 the
+    /// exact regression class #141 was. One pixel is not a stroke.
+    func testOneDarkPixelCannotVouchForFailingGrayText() {
+        let gray: (UInt8, UInt8, UInt8) = (148, 148, 148)
+        let speck: (UInt8, UInt8, UInt8) = (23, 27, 31)
+        let pixels = Self.image(width: 40, height: 12) { x, y in
+            if x == 20 && y == 6 { return speck }
+            return x % 12 == 0 ? gray : Self.white
+        }
+        XCTAssertNil(ContrastEvidence.measuredTextContrast(width: 40, height: 12, rgbaPixels: pixels))
+    }
+
+    /// A thin passing glyph next to a handful of off-line colored pixels — too few
+    /// to reach the significance floor, so the floor-keyed loop never asks about
+    /// them. A ramp has to account for *everything* drawn or it isn't one glyph's
+    /// antialiasing, which is what stops a thin ink from vouching for a second ink
+    /// it shares no blend line with.
+    func testThinGlyphCannotVouchForOffLinePixels() {
+        var pixels = Self.thinGlyph(ink: (23, 27, 31), background: Self.white, width: 9, height: 17)
+        let red: (UInt8, UInt8, UInt8) = (220, 90, 90)
+        for offset in [4 * (2 * 9 + 1), 4 * (3 * 9 + 1)] {
+            pixels[offset] = red.0
+            pixels[offset + 1] = red.1
+            pixels[offset + 2] = red.2
+        }
+        XCTAssertNil(ContrastEvidence.measuredTextContrast(width: 9, height: 17, rgbaPixels: pixels))
+    }
+
     /// Degenerate inputs prove nothing.
     func testEmptyAndMismatchedBuffersAreNotClearable() {
         XCTAssertNil(ContrastEvidence.measuredTextContrast(width: 0, height: 0, rgbaPixels: []))
@@ -105,6 +146,21 @@ final class ContrastEvidenceTests: XCTestCase {
             ContrastEvidence.measuredTextContrast(width: 200, height: 30, rgbaPixels: pixels)
         )
         XCTAssertEqual(measured, 5.97, accuracy: 0.05)
+    }
+
+    /// The thin-glyph artifact from #184, at the shape measured off the failing CI
+    /// run: a 9×17 element holding the dashboard's "3" in `Text/Primary`, 47 drawn
+    /// pixels across as many distinct coverages, so no color repeats enough to reach
+    /// the significance floor. One pixel is fully inked, and one pixel is the problem:
+    /// a lone sample is not a plateau to measure from, so the ink has to be inferred
+    /// from the ramp — and it's implied at 17.3:1, which is what this has to come
+    /// back with rather than nil.
+    func testThinAntialiasedTextWithNoSignificantInkClusterClears() throws {
+        let pixels = Self.thinGlyph(ink: (23, 27, 31), background: Self.white, width: 9, height: 17)
+        let measured = try XCTUnwrap(
+            ContrastEvidence.measuredTextContrast(width: 9, height: 17, rgbaPixels: pixels)
+        )
+        XCTAssertEqual(measured, 17.31, accuracy: 0.05)
     }
 
     /// The sidebar-material shape: near-background shades on *both* sides of the
@@ -178,19 +234,46 @@ final class ContrastEvidenceTests: XCTestCase {
         width: Int,
         height: Int
     ) -> [UInt8] {
-        func blend(_ fraction: Double) -> (UInt8, UInt8, UInt8) {
-            func mix(_ i: UInt8, _ b: UInt8) -> UInt8 {
-                UInt8((fraction * Double(i) + (1 - fraction) * Double(b)).rounded())
-            }
-            return (mix(ink.0, background.0), mix(ink.1, background.1), mix(ink.2, background.2))
-        }
-        return image(width: width, height: height) { x, _ in
+        image(width: width, height: height) { x, _ in
             switch x % 12 {
             case 0: ink
-            case 1, 2: blend(0.55)
-            case 3: blend(0.25)
+            case 1, 2: blend(ink, over: background, coverage: 0.55)
+            case 3: blend(ink, over: background, coverage: 0.25)
             default: background
             }
         }
+    }
+
+    /// A glyph too thin to leave a *cluster*: every drawn pixel a different coverage
+    /// of one ink, so no single color repeats often enough to reach the significance
+    /// floor. (The deepest pixel is fully inked — one pixel, which is exactly the
+    /// point: a lone sample is not a plateau the classifier can measure from.) What the classifier reads is a histogram rather than a shape,
+    /// so this reproduces the population measured off #184's failing run — 47 drawn
+    /// pixels in a 9×17 element, 43 distinct colors, none appearing more than twice
+    /// — rather than the outline of a numeral.
+    private static func thinGlyph(
+        ink: (UInt8, UInt8, UInt8),
+        background: (UInt8, UInt8, UInt8),
+        width: Int,
+        height: Int,
+        drawnPixels: Int = 47
+    ) -> [UInt8] {
+        image(width: width, height: height) { x, y in
+            let index = y * width + x
+            guard index < drawnPixels else { return background }
+            return blend(ink, over: background, coverage: Double(drawnPixels - index) / Double(drawnPixels))
+        }
+    }
+
+    /// `coverage` of `ink` over `background`, mixed the way antialiasing mixes it.
+    private static func blend(
+        _ ink: (UInt8, UInt8, UInt8),
+        over background: (UInt8, UInt8, UInt8),
+        coverage: Double
+    ) -> (UInt8, UInt8, UInt8) {
+        func mix(_ i: UInt8, _ b: UInt8) -> UInt8 {
+            UInt8((coverage * Double(i) + (1 - coverage) * Double(b)).rounded())
+        }
+        return (mix(ink.0, background.0), mix(ink.1, background.1), mix(ink.2, background.2))
     }
 }

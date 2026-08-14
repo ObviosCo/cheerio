@@ -189,6 +189,26 @@ final class CaptureSession {
         return meeting == self.meeting && state == .finishing ? .preparing : nil
     }
 
+    /// Whether a pass is rewriting `meeting`'s own content right now — its
+    /// segments, their labels, the notes, the title — so nothing may export it or
+    /// edit it out from under that pass.
+    ///
+    /// Deliberately ``processingPhase(for:)``'s condition and not
+    /// ``isProcessing(_:)``'s, on both sides. What the user is *told* is happening
+    /// (the indicators, issue #173) and what the UI refuses to do have to be one
+    /// decision, or a surface goes inert with nothing on screen explaining why —
+    /// which reads as a bug rather than a rule. And it has to be the narrower of
+    /// the two: ``isProcessing(_:)`` counts this session's meeting for the whole
+    /// of a recording and the whole of `.holding`, which are exactly the windows
+    /// the rough-notes editor exists for (issues #109 and #136).
+    ///
+    /// Recovery is the case this was missing (issue #161): it runs the same
+    /// pipeline while `state` is `.idle`, so a recovered meeting's own detail
+    /// surface stayed fully live while diarization and enhancement rewrote it.
+    func isMidPipeline(_ meeting: Meeting) -> Bool {
+        processingPhase(for: meeting) != nil
+    }
+
     /// ``processingPhase(for:)`` for this session's own meeting — what the live
     /// view and the sidebar's `.finishing` line both show, without either of them
     /// unwrapping ``meeting`` for itself. Nil while recording and while `.holding`:

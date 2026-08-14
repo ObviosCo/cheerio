@@ -23,8 +23,18 @@ struct EmptyStateDashboardView: View {
     /// so it only needs to be current for whoever's looking at it *now*.
     @State private var upcoming: [CalendarMeeting] = []
 
+    /// Pinned values win when either harness passes them: "this week" is measured
+    /// against the machine's own clock, so the same seeded store renders a different
+    /// count on a Friday than on the Thursday before it — which made the
+    /// accessibility audit of this screen change verdict by calendar day (#184).
     private var stats: MeetingActivityStats {
-        MeetingActivityStats.compute(from: meetings)
+        ScreenshotMode.activityStats ?? MeetingActivityStats.compute(from: meetings)
+    }
+
+    /// Rotates per launch for a real user; pinned for the harnesses, which have to
+    /// render one sentence rather than whichever of four `systemUptime` landed on.
+    private var currentTip: DashboardTip {
+        ScreenshotMode.dashboardTip ?? DashboardTip.current
     }
 
     var body: some View {
@@ -130,7 +140,7 @@ struct EmptyStateDashboardView: View {
 
     private var tip: some View {
         Label {
-            Text(DashboardTip.current.text)
+            Text(currentTip.text)
         } icon: {
             Image(systemName: "lightbulb")
         }

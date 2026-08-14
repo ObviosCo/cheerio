@@ -43,6 +43,10 @@ import Foundation
 /// strokes render mostly as midtones, so the core color is routinely a minority
 /// of a small glyph's coverage — one run measured the passing token at 8 pixels
 /// under a 19-pixel midtone.
+///
+/// A glyph thin enough has no repeated color at all, which is why ``rampInk``
+/// exists alongside the significance floor: see it for the case where every
+/// pixel drawn is a partial blend and the ink is only ever implied.
 enum ContrastEvidence {
     /// The WCAG AA ratio for normal text, which is also what the audit enforces.
     /// Applied uniformly — large text is allowed 3:1, so re-measuring against 4.5
@@ -52,6 +56,12 @@ enum ContrastEvidence {
     /// The ratio under which a cluster reads as background texture rather than an
     /// ink. See the type-level comment for what that trades away.
     static let textureCeiling = 1.15
+
+    /// How much of a pixel an ink has to cover for that pixel to count toward the
+    /// ink's core in ``rampInk``: more ink than background. A pixel below this is
+    /// mostly background, and a dark color reached by nothing but such pixels is a
+    /// stray rather than a stroke.
+    static let coreCoverage = 0.5
 
     /// Rasterizes and measures — the entry the audit uses.
     static func measuredTextContrast(in cgImage: CGImage) -> Double? {
@@ -120,8 +130,13 @@ enum ContrastEvidence {
         let backgroundLuminance = luminance(background.key)
         let candidates = counts.keys.filter { $0 != background.key && counts[$0]! >= significant }
 
-        let inks = candidates.filter {
-            contrast(luminance($0), backgroundLuminance) >= aaContrast
+        var inks = Set(
+            candidates.filter {
+                contrast(luminance($0), backgroundLuminance) >= aaContrast
+            }
+        )
+        if let ramp = rampInk(counts: counts, background: background.key, significant: significant) {
+            inks.insert(ramp)
         }
         guard !inks.isEmpty else { return nil }
         for color in candidates {
@@ -134,25 +149,98 @@ enum ContrastEvidence {
         return inks.map { contrast(luminance($0), backgroundLuminance) }.min()
     }
 
+    /// The ink a glyph too thin to fully cover a pixel still proves.
+    ///
+    /// The case, measured: the "3" in the empty-state dashboard's stats renders 47
+    /// drawn pixels across 43 distinct colors on the runner's 1x display, none of
+    /// them appearing more than twice. No color reaches the significance floor, so
+    /// the loop above sees no ink at all and a region whose deepest pixel *is* the
+    /// `Text/Primary` token — 17.3:1 against the white it sits on — came back nil
+    /// and failed the audit (#184). Raising the floor or excusing digits would both
+    /// miss what's actually there: a ramp. Antialiasing one ink over one background
+    /// is the only thing that puts every drawn color on a single straight line to a
+    /// single deepest color, and moving along that line away from the background
+    /// only ever raises contrast, so the deepest color is a floor on the ink's
+    /// ratio, never a flattering read of it.
+    ///
+    /// Three conditions, each closing a way this could excuse something real:
+    ///
+    /// - **the deepest drawn color clears AA.** It's the ink the ramp points at; if
+    ///   it fails, the text fails, which is what keeps genuinely low-contrast text
+    ///   (a #949494 caption and its own blends) red.
+    /// - **every drawn color is a blend of it.** A second ink of any other hue — an
+    ///   icon, a border, a chip — puts a color off that line and refuses the whole
+    ///   measurement rather than hiding under the deepest one. This is stricter
+    ///   than the loop above, which only asks that of colors above the floor,
+    ///   because a thin ink's colors are all *below* the floor by construction.
+    /// - **the ink's core clears the significance floor** — pixels it covers at
+    ///   least ``coreCoverage`` of. Without that, one stray dark pixel would vouch
+    ///   for a whole region of failing gray text: a failing gray ink and its blends
+    ///   sit on the same line as any darker color, so a plateau of #949494 with a
+    ///   lone black speck in it satisfies both conditions above while reaching a
+    ///   core of exactly one pixel.
+    ///
+    /// The rule can only ever *add* an ink that clears AA, so it can turn a nil
+    /// into a passing ratio and never a passing ratio into a failure — no finding
+    /// this classifier already suppresses changes verdict because of it.
+    private static func rampInk(counts: [UInt32: Int], background: UInt32, significant: Int) -> UInt32? {
+        let backgroundLuminance = luminance(background)
+        // What the region drew, reading near-background variation as texture
+        // exactly as the caller does.
+        let drawn = counts.filter {
+            $0.key != background
+                && contrast(luminance($0.key), backgroundLuminance) > textureCeiling
+        }
+        // Ties broken on the packed value so the answer never depends on dictionary
+        // ordering.
+        guard
+            let deepest = drawn.keys.max(by: {
+                (distanceSquared($0, background), $0) < (distanceSquared($1, background), $1)
+            }),
+            contrast(luminance(deepest), backgroundLuminance) >= aaContrast
+        else { return nil }
+
+        var core = 0
+        for (color, count) in drawn {
+            guard let coverage = blendCoverage(color, of: deepest, over: background) else { return nil }
+            if coverage >= coreCoverage { core += count }
+        }
+        return core >= significant ? deepest : nil
+    }
+
     /// Whether `color` lies on the straight sRGB line between `ink` and
     /// `background` — the only colors antialiasing `ink` over `background` can
-    /// produce. Projects onto the segment and accepts a residual of at most 8
-    /// (Euclidean, 0–255 channels); measured blends on real captures land under 1.
+    /// produce.
     private static func isBlend(_ color: UInt32, of ink: UInt32, over background: UInt32) -> Bool {
-        func channels(_ packed: UInt32) -> [Double] {
-            [Double((packed >> 16) & 0xFF), Double((packed >> 8) & 0xFF), Double(packed & 0xFF)]
-        }
+        blendCoverage(color, of: ink, over: background) != nil
+    }
+
+    /// How much of `ink` `color` is: its position along the straight sRGB line from
+    /// `background` to `ink`, or nil when it isn't on that line at all. Projects
+    /// onto the segment and accepts a residual of at most 8 (Euclidean, 0–255
+    /// channels); measured blends on real captures land under 1.
+    private static func blendCoverage(_ color: UInt32, of ink: UInt32, over background: UInt32) -> Double? {
         let c = channels(color)
         let i = channels(ink)
         let b = channels(background)
         let direction = zip(i, b).map(-)
         let offset = zip(c, b).map(-)
         let lengthSquared = direction.map { $0 * $0 }.reduce(0, +)
-        guard lengthSquared > 0 else { return false }
+        guard lengthSquared > 0 else { return nil }
         let fraction = zip(offset, direction).map(*).reduce(0, +) / lengthSquared
-        guard (0.0...1.0).contains(fraction) else { return false }
+        guard (0.0...1.0).contains(fraction) else { return nil }
         let residual = zip(offset, direction.map { $0 * fraction }).map(-).map { $0 * $0 }.reduce(0, +)
-        return residual <= 64
+        return residual <= 64 ? fraction : nil
+    }
+
+    /// Squared sRGB distance, for ordering colors by how far from the background
+    /// they are — squared because only the ordering is used.
+    private static func distanceSquared(_ color: UInt32, _ other: UInt32) -> Double {
+        zip(channels(color), channels(other)).map(-).map { $0 * $0 }.reduce(0, +)
+    }
+
+    private static func channels(_ packed: UInt32) -> [Double] {
+        [Double((packed >> 16) & 0xFF), Double((packed >> 8) & 0xFF), Double(packed & 0xFF)]
     }
 
     /// WCAG 2.1 contrast ratio between two relative luminances.

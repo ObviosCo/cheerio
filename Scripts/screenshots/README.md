@@ -198,6 +198,8 @@ argument, read in `ScreenshotMode` in the app target:
 | `-screenshotOnboardingStep <n>` | Opens the walkthrough on step *n* |
 | `-screenshotExpandTranscript YES` | Opens the detail view's transcript disclosure, which otherwise starts collapsed (#104) — only `library-transcript` needs it |
 | `-screenshotVoiceEnrollmentConfirmed YES` | Shows `VoiceEnrollmentRecorder`'s post-save acknowledgment instead of its empty form — only `settings-participants-confirmed` needs it |
+| `-screenshotActivityStats 3,62,8` | Fixes the empty-state dashboard's meetings / minutes / follow-ups, which are otherwise counted against the machine's clock — the seeded store's meeting count changes as the real week rolls over (#184) |
+| `-screenshotDashboardTip <n>` | Fixes which of the dashboard's four rotating tips shows, instead of seeding it from `systemUptime` |
 | `-screenshotRecordingPreview recording\|holding` | Renders the live-recording pane from fixture values, in the detail column where the dashboard would be (#164) — the session stays `.idle`, because nothing here records |
 
 This is not the obvious design — the obvious one drives the real UI with AppleScript

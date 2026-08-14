@@ -1,4 +1,5 @@
 import AppKit
+import CheerioKit
 import Foundation
 import SwiftUI
 
@@ -19,9 +20,11 @@ import SwiftUI
 /// These hooks reach the same states with no input at all, which also makes the
 /// captures deterministic — no waiting for a click to land, no window that moved.
 ///
-/// They are hooks into *presentation only*: which window opens, how big it is, and
-/// which row starts selected. Nothing here can record, grant a permission, or write
-/// to the store, and none of it is reachable without passing the argument.
+/// They are hooks into *presentation only*: which window opens, how big it is,
+/// which row starts selected, and — where a screen derives a number from the clock
+/// rather than from the store — what that number reads as. Nothing here can record,
+/// grant a permission, or write to the store, and none of it is reachable without
+/// passing the argument.
 enum ScreenshotMode {
     /// The library window's `NSWindow.identifier`, which SwiftUI sets from the scene
     /// id — windows are matched on that rather than on `frameAutosaveName`, which
@@ -99,6 +102,59 @@ enum ScreenshotMode {
     /// issue added.
     static var showsVoiceEnrollmentConfirmation: Bool {
         UserDefaults.standard.bool(forKey: "screenshotVoiceEnrollmentConfirmed")
+    }
+
+    /// The empty-state dashboard's activity numbers, as
+    /// "meetings,minutes,followUps". Absent computes them from the store, which is
+    /// what a real launch does.
+    ///
+    /// Exists because those numbers are read off the *runner's clock*, not just the
+    /// store: `meetingsThisWeek` counts seeded meetings inside whichever calendar
+    /// week the machine is in, and the demo store's meetings sit at fixed offsets
+    /// from launch — so the digit rendered here changes as the real week rolls over
+    /// and took the accessibility audit's verdict with it (#184, green on a Thursday
+    /// and red on the Friday, with no UI change in between). A gate whose answer
+    /// depends on the date isn't one. Same benefit for the screenshots, which
+    /// photograph this screen for the site and shouldn't publish a different number
+    /// each release.
+    ///
+    /// Presentation only, like everything else here: this supplies digits to draw.
+    /// It doesn't write the store, and nothing downstream of the dashboard reads it.
+    /// Parsed strictly, like ``dashboardTip``: every component has to be a
+    /// non-negative integer and there have to be exactly three. `compactMap` would
+    /// have dropped an unparseable component instead, so `3,62,8,x` — or a stray
+    /// shell word — would have pinned successfully and hidden the typo, which is the
+    /// silent failure #184 was.
+    static var activityStats: MeetingActivityStats? {
+        guard let raw = UserDefaults.standard.string(forKey: "screenshotActivityStats") else { return nil }
+        let components = raw.split(separator: ",", omittingEmptySubsequences: false)
+        guard components.count == 3 else { return nil }
+        let parts = components.compactMap { Int($0) }
+        guard parts.count == 3, parts.allSatisfy({ $0 >= 0 }) else { return nil }
+        return MeetingActivityStats(
+            meetingsThisWeek: parts[0],
+            minutesTranscribedThisWeek: parts[1],
+            openFollowUps: parts[2]
+        )
+    }
+
+    /// Which of the dashboard's rotating tips it shows, as a seed for
+    /// `DashboardTip.forLaunch(seed:)` — the same entry point the app itself uses,
+    /// so the mapping from a number to a tip lives in one place. Absent rotates
+    /// per launch, which is the real behaviour.
+    ///
+    /// The other half of the dashboard's non-determinism: the tip is seeded from
+    /// `systemUptime`, so consecutive runs of either harness photograph and audit
+    /// different sentences.
+    /// Parsed strictly, like ``activityStats``: `integer(forKey:)` coerces anything
+    /// unparseable to 0, so a typo in the argument would have pinned tip 0 and looked
+    /// like a working pin. A malformed value is treated as absent instead — the
+    /// argument either says which tip, or it doesn't count.
+    static var dashboardTip: DashboardTip? {
+        guard let raw = UserDefaults.standard.string(forKey: "screenshotDashboardTip"),
+            let seed = Int(raw)
+        else { return nil }
+        return DashboardTip.forLaunch(seed: seed)
     }
 
     /// Renders `RecordingSurfacePreview` in the library window's detail column,
