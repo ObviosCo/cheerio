@@ -139,9 +139,15 @@ enum ScreenshotMode {
     /// The other half of the dashboard's non-determinism: the tip is seeded from
     /// `systemUptime`, so consecutive runs of either harness photograph and audit
     /// different sentences.
+    /// Parsed strictly, like ``activityStats``: `integer(forKey:)` coerces anything
+    /// unparseable to 0, so a typo in the argument would have pinned tip 0 and looked
+    /// like a working pin. A malformed value is treated as absent instead — the
+    /// argument either says which tip, or it doesn't count.
     static var dashboardTip: DashboardTip? {
-        value(forKey: "screenshotDashboardTip")
-            .map { DashboardTip.forLaunch(seed: UserDefaults.standard.integer(forKey: $0)) }
+        guard let raw = UserDefaults.standard.string(forKey: "screenshotDashboardTip"),
+            let seed = Int(raw)
+        else { return nil }
+        return DashboardTip.forLaunch(seed: seed)
     }
 
     /// Which appearance the whole app renders in — "light" or "dark" — overriding

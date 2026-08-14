@@ -90,7 +90,7 @@ final class AccessibilityAuditTests: XCTestCase {
     ///
     /// The pinned stats and tip are #184: `meetingsThisWeek` counts seeded meetings
     /// inside the *current* calendar week, so the same store rendered "2" one day and
-    /// "3" the next, and this suite's verdict moved with the digit. `3, 62, 8` is
+    /// "3" the next, and this suite's verdict moved with the digit. `3,62,8` is
     /// what the demo store computes on a day its three newest meetings land in one
     /// week — the numbers this screen was audited and photographed with all along,
     /// now stated instead of dated. Carried by every library audit rather than only
