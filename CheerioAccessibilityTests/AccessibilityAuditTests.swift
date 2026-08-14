@@ -78,7 +78,8 @@ final class AccessibilityAuditTests: XCTestCase {
     private static let settle: TimeInterval = 3
 
     /// Launch arguments every audit passes: no update checks, no first-run
-    /// walkthrough, and a fixed window size.
+    /// walkthrough, a fixed window size, and fixed values for the two things on the
+    /// empty-state dashboard that are otherwise read off the clock.
     ///
     /// 960×640, deliberately *smaller* than the screenshots' 1440×900: the CI
     /// runner's display is 1024×768, and a window bigger than the screen gets
@@ -86,11 +87,22 @@ final class AccessibilityAuditTests: XCTestCase {
     /// with accessibility frames and rendered pixels disagreeing about where
     /// everything is. An audit needs every frame it measures to be where the
     /// pixels are; the screenshots keep their own size for diffable output.
+    ///
+    /// The pinned stats and tip are #184: `meetingsThisWeek` counts seeded meetings
+    /// inside the *current* calendar week, so the same store rendered "2" one day and
+    /// "3" the next, and this suite's verdict moved with the digit. `3, 62, 8` is
+    /// what the demo store computes on a day its three newest meetings land in one
+    /// week — the numbers this screen was audited and photographed with all along,
+    /// now stated instead of dated. Carried by every library audit rather than only
+    /// the dashboard ones: no other screen reads either value, and one list is one
+    /// place to change.
     private static let libraryArguments = [
         "-SUEnableAutomaticChecks", "NO",
         "-SUAutomaticallyUpdate", "NO",
         "-onboardingHasCompleted", "YES",
         "-screenshotWindowSize", "960x640",
+        "-screenshotActivityStats", "3,62,8",
+        "-screenshotDashboardTip", "0",
     ]
 
     /// The two appearances every surface is audited under, as the
@@ -649,7 +661,9 @@ final class AccessibilityAuditTests: XCTestCase {
     ///    4.5:1 — each remaining color has to be a geometric blend of a passing
     ///    ink with the background (what antialiasing produces) or background
     ///    texture; anything else — an icon, a border, a weaker ink off every
-    ///    blend line — can't be cleared and stays red.
+    ///    blend line — can't be cleared and stays red. A glyph thin enough to
+    ///    have no repeated color at all is read from the ramp its coverage
+    ///    leaves (``ContrastEvidence``'s `rampInk`, #184), on the same terms.
     private func shouldSuppress(_ issue: XCUIAccessibilityAuditIssue, in app: XCUIApplication) -> Bool {
         guard let element = issue.element, element.exists else { return false }
         if !element.isHittable { return true }

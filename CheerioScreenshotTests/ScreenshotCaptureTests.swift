@@ -57,12 +57,22 @@ final class ScreenshotCaptureTests: XCTestCase {
     private static let settle: TimeInterval = 3
 
     /// Launch arguments every shot passes: no update checks, no first-run walkthrough,
-    /// and a fixed window size so two runs are diffable by eye.
+    /// a fixed window size so two runs are diffable by eye, and fixed values for the
+    /// two things the empty-state dashboard would otherwise read off the clock.
+    ///
+    /// Those last two are #184's determinism fix, which this harness wants for its own
+    /// reasons: `meetingsThisWeek` counts seeded meetings inside the current calendar
+    /// week, and the tip rotates on `systemUptime`, so two captures of the same screen
+    /// differed in a digit and a sentence for no reason a reviewer could act on. The
+    /// numbers are what the demo store computes on a day its three newest meetings
+    /// share a week.
     private static let libraryArguments = [
         "-SUEnableAutomaticChecks", "NO",
         "-SUAutomaticallyUpdate", "NO",
         "-onboardingHasCompleted", "YES",
         "-screenshotWindowSize", "1440x900",
+        "-screenshotActivityStats", "3,62,8",
+        "-screenshotDashboardTip", "0",
     ]
 
     private var app: XCUIApplication?
