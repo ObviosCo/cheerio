@@ -150,10 +150,11 @@ final class ContrastEvidenceTests: XCTestCase {
 
     /// The thin-glyph artifact from #184, at the shape measured off the failing CI
     /// run: a 9×17 element holding the dashboard's "3" in `Text/Primary`, 47 drawn
-    /// pixels across as many distinct coverages, no color repeated enough to reach
-    /// the significance floor and not one of them fully inked. The ink is only ever
-    /// implied by the ramp — and it's implied at 17.3:1, which is what this has to
-    /// come back with rather than nil.
+    /// pixels across as many distinct coverages, so no color repeats enough to reach
+    /// the significance floor. One pixel is fully inked, and one pixel is the problem:
+    /// a lone sample is not a plateau to measure from, so the ink has to be inferred
+    /// from the ramp — and it's implied at 17.3:1, which is what this has to come
+    /// back with rather than nil.
     func testThinAntialiasedTextWithNoSignificantInkClusterClears() throws {
         let pixels = Self.thinGlyph(ink: (23, 27, 31), background: Self.white, width: 9, height: 17)
         let measured = try XCTUnwrap(
