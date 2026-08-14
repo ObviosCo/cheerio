@@ -46,8 +46,10 @@ public enum TranscriptCallbackScope: Int, CaseIterable, Identifiable, Sendable {
 public enum TranscriptCallbackSettings {
     /// Pre-#137 storage: one global command string. Still written (see
     /// ``triggers``'s setter) so a downgrade to a single-command build keeps the
-    /// default trigger working, and still read as the migration source when no
-    /// trigger list has ever been saved.
+    /// default trigger working, still read as the migration source when no
+    /// trigger list has ever been saved, and — because that mirror keeps the two
+    /// in lockstep — read as the tie-breaker when they disagree (see
+    /// ``triggers``'s getter).
     public static let commandDefaultsKey = "transcriptCallbackCommand"
     /// Where the trigger list lives: one JSON blob in `UserDefaults` — see
     /// ``CallbackTrigger`` for why it's not SwiftData.
@@ -64,16 +66,19 @@ public enum TranscriptCallbackSettings {
     ///
     /// Reading migrates: a machine with only the legacy single command comes back
     /// as one trigger — named "Default", marked default, same command — so
-    /// nobody's configured callback disappears on upgrade. The synthesis is pure
-    /// (nothing is written until the user edits triggers in Settings), which is
-    /// what keeps this getter safe to call from anywhere, tests included; the
-    /// fixed ``migratedTriggerID`` is what makes repeated reads agree anyway.
+    /// nobody's configured callback disappears on upgrade. Reading also
+    /// *reconciles*, for the round trip back (see
+    /// ``reconcilingDowngradeEdit(into:)``). Both are pure — nothing is written
+    /// until the user edits triggers in Settings — which is what keeps this
+    /// getter safe to call from anywhere, tests included; the fixed
+    /// ``migratedTriggerID`` and the deterministic reconciliation are what make
+    /// repeated reads agree anyway.
     public static var triggers: [CallbackTrigger] {
         get {
             if let data = UserDefaults.standard.data(forKey: triggersDefaultsKey),
                 let decoded = try? JSONDecoder().decode([CallbackTrigger].self, from: data)
             {
-                return decoded.normalized()
+                return reconcilingDowngradeEdit(into: decoded.normalized())
             }
             guard let legacy = legacyCommand else { return [] }
             return [CallbackTrigger(id: migratedTriggerID, name: "Default", command: legacy, isDefault: true)]
@@ -86,7 +91,10 @@ public enum TranscriptCallbackSettings {
             // Mirror the default's command into the legacy key (or clear it),
             // so a downgraded build reads the same automatic command this one
             // would run — the mirror is one line here and a restored callback
-            // there.
+            // there. It is also load-bearing for the trip back: because this
+            // runs on every save, a disagreement between the two keys can only
+            // have come from a build that writes one of them, which is what lets
+            // ``reconcilingDowngradeEdit(into:)`` believe the legacy key.
             if let command = normalized.first(where: \.isDefault)?.trimmedCommand {
                 UserDefaults.standard.set(command, forKey: commandDefaultsKey)
             } else {
@@ -99,6 +107,63 @@ public enum TranscriptCallbackSettings {
         let stored = UserDefaults.standard.string(forKey: commandDefaultsKey) ?? ""
         let trimmed = stored.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// Whether the legacy key holds an opinion at all, as opposed to a value.
+    ///
+    /// Present-and-blank is an opinion, and specifically the dangerous one: a
+    /// pre-#137 Settings field is `@AppStorage`-bound, so clearing the command
+    /// there writes the empty string and never removes the key. Absent means
+    /// nobody has said anything — either no build ever wrote a command, or this
+    /// build's own mirror removed the key because the default trigger's command
+    /// is blank — and there is nothing to reconcile against.
+    private static var hasLegacyCommand: Bool {
+        UserDefaults.standard.object(forKey: commandDefaultsKey) != nil
+    }
+
+    /// Folds an edit made on a downgraded, pre-#137 build back into the trigger
+    /// list (issue #165).
+    ///
+    /// Such a build knows only ``commandDefaultsKey`` and writes only that, while
+    /// leaving the trigger blob it can't read untouched. Letting the blob win
+    /// unconditionally meant a command edited on the old build was silently
+    /// ignored after re-upgrading — and, worse, a command *cleared* there came
+    /// back from the blob and ran, executing something the user had deleted.
+    ///
+    /// The inference that makes this sound is the mirror in the setter above:
+    /// every save writes the default trigger's command back to the legacy key (or
+    /// removes it), and the two shipped in the same release, so no build has ever
+    /// written the blob without the mirror. The two keys therefore agree except
+    /// where something that can only write one of them wrote it — which is a
+    /// downgraded build, and which is more recent than the blob by construction.
+    /// So a disagreement resolves in the legacy key's favour, and only the
+    /// *default* trigger's command moves: it is the only thing the old build can
+    /// see or edit, so the rest of the list — names, ids, other triggers'
+    /// commands, a plan's stashed ``ProcessingPlan/triggerID`` — survives the
+    /// round trip untouched.
+    ///
+    /// Nothing is persisted here. The reconciliation is a pure function of the
+    /// two keys, so every read of a downgraded machine's settings agrees until
+    /// one of them is written again — and the next Settings save mirrors the
+    /// reconciled list back into both.
+    private static func reconcilingDowngradeEdit(into triggers: [CallbackTrigger]) -> [CallbackTrigger] {
+        guard hasLegacyCommand else { return triggers }
+        let legacy = legacyCommand
+        guard let defaultIndex = triggers.firstIndex(where: \.isDefault) else {
+            // `normalized()` marks a default whenever the list is non-empty, so
+            // this is the empty-list case: the setter clears the legacy key
+            // alongside an empty list, and a command sitting there now is one an
+            // old build typed with nothing to type it into.
+            guard triggers.isEmpty, let legacy else { return triggers }
+            return [CallbackTrigger(id: migratedTriggerID, name: "Default", command: legacy, isDefault: true)]
+        }
+        guard triggers[defaultIndex].trimmedCommand != legacy else { return triggers }
+        // Blanked rather than removed when the old build cleared it: blank is how
+        // this type has always spelled "off", and keeping the trigger keeps its
+        // name and id — including for any hold whose plan already chose it.
+        var reconciled = triggers
+        reconciled[defaultIndex].command = legacy ?? ""
+        return reconciled
     }
 
     /// The trigger that fires automatically, when one exists — ``triggers``

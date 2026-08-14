@@ -646,6 +646,25 @@ import Testing
         #expect(!abandoned.endedCleanly)
     }
 
+    @Test func endedCleanlyExcludesAMeetingStillOwedItsPipeline() {
+        // A held meeting (#136) has `endedAt` set the moment recording stops and
+        // keeps it through the whole review window, so the two terms above say
+        // "ready" about a row whose diarization and enhancement haven't run —
+        // and a launch recovering one can be showing it in the library before
+        // the claim clears the plan, or after a claim save failed and put it
+        // back. The persisted plan is the marker that says so.
+        let held = Meeting(title: "Waiting on the review window")
+        held.endedAt = .now
+        held.pendingProcessingPlan = ProcessingPlan(runCallback: true)
+        #expect(!held.endedCleanly)
+
+        // Claiming is exactly what clears the plan, durably, before any pipeline
+        // work starts — so the same row reads ready from that point on, which is
+        // the same "had its chance" contract a zero-touch stop has always had.
+        held.pendingProcessingPlan = nil
+        #expect(held.endedCleanly)
+    }
+
     @Test func theStorePathOverrideWins() throws {
         let override = "/tmp/somewhere/else/default.store"
         #expect(
