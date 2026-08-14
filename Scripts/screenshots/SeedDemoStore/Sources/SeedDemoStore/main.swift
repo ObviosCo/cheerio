@@ -32,6 +32,9 @@ let container = URL(filePath: arguments[containerIndex + 1], directoryHint: .isD
 // For the no-enrollment capture (issue #125): a store with meetings but nobody
 // enrolled, which is exactly the "recorded without enrolling" case the empty
 // state's voice-enrollment prompt has to keep confronting rather than assume away.
+// It is also the only fixture whose transcripts show an *unidentified* speaker —
+// see `label(for:on:numbering:)`, which is what makes the rail's low-provenance
+// styling auditable at all (#162).
 let skipEnrollment = arguments.contains("--skip-enrollment")
 
 // MARK: - Fake audio
@@ -486,6 +489,38 @@ let demos: [Demo] = [
     ),
 ]
 
+// MARK: - Speaker labels
+
+/// What one line's `speakerLabel` should be in the store being written.
+///
+/// With voices enrolled, every line carries the name diarization matched. With
+/// `--skip-enrollment` nothing *could* have matched a name, and seeding one anyway
+/// would leave the one fixture that exists to show the un-enrolled app showing an
+/// enrolled one: `.modelMatched` styling on every transcript line and the
+/// unidentified rungs (#162) on none. So that store gets what the pipeline would
+/// actually leave behind — the far end's voices split and numbered per channel,
+/// your own left at the capture channel's default, "Me".
+///
+/// A hand-typed label survives either way: renaming a line has never needed an
+/// enrolled voice, and one settled line among numbered ones is what the per-line
+/// menu produces.
+func label(
+    for line: Line,
+    on channel: SpeakerChannel,
+    numbering: inout [SpeakerChannel: [String: String]]
+) -> String? {
+    guard skipEnrollment, !line.isManual else { return line.speaker }
+    guard channel != .me else { return nil }
+    if let existing = numbering[channel]?[line.speaker] { return existing }
+    var forChannel = numbering[channel] ?? [:]
+    // Numbered per channel, from one — another channel's "Speaker 1" is an
+    // unrelated person, which is why the app scopes these labels the same way.
+    let generated = "Speaker \(forChannel.count + 1)"
+    forChannel[line.speaker] = generated
+    numbering[channel] = forChannel
+    return generated
+}
+
 // MARK: - Write
 
 let storeURL = container.appending(path: "default.store")
@@ -562,6 +597,7 @@ for demo in demos {
     // Lines run back to back at a plausible speaking rate, so the speakers panel's
     // per-person second counts add up to something believable.
     var offset: TimeInterval = 4
+    var generatedLabels: [SpeakerChannel: [String: String]] = [:]
     for line in demo.lines {
         let seconds = max(3.0, Double(line.text.count) / 15.0)
         let segment = TranscriptSegment(
@@ -570,7 +606,7 @@ for demo in demos {
             startTime: offset,
             endTime: offset + seconds
         )
-        segment.speakerLabel = line.speaker
+        segment.speakerLabel = label(for: line, on: line.channel, numbering: &generatedLabels)
         segment.isSpeakerLabelManual = line.isManual
         segment.meeting = meeting
         context.insert(segment)
