@@ -4,6 +4,13 @@ import SwiftUI
 
 /// Live view during a meeting: transcript on the left, rough-notes
 /// scratchpad on the right (the Granola pattern).
+///
+/// What it draws is ``RecordingSurface``; what it owns is the session. The split
+/// is #164: an accessibility audit can reach a view that takes values, and can
+/// never reach one that requires two capture channels to be running. Everything
+/// left here needs the session or the store — the bindings that write back
+/// through `CaptureSession`, the hold-activity observers, and the enrollment
+/// nudge's once-ever bookkeeping.
 struct RecordingView: View {
     @Environment(CaptureSession.self) private var session
     @Environment(\.modelContext) private var context
@@ -14,117 +21,32 @@ struct RecordingView: View {
     /// pressing "record" and the recording actually starting.
     @State private var showEnrollmentNudge = false
     @State private var showEnrollmentSheet = false
-    /// Whether the live transcript should keep following new lines. Suspended the
-    /// moment a scroll leaves the bottom edge, resumed only once one returns to
-    /// it — see ``liveTranscriptScroll``.
-    @State private var isPinnedToBottom = true
-    /// The raw trigger-list blob, observed so the holding controls re-render
-    /// when Settings edits triggers while a hold is on screen — a plain
-    /// `TranscriptCallbackSettings.triggers` read in `body` is invisible to
-    /// SwiftUI's invalidation, so the toggle and picker would keep showing a
-    /// configuration that no longer exists. Never decoded here: the *value*
-    /// still comes from `TranscriptCallbackSettings`, which owns normalization
-    /// and the legacy-command migration; this property exists to be read (see
-    /// ``holdingControls``) purely as the dependency that triggers the refresh.
-    /// Settings writes the blob on every edit, including ones that only change
-    /// the mirrored legacy key's value, so observing the blob alone suffices.
-    @AppStorage(TranscriptCallbackSettings.triggersDefaultsKey) private var observedTriggersData: Data?
 
     var body: some View {
         @Bindable var session = session
 
-        VStack(spacing: 0) {
-            if showEnrollmentNudge {
-                enrollmentNudgeBanner
-                Divider()
-            }
-
-            // Renameable in place: the title is often wrong at the moment you notice
-            // it — a calendar match that didn't apply, or a placeholder timestamp.
-            if let meeting = session.meeting {
-                @Bindable var meeting = meeting
-                HStack(spacing: 8) {
-                    // Routed through `rename(to:)` rather than a direct `$meeting.title`
-                    // binding: a title typed here is exactly as manual as one typed from
-                    // the library later, and both need to retire `isTitleAutomatic` so
-                    // the auto-title pass at the end of the recording doesn't overwrite it.
-                    TextField("Meeting name", text: Binding(get: { meeting.title }, set: { meeting.rename(to: $0) }))
-                        .textFieldStyle(.plain)
-                        .font(.title2.weight(.semibold))
-                        .onSubmit { try? context.save() }
-                    // Same badge style as the library row (MeetingListView) — small
-                    // affordance only, not a forked layout. It's the one visual cue
-                    // that the scratchpad matters less for this recording.
-                    if meeting.kind == .directive {
-                        Text("Directive")
-                            .font(.caption2.weight(.medium))
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .background(.tint.opacity(0.15), in: .capsule)
-                    }
-                    // Set the roster while you can see who's in the room — the automatic
-                    // pass at the end of the recording uses it, so getting it right now
-                    // saves a re-identify later.
-                    ParticipantRosterMenu(meeting: meeting)
-                    // Processing takes the ring's place rather than sitting beside
-                    // it (issue #173): in `.finishing` the ring was still filled
-                    // and the timer still counting, so a meeting whose grace period
-                    // had just expired — or whose "Process Now" had just been
-                    // clicked — read as *recording* while it was really being
-                    // diarized and written up. One claim about what the machine is
-                    // doing, and it has to be the true one.
-                    if let phase = session.currentMeetingProcessingPhase {
-                        ProcessingIndicator(label: phase.label, prominence: .section)
-                    } else if session.state != .holding, let startedAt = session.startedAt {
-                        // Still nothing in `.holding`: the ring means "capturing
-                        // right now", and the holding state's whole premise is that
-                        // capture is over. The holding bar below carries that state.
-                        //
-                        // The ring and the word travel with the timer here, not just
-                        // the digits — a bare timer is exactly the drift
-                        // `RecordingIndicator` exists to stop between this header,
-                        // the sidebar, and the menu bar.
-                        TimelineView(.periodic(from: startedAt, by: 1)) { context in
-                            RecordingIndicator(
-                                isRecording: true,
-                                elapsed: .seconds(Int(context.date.timeIntervalSince(startedAt).rounded()))
-                            )
-                        }
-                    }
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                Divider()
-            }
-
-            if session.state == .holding {
-                holdingControls
-                Divider()
-            }
-
-            recordingPanes
-        }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                if session.state == .holding {
-                    Button {
-                        Task { await session.confirmProcessing(context: context) }
-                    } label: {
-                        Label("Process Now", systemImage: "sparkles")
-                    }
-                } else {
-                    Button {
-                        Task { await session.stop(context: context) }
-                    } label: {
-                        Label(
-                            session.state == .finishing ? "Finishing…" : "Stop",
-                            systemImage: "stop.circle.fill"
-                        )
-                    }
-                    .disabled(session.state == .finishing)
-                }
-            }
-        }
+        RecordingSurface(
+            state: session.state,
+            meeting: session.meeting,
+            processingPhaseLabel: session.currentMeetingProcessingPhase?.label,
+            startedAt: session.startedAt,
+            liveLines: session.liveLines,
+            volatileLine: session.volatileLine,
+            holdDeadline: session.holdDeadline,
+            showsEnrollmentNudge: showEnrollmentNudge,
+            roughNotes: $session.roughNotes,
+            // The `hold*` accessors, not the meeting's fields directly, so every
+            // edit also counts as holding activity — see `CaptureSession.holdKind`.
+            holdKind: $session.holdKind,
+            holdRunsCallback: $session.holdRunsCallback,
+            holdTriggerID: $session.holdTriggerID,
+            holdCallbackPrompt: $session.holdCallbackPrompt,
+            onProcessNow: { Task { await session.confirmProcessing(context: context) } },
+            onStop: { Task { await session.stop(context: context) } },
+            onTitleSubmit: { try? context.save() },
+            onAddVoice: { showEnrollmentSheet = true },
+            onDismissEnrollmentNudge: { showEnrollmentNudge = false }
+        )
         // Every edit surface this view keeps live through `.holding` counts as
         // holding activity — the scratchpad, the title field, and the participant
         // roster all restart the grace window, or auto-processing could cut off a
@@ -156,276 +78,6 @@ struct RecordingView: View {
                 // the first place — leave it showing and it reads as a bug: "I just
                 // did what it asked, why is it still there?"
                 showEnrollmentNudge = false
-            }
-        }
-    }
-
-    /// The post-meeting holding state's controls (issue #136): the countdown to
-    /// auto-processing, the meeting-kind switch, and the callback decision with
-    /// its per-meeting prompt. Everything binds through the session's `hold*`
-    /// accessors rather than the meeting directly, so each edit also restarts the
-    /// grace window — the countdown measures idle time, and touching a control is
-    /// not idle.
-    private var holdingControls: some View {
-        @Bindable var session = session
-
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Image(systemName: "hourglass")
-                    .foregroundStyle(.tint)
-                if let deadline = session.holdDeadline {
-                    // `.timer` counts down on its own — no TimelineView needed —
-                    // and the deadline moving on each edit is picked up because
-                    // `holdDeadline` is observed state. "Processing", not "notes
-                    // and callback": whether the callback is part of processing
-                    // is exactly what the toggle to the right decides, and this
-                    // line has to stay true in every position of it.
-                    Text(
-                        "Recording finished. Processing starts in \(Text(deadline, style: .timer).fontWeight(.semibold)) — editing anything here keeps it waiting."
-                    )
-                    .font(.callout)
-                }
-                Spacer()
-                Button("Process Now") {
-                    Task { await session.confirmProcessing(context: context) }
-                }
-                .buttonStyle(.borderedProminent)
-            }
-
-            HStack(spacing: 12) {
-                // Cheap to change *now*, before notes exist to go stale — see
-                // `CaptureSession.holdKind`. After processing it's the detail
-                // view's convert action, with its documented regeneration caveat.
-                Picker("Kind", selection: $session.holdKind) {
-                    Text("Meeting").tag(MeetingKind.meeting)
-                    Text("Directive").tag(MeetingKind.directive)
-                }
-                .pickerStyle(.segmented)
-                .fixedSize()
-                .labelsHidden()
-
-                // Reading the observed blob is what makes a Settings edit
-                // mid-hold re-evaluate everything below — see
-                // ``observedTriggersData``.
-                let _ = observedTriggersData
-                // Only offered when a trigger exists that could run — a toggle
-                // that controls nothing would read as broken, and Settings ›
-                // Callback is where triggers get configured in the first place.
-                // `hasRunnableTrigger`, not `command != nil`: a blank default
-                // with a usable second trigger still leaves something to choose.
-                if TranscriptCallbackSettings.hasRunnableTrigger {
-                    Toggle("Run callback", isOn: $session.holdRunsCallback)
-                        .toggleStyle(.checkbox)
-                    // The per-meeting trigger choice (#137). Hidden with one
-                    // trigger configured, when there's nothing to choose — the
-                    // single-command experience stays exactly what it was.
-                    let triggers = TranscriptCallbackSettings.triggers
-                    if triggers.count > 1 {
-                        Picker("Trigger", selection: $session.holdTriggerID) {
-                            ForEach(triggers) { trigger in
-                                // Blank-command triggers stay visible but can't
-                                // be chosen, matching the manual-run menus:
-                                // picking one would leave "Run callback" checked
-                                // while the fire decision deterministically
-                                // no-ops on the blank command.
-                                Text(trigger.displayName)
-                                    .tag(trigger.id as UUID?)
-                                    .selectionDisabled(trigger.trimmedCommand == nil)
-                            }
-                        }
-                        .fixedSize()
-                        .labelsHidden()
-                        .accessibilityLabel("Callback trigger")
-                        .disabled(!session.holdRunsCallback)
-                    }
-                    TextField(
-                        "Additional prompt for the callback (CHEERIO_ADDITIONAL_PROMPT)",
-                        text: $session.holdCallbackPrompt
-                    )
-                    .textFieldStyle(.roundedBorder)
-                    .disabled(!session.holdRunsCallback)
-                }
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(.tint.opacity(0.08))
-    }
-
-    private var enrollmentNudgeBanner: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "person.wave.2")
-                .foregroundStyle(.tint)
-            Text("Add your voice and, once this meeting ends, your lines will come back with your name instead of a generic speaker label.")
-                .font(.callout)
-            Spacer()
-            Button("Add my voice") { showEnrollmentSheet = true }
-                .buttonStyle(.borderless)
-            Button {
-                showEnrollmentNudge = false
-            } label: {
-                Image(systemName: "xmark")
-            }
-            .buttonStyle(.borderless)
-            .foregroundStyle(Theme.Colors.textSecondary)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(.yellow.opacity(0.15))
-    }
-
-    /// The bottom-anchor id every scroll-to-latest call targets, whether or not a
-    /// volatile line currently exists — "volatile" alone would leave nothing to
-    /// scroll to the instant a segment finalizes and clears it (``CaptureSession/handle(_:context:)``
-    /// sets ``CaptureSession/volatileLine`` to nil in the same update that appends
-    /// the final line), which is exactly when a scroll is most needed.
-    private static let transcriptBottomAnchorID = "transcript-bottom"
-
-    /// How close to the bottom edge still counts as "there" — a user who scrolled up
-    /// half a line's height while a new one lands shouldn't have that read as
-    /// intentionally leaving the bottom.
-    private static let bottomFollowTolerance: CGFloat = 24
-
-    @ViewBuilder private var recordingPanes: some View {
-        @Bindable var session = session
-
-        // Notes on top and larger: typing is the job during a meeting, and the
-        // transcript is reference material you glance at.
-        VSplitView {
-            TextEditor(text: $session.roughNotes)
-                .font(.body)
-                .padding(8)
-                .frame(minHeight: 260, idealHeight: 460)
-                .overlay(alignment: .topLeading) {
-                    if session.roughNotes.isEmpty {
-                        Text("Rough notes — jot anything; AI merges it with the transcript later.")
-                            .foregroundStyle(Theme.Colors.textSecondary)
-                            .padding(12)
-                            .allowsHitTesting(false)
-                    }
-                }
-
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 6) {
-                    Image(systemName: "waveform")
-                    // "Live" is a claim about capture, and in `.holding` capture is
-                    // over — the banner above says "Recording finished", and this
-                    // header contradicting it would leave doubt about whether the
-                    // mic is still hot.
-                    Text(session.state == .holding ? "Transcript" : "Live transcript")
-                    if let startedAt = session.startedAt {
-                        // Absolute and local, per #130 — the per-line stamps below
-                        // are all relative to this one instant.
-                        Text("· started \(startedAt.formatted(date: .omitted, time: .shortened))")
-                            .font(.caption.monospacedDigit())
-                    }
-                    Spacer()
-                    Text("\(session.liveLines.count) lines")
-                        .foregroundStyle(Theme.Colors.textSecondary)
-                }
-                .font(.caption.weight(.medium))
-                .foregroundStyle(Theme.Colors.textSecondary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-
-                liveTranscriptScroll
-            }
-            .frame(minHeight: 120, idealHeight: 180)
-        }
-    }
-
-    private var liveTranscriptScroll: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 8) {
-                    let marked = TranscriptTimestamp.markedIndices(startTimes: session.liveLines.map(\.startTime))
-                    ForEach(Array(session.liveLines.enumerated()), id: \.offset) { index, line in
-                        transcriptLine(line, showsTimestamp: marked.contains(index))
-                    }
-                    if let volatile = session.volatileLine {
-                        transcriptLine(volatile, showsTimestamp: false)
-                            .opacity(0.5)
-                    }
-                    // Zero-height and always last, so there's one stable id to
-                    // scroll to regardless of whether a volatile line exists right
-                    // now — see ``transcriptBottomAnchorID``.
-                    Color.clear.frame(height: 0).id(Self.transcriptBottomAnchorID)
-                }
-                .padding(.horizontal, 12)
-                .padding(.bottom, 12)
-            }
-            // `RecordingView` is recreated, not just re-shown, every time
-            // `CheerioApp`'s detail branch swaps back to it from a selected
-            // meeting (`if/else` between two different view types drops the old
-            // one's state) — with no scroll history to restore, a fresh scroll
-            // view otherwise opens at its content's top, on the oldest lines,
-            // which is the opposite of "pinned as promised" for a meeting already
-            // well underway. Anchoring the default here means a freshly-created
-            // scroll view's very first layout already sits at the bottom, with
-            // no `onChange` needing to have fired first.
-            .defaultScrollAnchor(.bottom)
-            .onScrollGeometryChange(for: Bool.self) { geometry in
-                geometry.contentOffset.y + geometry.containerSize.height
-                    >= geometry.contentSize.height - Self.bottomFollowTolerance
-            } action: { _, isAtBottom in
-                isPinnedToBottom = isAtBottom
-            }
-            .onChange(of: session.liveLines.count) {
-                guard isPinnedToBottom else { return }
-                proxy.scrollTo(Self.transcriptBottomAnchorID, anchor: .bottom)
-            }
-            .onChange(of: session.volatileLine?.text) {
-                guard isPinnedToBottom else { return }
-                proxy.scrollTo(Self.transcriptBottomAnchorID, anchor: .bottom)
-            }
-            .overlay(alignment: .bottomTrailing) {
-                if !isPinnedToBottom {
-                    jumpToLatestButton(proxy: proxy)
-                }
-            }
-        }
-    }
-
-    /// Quiet on purpose — a filled circle no louder than the recording indicator
-    /// elsewhere in this view, appearing only while following is suspended and
-    /// gone the instant it isn't.
-    private func jumpToLatestButton(proxy: ScrollViewProxy) -> some View {
-        Button {
-            isPinnedToBottom = true
-            withAnimation(.easeOut(duration: 0.2)) {
-                proxy.scrollTo(Self.transcriptBottomAnchorID, anchor: .bottom)
-            }
-        } label: {
-            Label("Jump to latest", systemImage: "arrow.down.circle.fill")
-                .labelStyle(.iconOnly)
-                .font(.title3)
-        }
-        .buttonStyle(.borderless)
-        .foregroundStyle(Theme.Colors.textSecondary)
-        .padding(6)
-        .background(.regularMaterial, in: Circle())
-        .padding(10)
-        .transition(.opacity)
-    }
-
-    private func transcriptLine(_ line: TranscriptionUpdate, showsTimestamp: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            if showsTimestamp {
-                Text(TranscriptTimestamp.format(line.startTime))
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(Theme.Colors.textSecondary)
-            }
-            HStack(alignment: .top, spacing: 8) {
-                // Both channels stay plain secondary text: speaker colour fills the
-                // chip and the speakers-panel timeline, never transcript text (the
-                // token map's rule) — and pre-diarization "Me" is channelDefault
-                // provenance anyway, which carries no identity colour even on a chip.
-                Text(line.channel == .me ? "Me" : "Them")
-                    .font(.caption.bold())
-                    .foregroundStyle(Theme.Colors.textSecondary)
-                    .frame(width: 44, alignment: .trailing)
-                Text(line.text)
-                    .textSelection(.enabled)
             }
         }
     }

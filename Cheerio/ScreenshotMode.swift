@@ -101,6 +101,23 @@ enum ScreenshotMode {
         UserDefaults.standard.bool(forKey: "screenshotVoiceEnrollmentConfirmed")
     }
 
+    /// Renders `RecordingSurfacePreview` in the library window's detail column,
+    /// in place of the empty-state dashboard, for the named fixture state.
+    ///
+    /// The live recording pane is the one surface neither harness could reach
+    /// (#164): it renders only while `CaptureSession.state` is
+    /// `.recording`/`.finishing`/`.holding`, and that state moves only when both
+    /// capture channels have actually started — a TCC prompt and a live process
+    /// tap, which "Nothing here can record" rules out. So this hook doesn't reach
+    /// it. It renders the *presentation* half of it (`RecordingSurface`) from
+    /// fixture values, with the real session still `.idle`; the session is never
+    /// told anything, and nothing here is a state a recording could be confused
+    /// with.
+    static var recordingPreview: RecordingPreviewVariant? {
+        UserDefaults.standard.string(forKey: "screenshotRecordingPreview")
+            .flatMap(RecordingPreviewVariant.init(rawValue:))
+    }
+
     /// Which appearance the whole app renders in — "light" or "dark" — overriding
     /// the system setting for this launch only. Absent follows the system, which is
     /// what a real launch does.

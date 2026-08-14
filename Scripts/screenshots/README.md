@@ -141,8 +141,14 @@ Each one twice: `<name>-2x.png` straight off the Retina display, and `<name>.png
 at half that, which is the 1×/2× pair `site/index.html`'s `srcset` wants.
 
 The CI pass shoots a different, overlapping set: `library`, `library-transcript`,
-`library-empty-state`, all six Settings tabs, `settings-participants-confirmed`, and
-`onboarding-welcome` — one test per surface in `CheerioScreenshotTests`. It also shoots
+`library-empty-state`, all six Settings tabs, `settings-participants-confirmed`,
+`recording`, `recording-holding`, and
+`onboarding-welcome` — one test per surface in `CheerioScreenshotTests`. The two
+recording shots are the surface neither harness could reach until #164 — it renders
+only while a recording is running — and what they photograph is `RecordingSurface`,
+the shipped content view, fed fixture values with the session still `.idle`.
+`capture.sh` doesn't reproduce them: the site publishes none of the live pane, and
+one hook read in two places is enough to keep it honest. It also shoots
 `library-empty-state-no-enrollment`
 against a second seeded store (`seed-store.sh --skip-enrollment`) — meetings exist, but
 nobody's enrolled, so issue #125's voice-enrollment prompt is on screen too, on top of
@@ -192,6 +198,7 @@ argument, read in `ScreenshotMode` in the app target:
 | `-screenshotOnboardingStep <n>` | Opens the walkthrough on step *n* |
 | `-screenshotExpandTranscript YES` | Opens the detail view's transcript disclosure, which otherwise starts collapsed (#104) — only `library-transcript` needs it |
 | `-screenshotVoiceEnrollmentConfirmed YES` | Shows `VoiceEnrollmentRecorder`'s post-save acknowledgment instead of its empty form — only `settings-participants-confirmed` needs it |
+| `-screenshotRecordingPreview recording\|holding` | Renders the live-recording pane from fixture values, in the detail column where the dashboard would be (#164) — the session stays `.idle`, because nothing here records |
 
 This is not the obvious design — the obvious one drives the real UI with AppleScript
 or XCUITest — and the launch-argument hooks exist because reaching a *state* this way
