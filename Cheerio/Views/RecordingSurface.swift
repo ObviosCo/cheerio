@@ -340,7 +340,6 @@ struct RecordingSurface: View {
                     }
                     if let volatileLine {
                         transcriptLine(volatileLine, showsTimestamp: false)
-                            .opacity(0.5)
                     }
                     // Zero-height and always last, so there's one stable id to
                     // scroll to regardless of whether a volatile line exists right
