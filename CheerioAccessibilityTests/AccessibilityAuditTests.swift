@@ -281,15 +281,67 @@ final class AccessibilityAuditTests: XCTestCase {
             appearance: appearance
         )
         awaitWindow(of: app)
+        // On `value` as well as `label`, because on this surface the text is in
+        // `value` and the label is empty — measured, not assumed: the first CI run
+        // of these four cases failed on the anchor with the pane fully rendered
+        // behind it, and the element-tree attachment reads
+        // `StaticText, {{410, 448}, {72, 13}}, value: Live transcript` with no
+        // label at all. Which of the two a SwiftUI `Text` lands in isn't uniform
+        // here (the sidebar's date headers carry labels), so matching either is
+        // what makes an anchor a statement about the screen rather than about
+        // AppKit's bridging.
+        //
         // Matched on a prefix: the holding banner's countdown is a live timer, so
-        // its label reads differently every second.
+        // its text reads differently every second.
         let anchor = app.staticTexts.matching(
-            NSPredicate(format: "label BEGINSWITH %@", variant.anchor)
+            NSPredicate(format: "label BEGINSWITH %@ OR value BEGINSWITH %@", variant.anchor, variant.anchor)
         ).firstMatch
         try requireAnchor(anchor)
+        try requirePopulatedRoster(in: app)
         try requireEffectiveAppearance(appearance, in: app)
         try audit(app)
     }
+
+    /// The header's roster menu, proved *populated* rather than assumed so.
+    ///
+    /// `ParticipantRosterMenu` reads enrolled voices through its own `@Query`, and
+    /// with an empty result it draws a one-line "No voices enrolled" fallback in
+    /// place of the menu — fewer elements, different text, different foreground.
+    /// An audit that measured that would be green against a screen no user with
+    /// enrolled voices ever sees, which is worse than red. Whether the fixture's
+    /// inserts are visible to that query was, until it started saving them, a
+    /// question of when autosave happened to run; this is the assertion that means
+    /// nobody has to take the answer on trust again.
+    ///
+    /// Scoped to menu buttons, and to the *fixture's* roster: the populated branch
+    /// is a menu whose title is the roster joined with commas, so the sidebar's row
+    /// subtitles — which join the same seeded cast the same way, as static texts —
+    /// can't stand in for it, and neither can the sidebar's only other menu
+    /// ("Filter"). If the fallback rendered there would be no menu here at all, and
+    /// if the roster were empty-but-enrolled the title would read "No voices
+    /// primed"; both fail this. `title` is where a `MenuButton` carries it —
+    /// measured from the same element tree as the anchor above:
+    /// `MenuButton, {{544, 147}, {322, 26}}, title: 'Sam Whitfield, Priya Raman,
+    /// Marcus Feld'`.
+    private func requirePopulatedRoster(in app: XCUIApplication) throws {
+        let roster = app.menuButtons.matching(
+            NSPredicate(
+                format: "title CONTAINS %@ OR label CONTAINS %@",
+                Self.rosterFixtureName, Self.rosterFixtureName
+            )
+        ).firstMatch
+        XCTAssertTrue(
+            roster.waitForExistence(timeout: Self.windowTimeout),
+            "The recording header's roster menu never named an enrolled voice — the fixture's voices didn't reach its @Query."
+        )
+        guard roster.exists else { throw MissingAnchor() }
+    }
+
+    /// One of the voices `RecordingSurfacePreview`'s fixture enrolls, spelled here
+    /// for the same reason ``RecordingVariant`` is: a test bundle that imported the
+    /// app target would fail to compile rather than report the drift, and a stale
+    /// name fails on the assertion above with a message that says what's missing.
+    private static let rosterFixtureName = "Sam Whitfield"
 
     // MARK: - Settings
 

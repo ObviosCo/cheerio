@@ -118,6 +118,24 @@ private enum RecordingPreviewFixture {
             context.insert(speaker)
         }
         meeting.participantNames = ["Sam Whitfield", "Priya Raman", "Marcus Feld"]
+        // Saved, not left pending: `ParticipantRosterMenu` reads the roster through
+        // its own `@Query`, and whether an unsaved insert reaches one is autosave's
+        // timing rather than a guarantee. The first audit run got a populated menu
+        // out of it, which is the shape of the problem — a screen this harness
+        // photographs and measures must not be one appearance of a race. Empty is a
+        // *quieter* screen (a one-line "No voices enrolled" where the menu goes), so
+        // the audit would have gone green on it. Saving also settles each speaker's
+        // `persistentModelID`, which is that menu's `ForEach` identity. In memory,
+        // so this writes nothing that outlives the process.
+        do {
+            try context.save()
+        } catch {
+            // Crashing rather than swallowing it: a `try?` here degrades to exactly
+            // the under-populated screen this save exists to prevent, and an audit
+            // that measures it passes. Same reasoning as the container above, and
+            // the same reach — a launch argument no real launch passes.
+            fatalError("Couldn't save the recording preview's fixture: \(error)")
+        }
         return meeting
     }()
 
