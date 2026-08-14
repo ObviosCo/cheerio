@@ -109,17 +109,35 @@ public final class Meeting {
     /// offering it is both rare and harmless (the export carries whatever
     /// exists).
     public var wasAbandoned: Bool = false
-    /// Whether this recording reached an actual stop — ended, and not by
-    /// ``wasAbandoned``'s backfill. This is the honest stand-in for "processing
-    /// completed, successfully or conclusively not": the pipeline runs
-    /// synchronously off every clean stop (and launch recovery covers a quit
-    /// mid-hold), so a cleanly-ended meeting has had its processing chance by
-    /// definition, while an abandoned one never did. Surfaces that hand the
-    /// meeting to external tooling as "ready" gate on this rather than on
-    /// `enhancedNotes != nil`, which is also nil when enhancement conclusively
-    /// failed — a state the callback contract explicitly ships as-is.
+    /// Whether this recording reached an actual stop *and* is no longer owed a
+    /// processing pass. This is the honest stand-in for "processing completed,
+    /// successfully or conclusively not", and it takes all three terms to say
+    /// that:
+    ///
+    /// - `endedAt != nil` — recording is over.
+    /// - `!wasAbandoned` — it ended by an actual stop, not by
+    ///   `StorageMigration.closeAbandonedRecordings`' backfill, which never ran
+    ///   the pipeline at all.
+    /// - `pendingProcessingPlan == nil` — nothing still owes this meeting a
+    ///   pipeline. A held meeting (issue #136) has `endedAt` set from the moment
+    ///   the recording stops, minutes before its plan is claimed, and a launch
+    ///   recovering one (``awaitingProcessing(in:)``) can be showing it in the
+    ///   library before the claim lands or after a claim save fails. Without
+    ///   this term those rows read as ready, and the manual callback surfaces
+    ///   would hand an agent a transcript that hasn't been diarized or enhanced
+    ///   — the half-processed export the callback contract exists to rule out.
+    ///   The claim is what clears the plan, and it is durable *before* any
+    ///   pipeline work runs (`CaptureSession.completeHold`), so "no plan" is the
+    ///   marker that the pipeline has had, or is having, its chance; a run
+    ///   already underway is excluded separately, by the session's processing
+    ///   marks, since nothing on the row distinguishes mid-pipeline from done.
+    ///
+    /// Surfaces that hand the meeting to external tooling as "ready" gate on
+    /// this rather than on `enhancedNotes != nil`, which is also nil when
+    /// enhancement conclusively failed — a state the callback contract
+    /// explicitly ships as-is.
     public var endedCleanly: Bool {
-        endedAt != nil && !wasAbandoned
+        endedAt != nil && !wasAbandoned && pendingProcessingPlan == nil
     }
 
     /// Whether `title` is a placeholder Cheerio generated (the "Meeting <date,

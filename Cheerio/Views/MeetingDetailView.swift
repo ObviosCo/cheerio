@@ -151,10 +151,12 @@ struct MeetingDetailView: View {
                 // re-processed through one. `endedCleanly`, not `endedAt != nil`:
                 // a crash-abandoned recording gets an `endedAt` backfilled at the
                 // next launch without ever running diarization or enhancement,
-                // and offering to hand that partial capture to an agent as
-                // "ready" would ship the exact half-processed state the callback
-                // contract exists to rule out. (The live meeting reaches this
-                // view too; it has no `endedAt` at all.)
+                // and a held or launch-recovered meeting has one from the moment
+                // recording stopped while its pipeline is still owed — offering
+                // to hand either partial capture to an agent as "ready" would
+                // ship the exact half-processed state the callback contract
+                // exists to rule out. (The live meeting reaches this view too; it
+                // has no `endedAt` at all.)
                 let _ = observedTriggersData
                 if meeting.endedCleanly, TranscriptCallbackSettings.hasRunnableTrigger {
                     Divider()
