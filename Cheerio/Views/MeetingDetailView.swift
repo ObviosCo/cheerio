@@ -305,13 +305,28 @@ struct MeetingDetailView: View {
     /// `renameMeetingAlert`.
     ///
     /// The processing line (issue #173) sits here, once, rather than beside each
-    /// control it explains. Every affordance this view disables while a pipeline
-    /// runs — Export, Convert and Delete in the toolbar, the rename pencil beside
-    /// the title, the rough-notes editor, Re-identify and Run callback further
-    /// down the scroll — is disabled for the same single reason, and one
-    /// statement of it directly under the title is both the first thing on screen
-    /// when the meeting opens and adjacent to the toolbar. Repeating it per
-    /// control would say the same sentence half a dozen times in one window.
+    /// control it explains: it is the first thing on screen when the meeting opens
+    /// and it is adjacent to the toolbar, and repeating it per control would say
+    /// the same sentence half a dozen times in one window.
+    ///
+    /// It explains one fact — a pass is rewriting this meeting — but the gates it
+    /// speaks for are deliberately three, because the affordances aren't all
+    /// unavailable for the same span (issue #161):
+    ///
+    /// - ``CaptureSession/isMidPipeline(_:)`` — Export, the rename pencil, the
+    ///   rough-notes editor. Exactly while a pass rewrites the meeting, which is
+    ///   the same condition the line renders, so what the app forbids and what it
+    ///   says can't drift apart. Not the broader ``isProcessing(_:)``: that counts
+    ///   the session's meeting through all of `.recording` and `.holding`, the two
+    ///   windows the notes editor exists for.
+    /// - ``CaptureSession/isProcessing(_:)`` — Re-identify and Run callback, which
+    ///   also have nothing to act on until a first pass has finished.
+    /// - ``CaptureSession/canDelete(_:)`` — Convert and Delete, whose refusal is
+    ///   about the row going out from under the session, not about a pass.
+    ///
+    /// The line's wording therefore describes the pass, not the whole of what each
+    /// control waits for; a control disabled during recording is disabled for a
+    /// reason the line doesn't claim to give.
     private var header: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: Theme.Space.x1) {
