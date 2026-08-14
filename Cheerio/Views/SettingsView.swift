@@ -375,10 +375,10 @@ struct TranscriptCallbackSettingsView: View {
     /// than re-deriving, so the button and the line under it can't disagree.
     ///
     /// Two conditions, two sentences (issue #161): the second one used to borrow
-    /// the first one's wording, and it isn't about a recording at all. Launch
-    /// recovery of a hold a previous run left behind, and the detail view's
-    /// "Re-identify speakers", both run the pipeline while `state` sits at
-    /// `.idle` — being told to wait for a recording to finish when nothing is
+    /// the first one's wording, and it isn't about a recording at all. Two things
+    /// run the pipeline while `state` sits at `.idle`: launch recovery finishing a
+    /// hold that a previous run left behind, and the detail view's "Re-identify
+    /// speakers". Being told to wait for a recording to finish when nothing is
     /// recording reads as a stuck app.
     private var runNowBlockedReason: String? {
         if session.state != .idle {
