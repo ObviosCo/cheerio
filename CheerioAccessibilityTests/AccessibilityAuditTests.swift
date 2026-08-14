@@ -146,7 +146,7 @@ final class AccessibilityAuditTests: XCTestCase {
         try auditSeededLibrary(
             appearance: .light,
             extraArguments: ["-screenshotSelectMeeting", "1"],
-            anchoredOn: Self.selectedMeetingAnchor
+            anchoredOn: [Self.selectedMeetingAnchor]
         )
     }
 
@@ -154,7 +154,7 @@ final class AccessibilityAuditTests: XCTestCase {
         try auditSeededLibrary(
             appearance: .dark,
             extraArguments: ["-screenshotSelectMeeting", "1"],
-            anchoredOn: Self.selectedMeetingAnchor
+            anchoredOn: [Self.selectedMeetingAnchor]
         )
     }
 
@@ -175,7 +175,7 @@ final class AccessibilityAuditTests: XCTestCase {
         try auditSeededLibrary(
             appearance: .light,
             extraArguments: ["-screenshotSelectMeeting", "2", "-screenshotExpandTranscript", "YES"],
-            anchoredOn: Self.expandedTranscriptAnchor
+            anchoredOn: [Self.expandedTranscriptAnchor]
         )
     }
 
@@ -183,7 +183,7 @@ final class AccessibilityAuditTests: XCTestCase {
         try auditSeededLibrary(
             appearance: .dark,
             extraArguments: ["-screenshotSelectMeeting", "2", "-screenshotExpandTranscript", "YES"],
-            anchoredOn: Self.expandedTranscriptAnchor
+            anchoredOn: [Self.expandedTranscriptAnchor]
         )
     }
 
@@ -202,11 +202,17 @@ final class AccessibilityAuditTests: XCTestCase {
 
     /// Nothing selected: the empty-state dashboard (#124).
     func testLibraryEmptyStateLight() throws {
-        try auditSeededLibrary(appearance: .light, anchoredOn: Self.dashboardAnchor)
+        try auditSeededLibrary(
+            appearance: .light,
+            anchoredOn: [Self.dashboardAnchor, Self.pinnedActivityStatsAnchor]
+        )
     }
 
     func testLibraryEmptyStateDark() throws {
-        try auditSeededLibrary(appearance: .dark, anchoredOn: Self.dashboardAnchor)
+        try auditSeededLibrary(
+            appearance: .dark,
+            anchoredOn: [Self.dashboardAnchor, Self.pinnedActivityStatsAnchor]
+        )
     }
 
     /// The same dashboard with issue #125's voice-enrollment prompt on it, which
@@ -430,6 +436,15 @@ final class AccessibilityAuditTests: XCTestCase {
         app.buttons["Enroll your voice"]
     }
 
+    /// The minutes figure from `-screenshotActivityStats`, which the dashboard shows
+    /// nowhere else. This is the anchor for the *pin* rather than for the screen: if
+    /// that hook stops taking effect, the clock is back in charge of what this suite
+    /// measures, and the way that failed last time was a green run on a Thursday and
+    /// a red one on the Friday (#184). Absent it, this test fails instead.
+    private static func pinnedActivityStatsAnchor(in app: XCUIApplication) -> XCUIElement {
+        app.staticTexts["62"]
+    }
+
     /// A diarizer-generated name anywhere in the hierarchy. Matched by substring
     /// across every element type on purpose: the rail label is a `Menu`'s label, so
     /// whether it surfaces as its own static text or folded into the button's is
@@ -444,11 +459,11 @@ final class AccessibilityAuditTests: XCTestCase {
     private func auditSeededLibrary(
         appearance: Appearance,
         extraArguments: [String] = [],
-        anchoredOn anchor: (XCUIApplication) -> XCUIElement
+        anchoredOn anchors: [(XCUIApplication) -> XCUIElement]
     ) throws {
         let app = try launchSeeded(Self.libraryArguments + extraArguments, appearance: appearance)
         awaitWindow(of: app)
-        try requireAnchor(anchor(app))
+        for anchor in anchors { try requireAnchor(anchor(app)) }
         try requireEffectiveAppearance(appearance, in: app)
         try audit(app)
     }
@@ -719,6 +734,7 @@ final class AccessibilityAuditTests: XCTestCase {
         let app = try launchNoEnrollment(Self.libraryArguments, appearance: appearance)
         awaitWindow(of: app)
         try requireAnchor(Self.enrollmentPromptAnchor(in: app))
+        try requireAnchor(Self.pinnedActivityStatsAnchor(in: app))
         try requireEffectiveAppearance(appearance, in: app)
         try audit(app)
     }
