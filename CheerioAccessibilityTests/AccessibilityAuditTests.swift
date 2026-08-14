@@ -18,10 +18,11 @@ import XCTest
 /// via `CFFIXED_USER_HOME`, and the same `ScreenshotMode` launch arguments to reach
 /// each state without clicking. Every covered surface is audited twice — light and
 /// dark — through `-screenshotAppearance`, because a contrast failure usually lives
-/// in exactly one appearance. The one surface *not* covered is `RecordingView`
-/// (live recording / holding): reaching it means a session that believes it's
-/// recording, which `ScreenshotMode`'s presentation-only charter rules out —
-/// tracked as #164.
+/// in exactly one appearance. That now includes the live-recording pane, which was
+/// unreachable until #164: it renders only while a session believes it's recording,
+/// and `ScreenshotMode`'s charter is that nothing there can record. What's audited
+/// is `RecordingSurface` — the shipped content view — fed fixture values by
+/// `RecordingSurfacePreview`, with the session still `.idle`.
 ///
 /// The library audits pass `-screenshotSelectMeeting`, so the *selected* row state
 /// is on screen — #141 shipped precisely because selection is invisible to anything
@@ -238,6 +239,127 @@ final class AccessibilityAuditTests: XCTestCase {
     func testUnidentifiedSpeakerTranscriptDark() throws {
         try auditNoEnrollmentTranscript(appearance: .dark)
     }
+
+    // MARK: - Recording
+
+    /// The live-recording pane: the timer and ring, the transcript with both
+    /// channels on it, the scratchpad's placeholder, and the enrollment nudge
+    /// banner, none of which any other audit here can reach.
+    ///
+    /// What's on screen is `RecordingSurface` — `RecordingView`'s own content
+    /// view — fed fixture values by `RecordingSurfacePreview`, with the session
+    /// still `.idle`. The alternative was a seam that made `CaptureSession`
+    /// report a recording it isn't running, and that state is what the menu bar,
+    /// update gating and the deletion guards all key off; see #164.
+    func testRecordingLight() throws { try auditRecordingSurface(.recording, appearance: .light) }
+    func testRecordingDark() throws { try auditRecordingSurface(.recording, appearance: .dark) }
+
+    /// The post-meeting holding state (#136), which carries controls and copy the
+    /// recording state doesn't: the countdown to auto-processing, the meeting-kind
+    /// switch, and the callback toggle with its per-meeting prompt.
+    func testRecordingHoldingLight() throws { try auditRecordingSurface(.holding, appearance: .light) }
+    func testRecordingHoldingDark() throws { try auditRecordingSurface(.holding, appearance: .dark) }
+
+    /// The fixture states `-screenshotRecordingPreview` accepts, spelled here
+    /// rather than shared with the app target — a test bundle that imported the
+    /// app's enum would fail to compile before it could report the drift, where a
+    /// wrong string fails on the anchor with a message that says what's missing.
+    private enum RecordingVariant: String {
+        case recording
+        case holding
+
+        /// Text only this variant puts on screen, so a hook that silently stopped
+        /// working can't leave the audit measuring the dashboard and passing.
+        var anchor: String {
+            switch self {
+            // "Live" is a claim about capture, which the holding state has to
+            // stop making — the two headers differ for exactly that reason.
+            case .recording: "Live transcript"
+            case .holding: "Recording finished. Processing starts in"
+            }
+        }
+
+        /// The holding state's callback toggle and prompt only render when a
+        /// trigger exists that could actually run, so this launch configures one
+        /// — the same argument `ScreenshotCaptureTests` uses for the Callback
+        /// tab. It leaves one trigger, which is the shape that hides the
+        /// per-meeting trigger picker (#137); that picker needs a trigger *list*,
+        /// and a list is a JSON blob no launch argument can carry.
+        var extraArguments: [String] {
+            switch self {
+            case .recording: []
+            case .holding: ["-transcriptCallbackCommand", #"claude -p "Turn my action items into tasks""#]
+            }
+        }
+    }
+
+    private func auditRecordingSurface(_ variant: RecordingVariant, appearance: Appearance) throws {
+        let app = try launchSeeded(
+            Self.libraryArguments + ["-screenshotRecordingPreview", variant.rawValue] + variant.extraArguments,
+            appearance: appearance
+        )
+        awaitWindow(of: app)
+        // On `value` as well as `label`, because on this surface the text is in
+        // `value` and the label is empty — measured, not assumed: the first CI run
+        // of these four cases failed on the anchor with the pane fully rendered
+        // behind it, and the element-tree attachment reads
+        // `StaticText, {{410, 448}, {72, 13}}, value: Live transcript` with no
+        // label at all. Which of the two a SwiftUI `Text` lands in isn't uniform
+        // here (the sidebar's date headers carry labels), so matching either is
+        // what makes an anchor a statement about the screen rather than about
+        // AppKit's bridging.
+        //
+        // Matched on a prefix: the holding banner's countdown is a live timer, so
+        // its text reads differently every second.
+        let anchor = app.staticTexts.matching(
+            NSPredicate(format: "label BEGINSWITH %@ OR value BEGINSWITH %@", variant.anchor, variant.anchor)
+        ).firstMatch
+        try requireAnchor(anchor)
+        try requirePopulatedRoster(in: app)
+        try requireEffectiveAppearance(appearance, in: app)
+        try audit(app)
+    }
+
+    /// The header's roster menu, proved *populated* rather than assumed so.
+    ///
+    /// `ParticipantRosterMenu` reads enrolled voices through its own `@Query`, and
+    /// with an empty result it draws a one-line "No voices enrolled" fallback in
+    /// place of the menu — fewer elements, different text, different foreground.
+    /// An audit that measured that would be green against a screen no user with
+    /// enrolled voices ever sees, which is worse than red. Whether the fixture's
+    /// inserts are visible to that query was, until it started saving them, a
+    /// question of when autosave happened to run; this is the assertion that means
+    /// nobody has to take the answer on trust again.
+    ///
+    /// Scoped to menu buttons, and to the *fixture's* roster: the populated branch
+    /// is a menu whose title is the roster joined with commas, so the sidebar's row
+    /// subtitles — which join the same seeded cast the same way, as static texts —
+    /// can't stand in for it, and neither can the sidebar's only other menu
+    /// ("Filter"). If the fallback rendered there would be no menu here at all, and
+    /// if the roster were empty-but-enrolled the title would read "No voices
+    /// primed"; both fail this. `title` is where a `MenuButton` carries it —
+    /// measured from the same element tree as the anchor above:
+    /// `MenuButton, {{544, 147}, {322, 26}}, title: 'Sam Whitfield, Priya Raman,
+    /// Marcus Feld'`.
+    private func requirePopulatedRoster(in app: XCUIApplication) throws {
+        let roster = app.menuButtons.matching(
+            NSPredicate(
+                format: "title CONTAINS %@ OR label CONTAINS %@",
+                Self.rosterFixtureName, Self.rosterFixtureName
+            )
+        ).firstMatch
+        XCTAssertTrue(
+            roster.waitForExistence(timeout: Self.windowTimeout),
+            "The recording header's roster menu never named an enrolled voice — the fixture's voices didn't reach its @Query."
+        )
+        guard roster.exists else { throw MissingAnchor() }
+    }
+
+    /// One of the voices `RecordingSurfacePreview`'s fixture enrolls, spelled here
+    /// for the same reason ``RecordingVariant`` is: a test bundle that imported the
+    /// app target would fail to compile rather than report the drift, and a stale
+    /// name fails on the assertion above with a message that says what's missing.
+    private static let rosterFixtureName = "Sam Whitfield"
 
     // MARK: - Settings
 

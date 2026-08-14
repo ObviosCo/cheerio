@@ -9,6 +9,21 @@ public struct TranscriptionUpdate: Sendable {
     public let isFinal: Bool
     public let startTime: TimeInterval
     public let endTime: TimeInterval
+
+    /// Public because the live transcript's *presentation* has to be reachable
+    /// without a recording: the app's `RecordingSurfacePreview` renders fixture
+    /// lines for the accessibility audits and the screenshot harness (#164), and
+    /// the memberwise initializer of a public struct is internal to this package.
+    /// Nothing here starts an analyzer — a line is a value, and one made this way
+    /// is indistinguishable from one the engine emitted, which is the point: the
+    /// audited view is the shipped view.
+    public init(channel: SpeakerChannel, text: String, isFinal: Bool, startTime: TimeInterval, endTime: TimeInterval) {
+        self.channel = channel
+        self.text = text
+        self.isFinal = isFinal
+        self.startTime = startTime
+        self.endTime = endTime
+    }
 }
 
 /// Wraps SpeechAnalyzer/SpeechTranscriber (macOS/iOS 26+) for one audio stream.

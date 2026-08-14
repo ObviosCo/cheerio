@@ -123,6 +123,32 @@ final class ScreenshotCaptureTests: XCTestCase {
         capture(soleWindow(of: app), named: "library-empty-state-no-enrollment")
     }
 
+    // MARK: - Recording
+
+    /// The live-recording pane, which this harness could never photograph before
+    /// #164: it renders only while `CaptureSession` is actually capturing, and
+    /// "Permissions and recordings" is explicit that nothing here starts one. What
+    /// this shoots is `RecordingSurface` — `RecordingView`'s own content view —
+    /// fed fixture values by `RecordingSurfacePreview`, with the session `.idle`.
+    func testRecording() throws {
+        let app = try launchSeeded(Self.libraryArguments + ["-screenshotRecordingPreview", "recording"])
+        capture(soleWindow(of: app), named: "recording")
+    }
+
+    /// The post-meeting holding state (#136) — countdown, kind switch, callback
+    /// decision. The callback command is passed for the same reason the Callback
+    /// tab's shot passes it: the toggle and prompt only render when a trigger
+    /// exists that could run.
+    func testRecordingHolding() throws {
+        let app = try launchSeeded(
+            Self.libraryArguments + [
+                "-screenshotRecordingPreview", "holding",
+                "-transcriptCallbackCommand", #"claude -p "Turn my action items into tasks""#,
+            ]
+        )
+        capture(soleWindow(of: app), named: "recording-holding")
+    }
+
     // MARK: - Settings
 
     // Tab indices are the order of `SettingsView`'s TabView. SwiftUI keeps the

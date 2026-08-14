@@ -448,6 +448,13 @@ struct ContentView: View {
             }
         } else if [.recording, .holding, .finishing].contains(session.state) {
             RecordingView()
+        } else if let variant = ScreenshotMode.recordingPreview {
+            // Below the live branch, not above it, so this can never displace a
+            // real recording — it only stands in where the dashboard would be,
+            // and only under a launch argument no real launch passes. What it
+            // renders is `RecordingView`'s own content view, fed fixture values;
+            // the session is still `.idle` underneath. See #164.
+            RecordingSurfacePreview(variant: variant)
         } else {
             EmptyStateDashboardView(selection: $selectedMeeting, enrollmentPromptDismissed: $enrollmentPromptDismissed)
         }
