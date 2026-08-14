@@ -242,9 +242,17 @@ struct MeetingDetailView: View {
         }
         .toolbar {
             ToolbarItem {
+                // Refused while a pass is rewriting this meeting (issue #161).
+                // What this shares is the notes and the transcript as they stand,
+                // and mid-pipeline both are about to change: diarization is still
+                // replacing channel labels with names, and enhancement hasn't
+                // written the summary that the same export will carry a minute
+                // later. A share taken here is a document the app itself
+                // contradicts, with nothing in it saying it was partial.
                 ShareLink(item: exportMarkdown()) {
                     Label("Export", systemImage: "square.and.arrow.up")
                 }
+                .disabled(session.isMidPipeline(meeting))
             }
             ToolbarItem {
                 // Same write, and the same `canDelete` guard, as the library
@@ -296,11 +304,12 @@ struct MeetingDetailView: View {
     ///
     /// The processing line (issue #173) sits here, once, rather than beside each
     /// control it explains. Every affordance this view disables while a pipeline
-    /// runs — Convert and Delete in the toolbar, Re-identify and Run callback
-    /// further down the scroll — is disabled for the same single reason, and one
+    /// runs — Export, Convert and Delete in the toolbar, the rename pencil beside
+    /// the title, the rough-notes editor, Re-identify and Run callback further
+    /// down the scroll — is disabled for the same single reason, and one
     /// statement of it directly under the title is both the first thing on screen
     /// when the meeting opens and adjacent to the toolbar. Repeating it per
-    /// control would say the same sentence up to four times in one window.
+    /// control would say the same sentence half a dozen times in one window.
     private var header: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: Theme.Space.x1) {
@@ -320,6 +329,17 @@ struct MeetingDetailView: View {
                 .buttonStyle(.borderless)
                 .foregroundStyle(Theme.Colors.textSecondary)
                 .help("Rename meeting")
+                // `isProcessing`, which is wider than the export gate above, and
+                // deliberately (issue #161): it also covers this session's own
+                // meeting for the length of a recording and a hold. A rename
+                // commits on the alert's Save, so the grace deadline can expire
+                // between opening it and saving — processing would then export
+                // the old title and the Save would rename an already-processed
+                // meeting afterward. `RecordingView`'s inline title field is the
+                // rename path while a meeting belongs to this session, because
+                // that one is observed and restarts the grace window as it's
+                // typed.
+                .disabled(session.isProcessing(meeting))
             }
             Text(subtitle)
                 .font(.caption)
@@ -398,6 +418,15 @@ struct MeetingDetailView: View {
     private var roughNotes: some View {
         @Bindable var session = session
         let isLiveMeeting = session.meeting == meeting
+        // Held open, but read-only, while a pass is rewriting this meeting (issue
+        // #161). `process` feeds these notes to the summarizer and then ships them
+        // again in the callback's export, with two long awaits in between, so a
+        // keystroke landing in that window ends up in the notes, absent from the
+        // summary that claims to be of them, and on either side of what the agent
+        // was handed depending on where it fell. Disabled rather than swapped for
+        // the rendered view: the text stays exactly where it was, and the phase
+        // under the title says what it's waiting on.
+        let isMidPipeline = session.isMidPipeline(meeting)
 
         // No explicit `context.save()` on the stored-model branch, which would be a
         // synchronous SwiftData write on every character typed. This environment's
@@ -419,10 +448,12 @@ struct MeetingDetailView: View {
                     }
                     .buttonStyle(.borderless)
                     .font(.caption)
+                    .disabled(isMidPipeline)
                 }
             }
             if isEditing {
                 TextEditor(text: isLiveMeeting ? $session.roughNotes : storedRoughNotes)
+                    .disabled(isMidPipeline)
                     .font(.body)
                     .frame(minHeight: 80)
                     .scrollContentBackground(.hidden)

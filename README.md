@@ -117,7 +117,9 @@ its context menu or detail view).
 - **Library, search, and export.** Browse past meetings grouped by day — Today, Yesterday,
   then the weekday or the date — search across titles, notes, transcripts, and speaker names,
   rename or delete a meeting from the list or the meeting itself, and export any meeting as
-  Markdown.
+  Markdown. Renaming, exporting, and editing a meeting's notes wait while that meeting is
+  being processed — the indicator above says which stage it's in — so nothing ships half of a
+  pipeline's output or edits a meeting out from under the pass rewriting it.
 - **Nothing selected still shows something useful.** With no meeting open, the main window
   shows this week's upcoming calendar events (when access is granted), how many meetings and
   minutes you've recorded this week, how many follow-ups are still open, the two start actions,
