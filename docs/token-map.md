@@ -36,8 +36,23 @@ panel. These sets are for content surfaces the system doesn't already vend.
 | `--ch-text-tertiary` | `Text/Tertiary` | `#83868A` | `#7B8187` | 3.5 / 4.5 |
 | `--ch-text-on-accent` | `Text/OnAccent` | `#FFFFFF` | `#0E1218` | — |
 
-`Text/Tertiary` is below AA on light and is for **non-essential** text only —
-decorative timestamps, disabled affordances. Never a label a user must read.
+`Text/Tertiary` is **3.5:1 on the light page — below WCAG AA, and staying
+there.** It is the decorative tier: marks that cost nothing if they go unread,
+like a decorative timestamp or the disabled half of an affordance. **It may
+never carry meaning.** Anything someone has to read to act takes
+`Text/Secondary`; if that reads too loud, the fix is a quieter type role, not a
+fainter grey. Reaching for "the quietest text colour" is the drift this note
+exists to stop — it hands a sub-AA ratio to a label nobody meant to hide.
+
+Darkening the light value to clear 4.5:1 was the alternative in
+[#162](https://github.com/ObviosCo/cheerio/issues/162) and was refused: it
+closes the gap to `Text/Secondary` and leaves the system with no honest way to
+say "decorative". The call site moved instead — the transcript rail's
+unidentified speaker names now render in `Text/Secondary`, with a trailing
+`questionmark` glyph so provenance survives greyscale rather than riding on
+which of two greys the name is in (WCAG 1.4.1). The app has no `Text/Tertiary`
+call site left; on the site it tints `.release li::marker`, which is exactly
+what the tier is for.
 
 ## Borders
 

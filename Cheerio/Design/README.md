@@ -49,9 +49,13 @@ than text sitting next to one — the same distinction that lets a chip carry
 colour while the name beside it stays plain. This rule is what keeps a
 400-line transcript readable.
 
-**Certainty is unmarked.** Only `.modelMatched` gets the hairline ring. Correct
-a label and the ring goes away — that disappearance is the receipt that your
-corrections outrank the model's guesses.
+**Certainty is unmarked.** Only `.modelMatched` gets the hairline ring, and only
+the two unidentified rungs — `.diarizerGenerated`, `.channelDefault` — get the
+question mark after the name on the rail. Correct a label and both go away; that
+disappearance is the receipt that your corrections outrank the model's guesses.
+Neither mark is a colour: the rail label is `Text/Primary` when settled and
+`Text/Secondary` otherwise, because a grey faint enough to mean "unsure" was
+also too faint to read (#162).
 
 **Recording is copper, and the ring's fill is the real signal.** Red keeps
 meaning failure. The menu-bar template image is single-colour by definition, so

@@ -202,11 +202,122 @@ import Testing
         }
     }
 
-    @Test func storedTriggersOutrankTheLegacyCommand() throws {
-        try withCommand("old-command") {
+    @Test func storedTriggersOutrankAnAbsentLegacyKey() throws {
+        // No legacy key at all is the ordinary state of a machine whose default
+        // trigger is blank (the setter's mirror removes the key rather than
+        // writing ""), and of a fresh install that never had one. Nothing has an
+        // opinion to reconcile, so the blob is the whole answer.
+        try withCommand(nil) {
             try withTriggers([CallbackTrigger(name: "Repo agent", command: "claude -p new", isDefault: true)]) {
                 #expect(TranscriptCallbackSettings.triggers.count == 1)
                 #expect(TranscriptCallbackSettings.command == "claude -p new")
+            }
+        }
+    }
+
+    // Downgrade reconciliation (#165): a pre-#137 build writes only the legacy
+    // key, so after re-upgrading, a disagreement between the two means the legacy
+    // key was written more recently — the setter's mirror is what makes that
+    // inference sound.
+
+    @Test func aCommandEditedOnADowngradedBuildWins() throws {
+        let repo = CallbackTrigger(name: "Repo", command: "claude -p repo", isDefault: true)
+        let triage = CallbackTrigger(name: "Triage", command: "triage.sh")
+        try withCommand("claude -p repo-v2") {
+            try withTriggers([repo, triage]) {
+                let reconciled = TranscriptCallbackSettings.triggers
+                #expect(TranscriptCallbackSettings.command == "claude -p repo-v2")
+                // Only the default's command moves: the old build could neither
+                // see nor edit anything else, and a hold's stashed trigger id has
+                // to keep resolving.
+                #expect(reconciled.map(\.id) == [repo.id, triage.id])
+                #expect(reconciled.map(\.name) == ["Repo", "Triage"])
+                #expect(reconciled.last?.command == "triage.sh")
+                #expect(TranscriptCallbackSettings.trigger(withID: triage.id) == triage)
+            }
+        }
+    }
+
+    @Test func aCommandClearedOnADowngradedBuildDoesNotComeBack() throws {
+        // The dangerous shape: the old build's Settings field is `@AppStorage`
+        // bound, so clearing it writes "" instead of removing the key. Read as
+        // "nothing to say", the blob's command would return *and run* something
+        // the user deleted.
+        let repo = CallbackTrigger(name: "Repo", command: "claude -p repo", isDefault: true)
+        try withCommand("") {
+            try withTriggers([repo]) {
+                #expect(TranscriptCallbackSettings.command == nil)
+                #expect(!TranscriptCallbackSettings.hasRunnableTrigger)
+                #expect(!TranscriptCallbackSettings.shouldFire(for: .directive))
+                // Blanked, not deleted: the trigger keeps its identity, so a
+                // plan that chose it still resolves and Settings still shows it.
+                #expect(TranscriptCallbackSettings.triggers.map(\.id) == [repo.id])
+                #expect(TranscriptCallbackSettings.trigger(withID: repo.id)?.trimmedCommand == nil)
+            }
+        }
+    }
+
+    @Test func clearingTheDefaultLeavesOtherTriggersRunnable() throws {
+        // Same clear, with a second trigger configured: the old build only ever
+        // spoke for the automatic command, so nothing it did should silence a
+        // trigger someone can still pick by name.
+        let repo = CallbackTrigger(name: "Repo", command: "claude -p repo", isDefault: true)
+        let triage = CallbackTrigger(name: "Triage", command: "triage.sh")
+        try withCommand("   ") {
+            try withTriggers([repo, triage]) {
+                #expect(TranscriptCallbackSettings.command == nil)
+                #expect(TranscriptCallbackSettings.hasRunnableTrigger)
+                #expect(TranscriptCallbackSettings.trigger(withID: triage.id) == triage)
+            }
+        }
+    }
+
+    @Test func keysThatAgreeAreLeftAlone() throws {
+        // The overwhelmingly common state — every save mirrors — and the one
+        // where reconciliation must be a no-op, including when both spell "off".
+        let repo = CallbackTrigger(name: "Repo", command: "  claude -p repo  ", isDefault: true)
+        try withCommand("claude -p repo") {
+            try withTriggers([repo]) {
+                #expect(TranscriptCallbackSettings.triggers == [repo])
+            }
+        }
+        let blank = CallbackTrigger(name: "Half-typed", command: " ", isDefault: true)
+        try withCommand("") {
+            try withTriggers([blank]) {
+                #expect(TranscriptCallbackSettings.triggers == [blank])
+            }
+        }
+    }
+
+    @Test func aCommandTypedOnADowngradedBuildRevivesAnEmptyList() throws {
+        // The blob says "no triggers at all", which the setter wrote alongside
+        // removing the legacy key — so a command there now was typed on a build
+        // that had nowhere else to put it.
+        try withCommand("claude -p go") {
+            try withTriggers([]) {
+                let triggers = TranscriptCallbackSettings.triggers
+                #expect(triggers.count == 1)
+                #expect(triggers.first?.id == TranscriptCallbackSettings.migratedTriggerID)
+                #expect(triggers.first?.isDefault == true)
+                #expect(TranscriptCallbackSettings.command == "claude -p go")
+            }
+        }
+    }
+
+    @Test func reconciliationIsStableAndTheNextSaveResyncsBothKeys() throws {
+        let repo = CallbackTrigger(name: "Repo", command: "claude -p repo", isDefault: true)
+        try withCommand("claude -p repo-v2") {
+            try withTriggers([repo]) {
+                // Pure: reading doesn't write, so a second read reconciles to the
+                // same answer rather than to whatever the first read persisted.
+                #expect(TranscriptCallbackSettings.triggers == TranscriptCallbackSettings.triggers)
+                #expect(UserDefaults.standard.string(forKey: TranscriptCallbackSettings.commandDefaultsKey) == "claude -p repo-v2")
+
+                // And the divergence ends at the next Settings save, which
+                // mirrors the reconciled list back into the legacy key.
+                TranscriptCallbackSettings.triggers = TranscriptCallbackSettings.triggers
+                #expect(UserDefaults.standard.string(forKey: TranscriptCallbackSettings.commandDefaultsKey) == "claude -p repo-v2")
+                #expect(TranscriptCallbackSettings.command == "claude -p repo-v2")
             }
         }
     }

@@ -68,7 +68,10 @@ its context menu or detail view).
   leaves confirmed lines alone, the same as hand-named ones. Rename, confirm, and save a voice
   sample all live behind a per-speaker menu now, so the panel's foreground is talk time (a
   duration and a share of the meeting, per speaker) and a colour-coded timeline of who spoke
-  when, not the correction controls themselves.
+  when, not the correction controls themselves. A name nobody has vouched for says so in the
+  transcript: a "Speaker 2" or a plain "Me" carries a question mark after it, and a name the
+  model matched carries a ring on its chip. Both marks survive greyscale, so which line is
+  worth correcting never depends on telling two greys apart.
 - **Rough notes are first-class.** A scratchpad sits next to the live transcript during the
   meeting. What you bothered to type is the strongest signal about what mattered. When a
   recording stops it isn't processed on the spot: the meeting waits in a short review window

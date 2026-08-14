@@ -208,6 +208,20 @@ final class AccessibilityAuditTests: XCTestCase {
         try auditNoEnrollmentLibrary(appearance: .dark)
     }
 
+    /// A transcript whose speakers were never identified — `Speaker 1` and `Me`
+    /// rather than names. `SpeakerRailLabel` styles those two rungs differently
+    /// from a matched name (#162), and the enrolled store has no line in either
+    /// state, so this is the only screen that measures them. The no-enrollment
+    /// store's first meeting is the multi-voice one: both channels, three numbered
+    /// speakers on the far end, and one hand-named line among them.
+    func testUnidentifiedSpeakerTranscriptLight() throws {
+        try auditNoEnrollmentTranscript(appearance: .light)
+    }
+
+    func testUnidentifiedSpeakerTranscriptDark() throws {
+        try auditNoEnrollmentTranscript(appearance: .dark)
+    }
+
     // MARK: - Recording
 
     /// The live-recording pane: the timer and ring, the transcript with both
@@ -472,6 +486,17 @@ final class AccessibilityAuditTests: XCTestCase {
     /// Issue #125's prompt — the whole point of the no-enrollment store.
     private static func enrollmentPromptAnchor(in app: XCUIApplication) -> XCUIElement {
         app.buttons["Enroll your voice"]
+    }
+
+    /// A diarizer-generated name anywhere in the hierarchy. Matched by substring
+    /// across every element type on purpose: the rail label is a `Menu`'s label, so
+    /// whether it surfaces as its own static text or folded into the button's is
+    /// SwiftUI's business, and pinning it to either would make this anchor a
+    /// tripwire for the wrong thing.
+    private static func unidentifiedSpeakerAnchor(in app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "Speaker 1"))
+            .firstMatch
     }
 
     private func auditSeededLibrary(
@@ -750,6 +775,21 @@ final class AccessibilityAuditTests: XCTestCase {
         let app = try launchNoEnrollment(Self.libraryArguments, appearance: appearance)
         awaitWindow(of: app)
         try requireAnchor(Self.enrollmentPromptAnchor(in: app))
+        try requireEffectiveAppearance(appearance, in: app)
+        try audit(app)
+    }
+
+    private func auditNoEnrollmentTranscript(appearance: Appearance) throws {
+        let app = try launchNoEnrollment(
+            Self.libraryArguments + ["-screenshotSelectMeeting", "1", "-screenshotExpandTranscript", "YES"],
+            appearance: appearance
+        )
+        awaitWindow(of: app)
+        try requireAnchor(Self.expandedTranscriptAnchor(in: app))
+        // A generated label on screen, not just an expanded transcript: if the
+        // seeder ever went back to writing names into this store, the audit would
+        // measure four matched labels and report green on a state it never saw.
+        try requireAnchor(Self.unidentifiedSpeakerAnchor(in: app))
         try requireEffectiveAppearance(appearance, in: app)
         try audit(app)
     }

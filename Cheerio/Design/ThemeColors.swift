@@ -22,8 +22,17 @@ public extension Theme {
 
         public static let textPrimary = Color("Text/Primary", bundle: .main)
         public static let textSecondary = Color("Text/Secondary", bundle: .main)
-        /// Below AA on the light page. Non-essential text only — decorative
-        /// timestamps, disabled affordances. Never a label a user must read.
+        /// **3.5:1 on the light page — below WCAG AA, and staying there.** This is
+        /// the system's decorative tier and the only text colour in it that fails:
+        /// it is for marks that cost nothing if they go unread — a decorative
+        /// timestamp, the disabled half of an affordance. **It may never carry
+        /// meaning.** If someone has to read it to act, it is `textSecondary`
+        /// (5.7:1 light, 7.7:1 dark); if that reads too loud, the fix is a quieter
+        /// type role, not a fainter grey. Darkening the light value to clear AA was
+        /// the other option in #162 and was refused: it would close the gap to
+        /// `textSecondary` and leave the system unable to say "decorative" at all.
+        /// Nothing in the app reaches for it today — the speaker rail's
+        /// unidentified labels were the last call site, and #162 moved them up.
         public static let textTertiary = Color("Text/Tertiary", bundle: .main)
         public static let textOnAccent = Color("Text/OnAccent", bundle: .main)
 

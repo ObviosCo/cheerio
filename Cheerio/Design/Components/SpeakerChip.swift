@@ -5,12 +5,12 @@ import SwiftUI
 ///
 /// Four states, each redundantly coded so none of them depends on hue alone:
 ///
-/// | State              | Chip                     | Label              |
-/// | ---                | ---                      | ---                |
-/// | `.userSettled`     | filled, no ring          | primary, semibold  |
-/// | `.modelMatched`    | filled, hairline ring    | secondary, regular |
-/// | `.diarizerGenerated`| dashed, hollow, numeral | tertiary, italic   |
-/// | `.channelDefault`  | grey filled              | tertiary, regular  |
+/// | State              | Chip                     | Label                        |
+/// | ---                | ---                      | ---                          |
+/// | `.userSettled`     | filled, no ring          | primary, semibold            |
+/// | `.modelMatched`    | filled, hairline ring    | secondary, regular           |
+/// | `.diarizerGenerated`| dashed, hollow, numeral | secondary, italic, `?` glyph |
+/// | `.channelDefault`  | grey filled              | secondary, `?` glyph         |
 public struct SpeakerChip: View {
     private let speaker: Speaker
     private let diameter: CGFloat
@@ -76,13 +76,17 @@ public struct SpeakerRailLabel: View {
 
     public var body: some View {
         HStack(spacing: Theme.Space.x2) {
-            Text(speaker.name)
+            name
                 .chText(.speakerLabel)
                 .fontWeight(speaker.provenance == .userSettled ? .semibold : .regular)
                 .italic(speaker.provenance == .diarizerGenerated)
                 .foregroundStyle(nameColor)
                 .multilineTextAlignment(.trailing)
                 .frame(maxWidth: .infinity, alignment: .trailing)
+                // The glyph is a second rendering of what the chip beside it
+                // already says in words ("not identified"), so VoiceOver reads the
+                // name and nothing else.
+                .accessibilityLabel(speaker.name)
             SpeakerChip(speaker)
         }
         // A minimum, not a fixed width — the rail has to grow with Dynamic Type.
@@ -95,11 +99,24 @@ public struct SpeakerRailLabel: View {
         .fixedSize(horizontal: false, vertical: true)
     }
 
+    /// The name, with a trailing question mark when nothing has matched a voice to
+    /// this label. It rides *inside* the `Text` rather than sitting beside it in the
+    /// `HStack` so it wraps, scales and aligns with the name instead of claiming
+    /// width from the narrowest column on the screen. Bare `questionmark`, not the
+    /// enclosed variant: the chip an inch to its right is already a circle, and a
+    /// second one beside it would read as a second speaker.
+    private var name: Text {
+        guard speaker.provenance.isUnidentified else { return Text(speaker.name) }
+        return Text("\(speaker.name) \(Image(systemName: "questionmark"))")
+    }
+
+    /// Two colours, not three. `Text/Tertiary` used to carry the two unidentified
+    /// rungs and measures 3.5:1 on the light page — below AA for a label whose whole
+    /// job is to be read before you decide to correct it (#162). What separates the
+    /// rungs instead is everything that survives greyscale: the chip's ring, dashed
+    /// outline or grey fill, the settled name's weight, the diarizer label's italic,
+    /// and the question mark above.
     private var nameColor: Color {
-        switch speaker.provenance {
-        case .userSettled: return Theme.Colors.textPrimary
-        case .modelMatched: return Theme.Colors.textSecondary
-        case .diarizerGenerated, .channelDefault: return Theme.Colors.textTertiary
-        }
+        speaker.provenance == .userSettled ? Theme.Colors.textPrimary : Theme.Colors.textSecondary
     }
 }
