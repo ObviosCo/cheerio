@@ -63,8 +63,14 @@ public enum SpeakerProvenance: Hashable, Sendable {
         }
     }
 
-    /// The hairline ring — the only mark in the system.
+    /// The hairline ring — the mark that says "a name, guessed."
     var showsRing: Bool { self == .modelMatched }
+
+    /// No voice was matched to this label at all: it is a numeral the diarizer
+    /// minted or the capture channel's own name. `.modelMatched` is a guess too,
+    /// but it is a guess *at a person*, which is why it gets the ring and these two
+    /// get the question mark on the rail label instead.
+    var isUnidentified: Bool { self == .diarizerGenerated || self == .channelDefault }
 
     /// What the export writes, since Markdown has no hue, no chip and no ring.
     /// A settled name is written plainly; only uncertainty is stated in words.
