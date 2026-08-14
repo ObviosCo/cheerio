@@ -157,7 +157,14 @@ shot() {
     printf '   %s\n' "${name}.png / ${name}-2x.png"
 }
 
-LIBRARY_ARGS=(-onboardingHasCompleted YES -screenshotWindowSize 1440x900)
+# The pinned dashboard stats and tip (#184) keep the empty-state capture identical
+# between runs: "this week" is counted against the machine's clock, so the seeded
+# store's meeting count changes as the real week rolls over, and the tip rotates on
+# systemUptime. Only the dashboard reads either, so every shot can carry them.
+LIBRARY_ARGS=(
+    -onboardingHasCompleted YES -screenshotWindowSize 1440x900
+    -screenshotActivityStats 3,62,8 -screenshotDashboardTip 0
+)
 
 step "Library"
 shot library -- "${LIBRARY_ARGS[@]}" -screenshotSelectMeeting 1
