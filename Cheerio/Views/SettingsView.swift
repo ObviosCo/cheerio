@@ -350,10 +350,12 @@ struct TranscriptCallbackSettingsView: View {
     /// test button exists to rehearse the real callback, so it has to wait for
     /// the same point.
     ///
-    /// `isProcessingInBackground` for the same reason `UpdatePolicy` reads it:
-    /// launch recovery of a held meeting runs that same pipeline while `state`
-    /// sits at `.idle`, and the meeting it's mid-way through is exactly the
-    /// "most recently completed" one this would export half-processed.
+    /// Both halves of that wait are ``runNowBlockedReason``, which also supplies
+    /// the words for it. The second half — `isProcessingInBackground` — is there
+    /// for the same reason `UpdatePolicy` reads it: launch recovery of a held
+    /// meeting runs that same pipeline while `state` sits at `.idle`, and the
+    /// meeting it's mid-way through is exactly the "most recently completed" one
+    /// this would export half-processed.
     ///
     /// `endedCleanly`, the same readiness contract the detail view's run surface
     /// enforces: a crash-abandoned recording gets its `endedAt` backfilled at
@@ -364,8 +366,29 @@ struct TranscriptCallbackSettingsView: View {
     /// a computed property — and keeping the one definition of "clean" in
     /// `Meeting.endedCleanly` beats duplicating its logic into a query string.
     private var lastMeeting: Meeting? {
-        guard session.state == .idle, !session.isProcessingInBackground else { return nil }
+        guard runNowBlockedReason == nil else { return nil }
         return completedMeetings.first(where: \.endedCleanly)
+    }
+
+    /// Why "Run now" is refused at the moment, or nil when it isn't — and the
+    /// single source of that refusal, which ``lastMeeting`` returns nil on rather
+    /// than re-deriving, so the button and the line under it can't disagree.
+    ///
+    /// Two conditions, two sentences (issue #161): the second one used to borrow
+    /// the first one's wording, and it isn't about a recording at all. Two things
+    /// run the pipeline while `state` sits at `.idle`: launch recovery finishing a
+    /// hold that a previous run left behind, and the detail view's "Re-identify
+    /// speakers". Being told to wait for a recording to finish when nothing is
+    /// recording reads as a stuck app.
+    private var runNowBlockedReason: String? {
+        if session.state != .idle {
+            return "Waiting for the current recording to finish processing."
+        }
+        if session.isProcessingInBackground {
+            return
+                "Waiting for a meeting that's still processing — a hold recovered at launch, or a re-identify pass you started."
+        }
+        return nil
     }
 
     var body: some View {
@@ -421,10 +444,11 @@ struct TranscriptCallbackSettingsView: View {
                     }
                     .disabled(lastMeeting == nil || triggers.first?.trimmedCommand == nil)
                 }
-                if session.state != .idle || session.isProcessingInBackground {
-                    Text("Waiting for the current recording to finish processing.")
+                if let runNowBlockedReason {
+                    Text(runNowBlockedReason)
                         .font(.caption)
                         .foregroundStyle(Theme.Colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 CallbackStatusLabel()
             } footer: {

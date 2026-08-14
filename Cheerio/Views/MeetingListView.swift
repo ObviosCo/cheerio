@@ -232,10 +232,20 @@ struct MeetingListView: View {
         // `chListRowSelection` for the whole argument.
         .chListRowSelection(isSelected: selection == meeting)
         .contextMenu {
+            // Disabled for this session's own meeting and for anything a pass has
+            // mid-flight (issue #161). The rename alert commits on Save, and
+            // nothing about it is holding activity: selecting an earlier meeting
+            // unmounts `RecordingView` and the title observer that restarts the
+            // grace window with it, so the deadline can expire while the alert is
+            // open — processing would export the old title and the Save would then
+            // rename the finished meeting behind it. The tracked rename path for a
+            // held meeting is `RecordingView`'s own title field, which is one
+            // "Back to add notes" away in the controls above.
             Button("Rename") {
                 renameText = meeting.title
                 renamingMeeting = meeting
             }
+            .disabled(session.isProcessing(meeting))
             // See `Meeting.toggleKind()` for what conversion does and deliberately
             // doesn't do (issue #107), and `convertMeetingKind` for why this and
             // the detail view's toolbar button share one write instead of each
