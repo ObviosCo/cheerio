@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "CheerioKit",
     platforms: [
-        .macOS("26.0"),
+        .macOS("27.0"),
         .iOS("26.0"),
     ],
     products: [

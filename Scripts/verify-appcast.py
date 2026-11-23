@@ -13,12 +13,12 @@ Everything here is a mistake that ships silently if nobody looks:
   feed like that either offers unverified downloads or is rejected by every install.
 - A wrong enclosure URL, or an entry for some other build that happened to be lying
   around, produces a feed that points at a download that isn't this release.
-- A minimumSystemVersion that isn't 26.0 means LSMinimumSystemVersion drifted, and
+- A minimumSystemVersion that isn't 27.0 means LSMinimumSystemVersion drifted, and
   Sparkle would offer the update to Macs that cannot run it.
 
 Usage:
     verify-appcast.py APPCAST ZIP --short-version 1.2.3 --bundle-version 47 \\
-        --url https://example.com/Cheerio-1.2.3.zip [--minimum-system-version 26.0]
+        --url https://example.com/Cheerio-1.2.3.zip [--minimum-system-version 27.0]
 """
 
 import argparse
@@ -41,7 +41,7 @@ def main():
     parser.add_argument("--short-version", required=True, help="expected CFBundleShortVersionString")
     parser.add_argument("--bundle-version", required=True, help="expected CFBundleVersion (Sparkle's sparkle:version)")
     parser.add_argument("--url", required=True, help="expected enclosure URL")
-    parser.add_argument("--minimum-system-version", default="26.0", help="expected sparkle:minimumSystemVersion")
+    parser.add_argument("--minimum-system-version", default="27.0", help="expected sparkle:minimumSystemVersion")
     # Default matches both a tagged release's notes link (…/releases/tag/v1.2.3) and a
     # dry run's (…/releases), so the check is the same on both paths.
     parser.add_argument("--release-notes-must-contain", default="/releases", help="substring the release notes must contain")

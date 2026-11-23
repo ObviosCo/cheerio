@@ -49,7 +49,7 @@
 #   2. Sparkle's generate_appcast EdDSA-signs that exact zip and folds an entry
 #      for it into the previous release's feed, downloaded from the stable
 #      releases/latest/download URL — the minimum system version comes from the
-#      app's own LSMinimumSystemVersion (macOS 26), and the release notes are a
+#      app's own LSMinimumSystemVersion (macOS 27), and the release notes are a
 #      short embedded fragment linking to the GitHub release;
 #   3. a guard step re-verifies the signature in that entry against the zip's
 #      bytes with sign_update --verify, and refuses to publish if it doesn't
@@ -131,7 +131,7 @@ concurrency:
 jobs:
   release:
     name: Build and publish
-    runs-on: macos-26
+    runs-on: xcode-27
     # One place for the signing identity: xcodebuild signs the app with it, and the
     # Sparkle re-signing step below has to use the *same* one, or the app's seal and
     # its nested code would disagree about who signed them.
@@ -645,7 +645,7 @@ jobs:
       #   Without DOCTYPE or body tags, generate_appcast embeds it as CDATA, so
       #   Sparkle needs no second request to show it.
       # - minimumSystemVersion is not passed here. generate_appcast reads it out of
-      #   the app's own LSMinimumSystemVersion (macOS 26); the verify step below
+      #   the app's own LSMinimumSystemVersion (macOS 27); the verify step below
       #   asserts it came out right.
       # - --maximum-deltas 0 because delta updates would need every previous zip on
       #   disk, and CI keeps none. Full downloads only.
@@ -704,7 +704,7 @@ jobs:
           cp "Cheerio-${{ steps.version.outputs.suffix }}.zip" appcast/
           cat > "appcast/Cheerio-${{ steps.version.outputs.suffix }}.html" <<EOF
           <h2>Cheerio ${{ steps.version.outputs.short_version }}</h2>
-          <p>Everything still runs on your Mac. Requires macOS 26 or later on Apple Silicon.</p>
+          <p>Everything still runs on your Mac. Requires macOS 27 or later on Apple Silicon.</p>
           <p><a href="${{ steps.version.outputs.notes_link }}">Full release notes on GitHub</a></p>
           EOF
           printf '%s' "$SPARKLE_ED_PRIVATE_KEY" | "$tool" \
@@ -771,7 +771,7 @@ jobs:
           The app is signed with a Developer ID certificate and notarized by
           Apple — no security warnings, no extra steps.
 
-          Requires **macOS 26 (Tahoe) or later on Apple Silicon** — there is
+          Requires **macOS 27 or later on Apple Silicon** — there is
           no Intel build. Everything runs on-device: transcription, speaker
           names and notes never leave your Mac. No accounts, no analytics.
 

@@ -63,7 +63,7 @@ concurrency:
 jobs:
   capture:
     name: Capture screens
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 60
     env:
       # Both halves of the harness agree on this path — it's also the fallback

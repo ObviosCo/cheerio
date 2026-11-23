@@ -38,7 +38,7 @@ The UI is developer-built and functional rather than designed. Some of it has al
 
 ### Constraints that shape everything
 
-- macOS 26 (Tahoe)+ only, Apple Silicon. We can use the newest platform APIs and design language without back-compat compromises.
+- macOS 27+ only, Apple Silicon. We can use the newest platform APIs and design language without back-compat compromises.
 - **App Sandbox is off, permanently.** A sandboxed process tap returns success at every step and then reads pure digital silence — no error, no prompt. This is documented in ARCHITECTURE.md as a do-not-revisit. The consequence for you: **Cheerio cannot ship on the Mac App Store.** Distribution is direct download, which changes what presentation assets matter (see §8).
 - **At most four speakers** can be resolved per audio channel. That's a hard model limit and it leaks into the UI in several places — see §4.
 - **If you do state the offline property, state it precisely.** Nothing needs the network to record, transcribe or summarize a meeting — that is the claim, and it holds in airplane mode. What is *not* true, since automatic updates landed, is "there is no networking code in the app": Sparkle fetches an update feed once a day and a zip if the user accepts one, and macOS itself fetches the speech model for your locale on first run. The README's [No service required](../README.md#no-service-required) section has the exact wording. Say it once, plainly, where it's useful; don't round it up into a promise the app can't make.
@@ -231,7 +231,7 @@ Real HTML and CSS, not a mockup handed over for someone else to build. Semantic 
 
 ## 6. What we'll give you
 
-- The repo. You'll need macOS 26 and Xcode 26. After cloning, this one command does the fiddly parts — it checks your toolchain, fetches a ~93 MB model that isn't committed, and generates the Xcode project:
+- The repo. You'll need macOS 27 and Xcode 27. After cloning, this one command does the fiddly parts — it checks your toolchain, fetches a ~93 MB model that isn't committed, and generates the Xcode project:
 
   ```sh
   ./Scripts/bootstrap.sh

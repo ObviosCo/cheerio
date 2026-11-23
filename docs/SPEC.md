@@ -29,7 +29,7 @@ Meeting transcripts are already used as instructions for AI agents — record a 
 
 ## Requirements
 
-- macOS 26 (Tahoe)+, Apple Silicon
+- macOS 27+, Apple Silicon
 - Permissions: microphone, system audio capture (TCC), calendar (optional)
 - Transcription model downloaded on first run via `AssetInventory` (one-time, per-locale)
 - Diarization model (~93 MB, CC BY 4.0 — attribution in `THIRD-PARTY-NOTICES.md`) fetched at build time by `Scripts/fetch-models.sh` and bundled — never downloaded at runtime

@@ -49,12 +49,12 @@ case "$developer_dir" in
     ""|*CommandLineTools*)
         fail "Xcode is not selected — xcode-select points at '${developer_dir:-nothing}'.
   The Command Line Tools alone cannot build this: they ship the SDK but not the
-  SwiftData and FoundationModels macro plugins. Install Xcode 26+, then run:
+  SwiftData and FoundationModels macro plugins. Install Xcode 27+, then run:
 
     sudo xcode-select -s /Applications/Xcode.app"
         ;;
 esac
-# ...and a new enough one. An Xcode older than 26 has no macOS 26 SDK, so it fails
+# ...and a new enough one. An Xcode older than 27 has no macOS 27 SDK, so it fails
 # later on missing SpeechAnalyzer/FoundationModels symbols rather than on anything
 # that points at the toolchain.
 # The `|| true` matters: under `set -e` with pipefail, a failing xcodebuild would
@@ -66,10 +66,9 @@ if [ -z "$xcode_version" ]; then
 
     sudo xcodebuild -license accept"
 fi
-if [ "${xcode_version%%.*}" -lt 26 ]; then
-    fail "Xcode ${xcode_version} is too old — this project needs Xcode 26 or later.
-  It targets macOS 26 and uses SpeechAnalyzer and FoundationModels, which are not
-  in any earlier SDK."
+if [ "${xcode_version%%.*}" -lt 27 ]; then
+    fail "Xcode ${xcode_version} is too old — this project needs Xcode 27 or later.
+  It targets macOS 27, and no earlier Xcode ships that SDK."
 fi
 step "Xcode ${xcode_version} at ${developer_dir}"
 

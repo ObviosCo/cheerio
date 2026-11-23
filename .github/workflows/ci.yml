@@ -1,8 +1,9 @@
 # Lint, test, and build on every push to main and every PR.
 #
-# Everything here targets macOS 26 / Xcode 26 — the app uses SpeechAnalyzer and
-# FoundationModels, which exist in no earlier SDK, so `macos-26` is the floor,
-# not a preference.
+# Everything here targets macOS 27 / Xcode 27, the app's deployment target.
+# GitHub has no `macos-27` label yet: `xcode-27` is its macOS 27 image (macOS 27
+# with Xcode 27, still marked preview). A `macos-26` runner can't stand in, because
+# test binaries with a 27.0 minimum refuse to launch on a 26 host.
 name: CI
 
 on:
@@ -21,7 +22,7 @@ concurrency:
 jobs:
   lint:
     name: Lint
-    runs-on: macos-26
+    runs-on: xcode-27
     steps:
       - uses: actions/checkout@v7
 
@@ -32,7 +33,7 @@ jobs:
 
   test:
     name: Package tests
-    runs-on: macos-26
+    runs-on: xcode-27
     steps:
       - uses: actions/checkout@v7
 
@@ -55,7 +56,7 @@ jobs:
 
   build:
     name: Build app
-    runs-on: macos-26
+    runs-on: xcode-27
     steps:
       - uses: actions/checkout@v7
 

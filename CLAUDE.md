@@ -18,7 +18,7 @@ any of them exist yet, since docs describing the goal land ahead of the code tha
 
 Builds and runs; the package test suite passes (`cd CheerioKit && swift test` — the count moves with every PR, so this file doesn't track it). Acoustic echo cancellation and `RecordingMode` are **removed** (#167): AEC silenced a real meeting's mic channel (#159) and its benefit was never verified, so there is one recording behavior and the mic runs without voice processing. The double-transcription problem AEC was meant to fix is addressed at the transcript level instead — cross-channel bleed dedup (#168), which is what now gates closing #5.
 
-Two build warnings remain, both `Binding<Optional<Wrapped>>` captured in a `@Sendable` closure in `Views/Binding+Presented.swift`.
+Three build warnings remain: two are `Binding<Optional<Wrapped>>` captured in a `@Sendable` closure in `Views/Binding+Presented.swift`, and one is `AVAudioInputNode.installTap` in `MicrophoneCapture`, which the macOS 27 SDK deprecates without naming a replacement. That one is on the capture path, so swapping it needs a real-meeting check, not just a green build.
 
 Speaker differentiation *is* verified for in-person meetings: on 2026-07-31, with Jackson and Carter both enrolled, a 51s two-person recording labelled 9/9 segments correctly — including 1–2s alternating turns — against narrated ground truth. `them.caf` measured −90 dBFS (silent) for that meeting, so all of it came from Sortformer, none from the channel split.
 
@@ -40,7 +40,7 @@ brew install xcodegen     # if needed
 open Cheerio.xcodeproj    # scheme: Cheerio
 ```
 
-Requires macOS 26+, Xcode 26+. Package tests: `cd CheerioKit && swift test`.
+Requires macOS 27+, Xcode 27+. Package tests: `cd CheerioKit && swift test`.
 
 The full verification loop any change must pass before pushing — this list is the
 canonical one; the agent definitions in `.claude/agents/` carry mirrors of it for
