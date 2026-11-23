@@ -289,7 +289,8 @@ download `Cheerio-<version>.dmg`, open it, and drag Cheerio to `/Applications`. 
 rather than running it from `~/Downloads` — macOS runs an app from Downloads under app
 translocation, a read-only mount from which Cheerio can't update itself. Builds are signed with
 a Developer ID certificate and notarized by Apple, so Gatekeeper opens them without warnings or
-right-click ceremony. Requires macOS 27 or later on Apple Silicon.
+right-click ceremony. The current release requires macOS 26 or later on Apple Silicon; releases after
+it require macOS 27.
 
 If you do launch it straight from the DMG or a translocated path, Cheerio notices and offers to
 move itself to `/Applications` on the spot — or, if a copy is already installed there, points you
@@ -402,12 +403,12 @@ macros.
 
 ## Current status
 
-Verified against this commit on macOS 27 / Xcode 26:
+Verified against this commit on macOS 27 / Xcode 27:
 
 | Check | Result |
 |---|---|
 | `CheerioKit` tests | all pass (`cd CheerioKit && swift test`) |
-| `Cheerio` app build | succeeds (2 warnings) |
+| `Cheerio` app build | succeeds (3 warnings) |
 | End-to-end capture | verified 2026-07-28 — both channels transcribe, notes generate, both CAFs write |
 | Speaker differentiation, in person | verified 2026-07-31 — 9/9 segments labelled correctly across 1–2s alternating turns |
 | Live video call | **not yet verified** |

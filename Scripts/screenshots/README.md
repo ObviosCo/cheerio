@@ -14,7 +14,7 @@ There are two capture paths, and they share everything except the shutter.
 
 | | Local (`capture.sh`) | CI (`.github/workflows/screenshots.yml`) |
 | --- | --- | --- |
-| Runs | on your Mac, when you ask | on `xcode-27` (macOS 27), on every PR touching `Cheerio/Views/**`, `Cheerio/*.swift` or `site/**` |
+| Runs | on your Mac, when you ask | on `xcode-27` (macOS 27), when dispatched, plus automatically on PRs touching the harness itself (`CheerioScreenshotTests/**`, `Scripts/screenshots/**` or the workflow) |
 | Shutter | `screencapture -l<window>`, via `capture-window.swift` | `XCUIElement.screenshot()`, in `CheerioScreenshotTests` |
 | Needs | Screen Recording granted, a Retina display, a logged-in session | nothing granted; a runner has nobody to grant it |
 | Output | `-1x`/`-2x` pairs in `out/`, for `site/index.html`'s `srcset` | one capture per surface plus a width-capped `-preview`, on the `screenshots` branch |
