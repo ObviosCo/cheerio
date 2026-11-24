@@ -314,7 +314,7 @@ jobs:
       # follows, because re-signing the framework broke the app's seal over it.
       #
       # Two details from that guidance:
-      #   - Downloader.xpc (Sparkle ≥ 2.6, and we pin 2.9.5) carries its own
+      #   - Downloader.xpc (Sparkle ≥ 2.6, and we pin 2.10.1) carries its own
       #     entitlements, so it is signed with --preserve-metadata=entitlements;
       #     re-signing plain would strip them.
       #   - No --deep, for the same reason: one blanket recursive signature would
@@ -633,8 +633,9 @@ jobs:
       #   where that URL 404s and site/appcast.xml's empty template is the right seed.
       # - Seeding works because generate_appcast re-uses an appcast it finds *in the
       #   archives directory* and only adds to it. Verified against the pinned 2.9.5
-      #   binary: with a directory holding nothing but the new zip plus the previous
-      #   feed, the older entries survive with their edSignature and their original
+      #   binary, and again against 2.10.1 seeded from the live feed: with a
+      #   directory holding nothing but the new zip plus the previous feed, the
+      #   older entries survive with their edSignature and their original
       #   enclosure URL intact — --download-url-prefix applies to new entries only, so
       #   an old entry keeps pointing at the release it actually shipped from. Entries
       #   are pruned by count (--maximum-versions, default 3 per branch point), never

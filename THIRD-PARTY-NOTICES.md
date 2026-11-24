@@ -40,7 +40,7 @@ notice to accompany the software). Linked as a Swift package, pinned to an exact
 and embedded in the built app as `Sparkle.framework`.
 
 Sparkle incorporates four third-party components, whose notices — reproduced verbatim
-below from the `LICENSE` file inside Sparkle 2.9.5's own distribution — must also
+below from the `LICENSE` file inside Sparkle 2.10.1's own distribution — must also
 accompany binary distributions:
 
 - **bsdiff 4.3** (`bspatch.c`, `bsdiff.c`) © 2003–2005 Colin Percival — BSD 2-Clause
@@ -302,7 +302,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 
 ### Sparkle license, and the licenses of what it bundles
 
-From the `LICENSE` file in Sparkle 2.9.5's distribution, reproduced verbatim. The MIT
+From the `LICENSE` file in Sparkle 2.10.1's distribution, reproduced verbatim. The MIT
 license at the top covers Sparkle itself; the `EXTERNAL LICENSES` section covers the four
 components listed above.
 
