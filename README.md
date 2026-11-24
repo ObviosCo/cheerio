@@ -289,8 +289,8 @@ download `Cheerio-<version>.dmg`, open it, and drag Cheerio to `/Applications`. 
 rather than running it from `~/Downloads` — macOS runs an app from Downloads under app
 translocation, a read-only mount from which Cheerio can't update itself. Builds are signed with
 a Developer ID certificate and notarized by Apple, so Gatekeeper opens them without warnings or
-right-click ceremony. The current release requires macOS 26 or later on Apple Silicon; releases after
-it require macOS 27.
+right-click ceremony. Requires macOS 27 or later on Apple Silicon (26.8.17 was the last release for
+macOS 26).
 
 If you do launch it straight from the DMG or a translocated path, Cheerio notices and offers to
 move itself to `/Applications` on the spot — or, if a copy is already installed there, points you
