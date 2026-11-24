@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 import PackageDescription
 
 let package = Package(
@@ -16,7 +16,20 @@ let package = Package(
         // path may need the network. The app bundles them instead.
         // The app bundles the palettized model and passes its URL in; see
         // SpeakerAttributionService.
-        .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.15.5")
+        //
+        // Traits: Diarizer only. FluidAudio's defaults also enable TTS (Kokoro,
+        // PocketTTS, LuxTTS and their bundled G2P resources) and
+        // NemoTextProcessing (a prebuilt Rust xcframework downloaded at resolve
+        // time). Cheerio uses neither, and leaving them on would ship both in the
+        // app, with their licenses to carry in THIRD-PARTY-NOTICES.md. The
+        // opt-out is what pins this manifest to tools 6.2: FluidAudio only exposes
+        // the traits from its Package@swift-6.2.swift, and SwiftPM 6.1 still links
+        // a trait-conditioned binary target.
+        .package(
+            url: "https://github.com/FluidInference/FluidAudio.git",
+            exact: "0.18.4",
+            traits: ["Diarizer"]
+        )
     ],
     targets: [
         .target(

@@ -179,9 +179,9 @@ jobs:
         uses: actions/cache@v6
         with:
           path: SourcePackages
-          key: spm-app-${{ runner.os }}-${{ hashFiles('CheerioKit/Package.swift', 'project.yml') }}
+          key: spm-app-v2-${{ runner.os }}-${{ hashFiles('CheerioKit/Package.swift', 'project.yml') }}
           restore-keys: |
-            spm-app-${{ runner.os }}-
+            spm-app-v2-${{ runner.os }}-
 
       # Never ship what fails its own tests.
       - name: Run package tests

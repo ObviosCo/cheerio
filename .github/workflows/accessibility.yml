@@ -87,9 +87,9 @@ jobs:
         uses: actions/cache@v6
         with:
           path: SourcePackages
-          key: spm-app-${{ runner.os }}-${{ hashFiles('CheerioKit/Package.swift', 'project.yml') }}
+          key: spm-app-v2-${{ runner.os }}-${{ hashFiles('CheerioKit/Package.swift', 'project.yml') }}
           restore-keys: |
-            spm-app-${{ runner.os }}-
+            spm-app-v2-${{ runner.os }}-
 
       # The seeder is its own SwiftPM package depending on CheerioKit by path, so it
       # resolves and builds FluidAudio all over again if this misses.
@@ -97,9 +97,9 @@ jobs:
         uses: actions/cache@v6
         with:
           path: Scripts/screenshots/SeedDemoStore/.build
-          key: spm-seed-${{ runner.os }}-${{ hashFiles('CheerioKit/Package.swift', 'Scripts/screenshots/SeedDemoStore/Package.swift') }}
+          key: spm-seed-v2-${{ runner.os }}-${{ hashFiles('CheerioKit/Package.swift', 'Scripts/screenshots/SeedDemoStore/Package.swift') }}
           restore-keys: |
-            spm-seed-${{ runner.os }}-
+            spm-seed-v2-${{ runner.os }}-
 
       - name: Bootstrap (fetch model, generate project)
         run: ./Scripts/bootstrap.sh
