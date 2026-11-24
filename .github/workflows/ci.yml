@@ -42,13 +42,19 @@ jobs:
           xcodebuild -version
           swift --version
 
+      # The -v2- in every spm-* key (here, the app and seeder caches, and the other
+      # workflows) is load-bearing: it keeps restore-keys from handing back a
+      # FluidAudio 0.15.5 checkout. SwiftPM validates CheerioKit's `traits:` against
+      # whatever checkout is already on disk before it updates, and 0.15.5 declares
+      # no traits, so resolution fails outright instead of moving to 0.18.4.
+      # Bump the prefix again if a dependency change ever has to invalidate them.
       - name: Cache SwiftPM
         uses: actions/cache@v6
         with:
           path: CheerioKit/.build
-          key: spm-test-${{ runner.os }}-${{ hashFiles('CheerioKit/Package.swift') }}
+          key: spm-test-v2-${{ runner.os }}-${{ hashFiles('CheerioKit/Package.swift') }}
           restore-keys: |
-            spm-test-${{ runner.os }}-
+            spm-test-v2-${{ runner.os }}-
 
       - name: Run tests
         run: swift test --package-path CheerioKit
@@ -81,9 +87,9 @@ jobs:
         uses: actions/cache@v6
         with:
           path: SourcePackages
-          key: spm-app-${{ runner.os }}-${{ hashFiles('CheerioKit/Package.swift', 'project.yml') }}
+          key: spm-app-v2-${{ runner.os }}-${{ hashFiles('CheerioKit/Package.swift', 'project.yml') }}
           restore-keys: |
-            spm-app-${{ runner.os }}-
+            spm-app-v2-${{ runner.os }}-
 
       - name: Bootstrap (fetch model, generate project)
         run: ./Scripts/bootstrap.sh

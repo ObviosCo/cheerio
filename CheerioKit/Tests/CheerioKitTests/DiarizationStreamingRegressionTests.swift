@@ -69,6 +69,98 @@ import Testing
         }
     }
 
+    /// The same parity, on a real recording long enough for drift to show.
+    ///
+    /// The `say` fixture above is ~18 seconds, which is too short to catch the bug
+    /// this exists for: FluidAudio before 0.15.6 (#807) emitted phantom frames from
+    /// its streaming mel, and the error grew with length. On 20 minutes of a real
+    /// in-person meeting, FluidAudio 0.15.5's streaming path agreed with its own
+    /// whole-file path on only ~75% of speech frames, while 0.18.4 agrees on ~98%.
+    /// Opt-in, and the whole-file side reads the clip into memory, so point it at
+    /// minutes rather than hours:
+    ///
+    ///     CHEERIO_SORTFORMER_MODEL=/path/to/Sortformer_v2.1.mlmodelc \
+    ///     CHEERIO_TEST_AUDIO=/path/to/recording.caf \
+    ///     swift test --filter DiarizationStreamingRegressionTests
+    @Test func streamingMatchesWholeFileOnARealRecording() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let modelPath = environment["CHEERIO_SORTFORMER_MODEL"],
+            let audioPath = environment["CHEERIO_TEST_AUDIO"]
+        else { return }
+        let modelURL = URL(fileURLWithPath: modelPath)
+        let audioURL = URL(fileURLWithPath: audioPath)
+
+        let wholeFile = try DiarizationMemoryHarness.wholeFileTurns(modelURL: modelURL, audioFile: audioURL)
+        let streamed = try await SpeakerAttributionService(modelURL: modelURL).attribute(audioFile: audioURL)
+        guard !wholeFile.isEmpty || !streamed.isEmpty else { return }
+
+        let agreement = try #require(Self.labelAgreement(wholeFile, streamed))
+        #expect(agreement >= 0.95, "streaming agreed with whole-file on \(agreement) of shared speech frames")
+    }
+
+    @Test func labelAgreementIgnoresHowEachRunNumbersItsSpeakers() throws {
+        let a = [
+            SpeakerTurn(label: "Speaker 0", startTime: 0, endTime: 10),
+            SpeakerTurn(label: "Speaker 1", startTime: 10, endTime: 20),
+        ]
+        let swapped = [
+            SpeakerTurn(label: "Speaker 1", startTime: 0, endTime: 10),
+            SpeakerTurn(label: "Speaker 0", startTime: 10, endTime: 20),
+        ]
+        let merged = [SpeakerTurn(label: "Speaker 0", startTime: 0, endTime: 20)]
+
+        #expect(try #require(Self.labelAgreement(a, swapped)) == 1)
+        // One run hears two people where the other hears one: half the frames agree.
+        #expect(abs(try #require(Self.labelAgreement(a, merged)) - 0.5) < 0.01)
+        #expect(abs(try #require(Self.labelAgreement(merged, a)) - 0.5) < 0.01)
+        #expect(Self.labelAgreement(a, []) == nil)
+    }
+
+    /// The fraction of 0.1s frames heard as speech by both runs that carry the same
+    /// speakers, under the best one-to-one mapping between the runs' labels. Each
+    /// run numbers its speakers independently, so "Speaker 1" in one can be
+    /// "Speaker 2" in the other. `nil` when no frame has speech in both.
+    static func labelAgreement(_ a: [SpeakerTurn], _ b: [SpeakerTurn], step: TimeInterval = 0.1) -> Double? {
+        let end = max(a.map(\.endTime).max() ?? 0, b.map(\.endTime).max() ?? 0)
+        let frameCount = Int((end / step).rounded(.up))
+        func frames(_ turns: [SpeakerTurn]) -> [Set<String>] {
+            var result = [Set<String>](repeating: [], count: frameCount)
+            for turn in turns {
+                let first = Int(turn.startTime / step)
+                let last = min(frameCount, Int(turn.endTime / step))
+                guard first < last else { continue }
+                for index in first..<last { result[index].insert(turn.label) }
+            }
+            return result
+        }
+        let framesA = frames(a)
+        let framesB = frames(b)
+        let shared = zip(framesA, framesB).filter { !$0.0.isEmpty && !$0.1.isEmpty }
+        guard !shared.isEmpty else { return nil }
+
+        let labelsA = Set(a.map(\.label)).sorted()
+        // Pad with labels no turn carries, so a run that found more speakers still
+        // gets a one-to-one mapping instead of none.
+        var labelsB = Set(b.map(\.label)).sorted()
+        while labelsB.count < labelsA.count { labelsB.append("unmatched-\(labelsB.count)") }
+
+        var best = 0
+        func search(_ mapping: [String: String], _ remaining: [String]) {
+            guard mapping.count < labelsA.count else {
+                let matches = shared.filter { Set($0.0.compactMap { mapping[$0] }) == $0.1 }.count
+                best = max(best, matches)
+                return
+            }
+            for (index, label) in remaining.enumerated() {
+                var next = remaining
+                next.remove(at: index)
+                search(mapping.merging([labelsA[mapping.count]: label]) { $1 }, next)
+            }
+        }
+        search([:], labelsB)
+        return Double(best) / Double(shared.count)
+    }
+
     /// Builds an ~18-second two-speaker CAF: two distinct system voices, each a
     /// couple of sentences, separated by 1.5s of silence. Returns `nil` (the
     /// caller should skip, not fail) if `say` is unavailable or produces nothing

@@ -25,7 +25,7 @@ redistribution). Linked as a Swift package, pinned to an exact version, and comp
 the built app.
 
 FluidAudio itself incorporates two third-party components, whose notices — reproduced
-verbatim below from FluidAudio v0.15.5's `ThirdPartyLicenses/` — must also accompany
+verbatim below from FluidAudio v0.18.4's `ThirdPartyLicenses/` — must also accompany
 binary distributions:
 
 - **fastcluster** © 2011 Daniel Müllner, © Google Inc. — BSD 2-Clause
@@ -262,7 +262,7 @@ Applies to FluidAudio and to the VBx-derived code within it.
 
 ### VBx copyright notice
 
-From FluidAudio v0.15.5 `ThirdPartyLicenses/vbx-LICENSE.md` (licensed under the Apache
+From FluidAudio v0.18.4 `ThirdPartyLicenses/vbx-LICENSE.md` (licensed under the Apache
 License 2.0 reproduced above):
 
 ```
@@ -284,7 +284,7 @@ limitations under the License.
 
 ### fastcluster license (BSD 2-Clause)
 
-From FluidAudio v0.15.5 `ThirdPartyLicenses/fastcluster-LICENSE.md`, reproduced verbatim:
+From FluidAudio v0.18.4 `ThirdPartyLicenses/fastcluster-LICENSE.md`, reproduced verbatim:
 
 ```
 Copyright:
