@@ -31,7 +31,7 @@ packages:
   # release.yml, which key on project.yml for exactly that reason.
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
-    exactVersion: 2.9.5
+    exactVersion: 2.10.1
 # Declared explicitly so the scheme exists without opening Xcode — headless
 # xcodebuild (CI) can't use the schemes the Xcode UI auto-generates.
 schemes:
