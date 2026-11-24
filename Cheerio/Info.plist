@@ -36,7 +36,7 @@
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
-	<string>26.0</string>
+	<string>27.0</string>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>Cheerio captures system audio so it can transcribe the other participants in your meetings. Nothing leaves this Mac.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>

@@ -7,7 +7,7 @@ import PackageDescription
 // gained a property.
 let package = Package(
     name: "SeedDemoStore",
-    platforms: [.macOS("26.0")],
+    platforms: [.macOS("27.0")],
     dependencies: [.package(path: "../../../CheerioKit")],
     targets: [
         .executableTarget(

@@ -89,7 +89,7 @@ final class MeetingAudioPlayerModel {
             }
         }
         endObserver = NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemDidPlayToEndTime,
+            forName: AVPlayerItem.didPlayToEndTimeNotification,
             object: player.currentItem,
             queue: .main
         ) { [weak self] _ in

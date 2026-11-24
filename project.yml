@@ -9,13 +9,13 @@ options:
   # build as co.obvios.cheerio.mac with a mismatched prefix everywhere else.
   bundleIdPrefix: co.obvios
   deploymentTarget:
-    macOS: "26.0"
+    macOS: "27.0"
   createIntermediateGroups: true
 settings:
   base:
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: complete
-    MACOSX_DEPLOYMENT_TARGET: "26.0"
+    MACOSX_DEPLOYMENT_TARGET: "27.0"
     # Apple Silicon only — no Intel slice, even in Release (which would
     # otherwise build universal). Sortformer runs on the Neural Engine, so an
     # x86_64 build was never going to perform anyway.
