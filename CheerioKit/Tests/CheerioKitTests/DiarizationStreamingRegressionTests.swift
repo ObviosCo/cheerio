@@ -94,8 +94,51 @@ import Testing
         let streamed = try await SpeakerAttributionService(modelURL: modelURL).attribute(audioFile: audioURL)
         guard !wholeFile.isEmpty || !streamed.isEmpty else { return }
 
+        // Agreement is scored only where both runs hear speech, so on its own it
+        // would accept a streamed result that dropped nearly everything. Coverage
+        // in both directions rules that out, and rules out the streamed run
+        // inventing speech the whole-file run doesn't hear. On the 20-minute
+        // meeting above, 0.18.4's streaming path heard 92.3% of the whole-file
+        // run's speech frames, 99.8% of its own speech frames were speech there
+        // too, and labels agreed on 98.0% of the shared ones.
+        let recall = try #require(Self.speechCoverage(of: wholeFile, by: streamed))
+        let precision = try #require(Self.speechCoverage(of: streamed, by: wholeFile))
+        #expect(recall >= 0.85, "streaming heard \(recall) of the whole-file run's speech frames")
+        #expect(precision >= 0.85, "only \(precision) of streaming's speech frames are speech in the whole-file run")
+
         let agreement = try #require(Self.labelAgreement(wholeFile, streamed))
         #expect(agreement >= 0.95, "streaming agreed with whole-file on \(agreement) of shared speech frames")
+    }
+
+    @Test func speechCoverageCountsWhatTheOtherRunMissed() throws {
+        let reference = [SpeakerTurn(label: "Speaker 0", startTime: 0, endTime: 100)]
+        let sliver = [SpeakerTurn(label: "Speaker 3", startTime: 0, endTime: 1)]
+
+        #expect(abs(try #require(Self.speechCoverage(of: reference, by: sliver)) - 0.01) < 0.001)
+        #expect(try #require(Self.speechCoverage(of: sliver, by: reference)) == 1)
+        #expect(Self.speechCoverage(of: reference, by: []) == 0)
+        #expect(Self.speechCoverage(of: [], by: reference) == nil)
+    }
+
+    /// The fraction of `reference`'s 0.1s speech frames in which `candidate` also
+    /// hears speech, whoever it attributes it to. `nil` when `reference` has none.
+    static func speechCoverage(
+        of reference: [SpeakerTurn],
+        by candidate: [SpeakerTurn],
+        step: TimeInterval = 0.1
+    ) -> Double? {
+        func frames(_ turns: [SpeakerTurn]) -> Set<Int> {
+            var result = Set<Int>()
+            for turn in turns {
+                let first = Int(turn.startTime / step)
+                let last = Int(turn.endTime / step)
+                if first < last { result.formUnion(first..<last) }
+            }
+            return result
+        }
+        let heard = frames(reference)
+        guard !heard.isEmpty else { return nil }
+        return Double(heard.intersection(frames(candidate)).count) / Double(heard.count)
     }
 
     @Test func labelAgreementIgnoresHowEachRunNumbersItsSpeakers() throws {
