@@ -129,7 +129,7 @@
         <section class="stack stack--2">
           <h3>Fixed</h3>
           <ul>
-            <li>Since 26.8.13, Cheerio put roughly a quarter of each channel's lines under the wrong speaker, and it got worse the longer the meeting ran. The speaker model was hearing the audio slightly late and the error built up. Measured on a 20-minute in-person meeting, labels now match the model's own reference 98% of the time, up from 75%. A meeting that still has its audio can be fixed with Re-identify speakers on its page.</li>
+            <li>Since 26.8.13, speaker labels drifted the longer a meeting ran. The speaker model was hearing the audio slightly late, and the error built up. On a 20-minute in-person meeting, its labels agreed with the model's own reference on 75% of the speech. Now 98%. A meeting that still has its audio can be fixed with Re-identify speakers on its page.</li>
             <li>A meeting being processed after a crash could still be exported, renamed, or have its notes edited while Cheerio rewrote it. Those now wait until it's done, and so does a transcript callback.</li>
             <li>If you went back to an older version and changed or cleared your transcript callback command there, coming back no longer undoes it. Before, a command you'd cleared could come back and run.</li>
           </ul>
